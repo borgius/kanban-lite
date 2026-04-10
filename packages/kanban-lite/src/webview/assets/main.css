@@ -1016,6 +1016,13 @@ body.vscode-high-contrast {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
 }
 
+.comment-editor-frame:has(.cm-editor.cm-focused) {
+  border-color: var(--vscode-focusBorder);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
 .card-comments-shell {
   display: flex;
   flex-direction: column;
@@ -1069,6 +1076,45 @@ body.vscode-high-contrast {
 .comment-editor-empty {
   min-height: 140px;
   padding: 10px 11px;
+}
+
+.comment-editor-codemirror {
+  min-height: 140px;
+}
+
+.comment-editor-codemirror .cm-editor,
+.comment-editor-codemirror .cm-scroller,
+.comment-editor-codemirror .cm-content {
+  min-height: 140px;
+}
+
+.comment-editor-codemirror .cm-editor {
+  background: transparent;
+}
+
+.comment-editor-codemirror .cm-editor.cm-focused {
+  outline: none;
+}
+
+.comment-editor-codemirror .cm-scroller,
+.comment-editor-codemirror .cm-content,
+.comment-editor-codemirror .cm-gutters {
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family, monospace));
+  font-size: calc(var(--vscode-editor-font-size, 13px) * var(--card-zoom, 1));
+}
+
+.comment-editor-codemirror .cm-content {
+  padding: 10px 11px;
+  line-height: 1.55;
+  tab-size: 2;
+}
+
+.comment-editor-codemirror .cm-line {
+  padding: 0;
+}
+
+.comment-editor-codemirror .cm-placeholder {
+  color: color-mix(in srgb, var(--vscode-descriptionForeground) 78%, transparent);
 }
 
 .comment-editor-textarea {

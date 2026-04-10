@@ -523,6 +523,122 @@ describe('Standalone broadcastService visibility scoping', () => {
     expect(readerPayload.cards.map((card) => card.id)).toEqual(['public-card'])
     expect(writerPayload.cards.map((card) => card.id)).toEqual(['public-card', 'private-card'])
   })
+
+  it('builds init payloads with a per-client current user', async () => {
+    const kanbanDir = createTempDir()
+    const workspaceRoot = path.dirname(kanbanDir)
+    const card = {
+      id: 'public-card',
+      boardId: 'default',
+      status: 'backlog',
+      priority: 'medium',
+      assignee: null,
+      dueDate: null,
+      labels: ['public'],
+      attachments: [],
+      order: 'a0',
+      created: '2026-03-31T00:00:00.000Z',
+      modified: '2026-03-31T00:00:00.000Z',
+      completedAt: null,
+      content: '# Public Card',
+      comments: [],
+    }
+
+    const readerSend = vi.fn()
+    const writerSend = vi.fn()
+    const readerClient = { readyState: WebSocket.OPEN, send: readerSend } as unknown as WebSocket
+    const writerClient = { readyState: WebSocket.OPEN, send: writerSend } as unknown as WebSocket
+
+    let activeAuthToken: string | undefined
+    const sdk = {
+      listColumns: vi.fn(() => [{ id: 'backlog' }]),
+      listBoards: vi.fn(() => []),
+      getSettings: vi.fn(() => ({
+        showPriorityBadges: true,
+        showAssignee: true,
+        showDueDate: true,
+        showLabels: true,
+        showBuildWithAI: true,
+        showFileName: false,
+        cardViewMode: 'large',
+        markdownEditorMode: false,
+        showDeletedColumn: false,
+        defaultPriority: 'medium',
+        defaultStatus: 'backlog',
+        boardZoom: 100,
+        cardZoom: 100,
+        boardBackgroundMode: 'fancy',
+        boardBackgroundPreset: 'aurora',
+        panelMode: 'drawer',
+        drawerWidth: 50,
+        drawerPosition: 'right',
+      })),
+      getLabels: vi.fn(() => ({})),
+      getMinimizedColumns: vi.fn(() => []),
+      listCards: vi.fn(async () => [card]),
+      getCardStateStatus: vi.fn(() => ({
+        backend: 'builtin',
+        availability: 'available',
+        defaultActorAvailable: false,
+      })),
+      getCardStateReadModelForCard: vi.fn(async (visibleCard: { id: string }) => ({
+        unread: {
+          actorId: activeAuthToken ?? 'anonymous',
+          cardId: visibleCard.id,
+          unread: false,
+        },
+        open: null,
+      })),
+      capabilities: {
+        authIdentity: {
+          resolveIdentity: vi.fn(async (auth: { token?: string }) => {
+            if (auth.token === 'reader-token') {
+              return { subject: 'reader-user' }
+            }
+            if (auth.token === 'writer-token') {
+              return { subject: 'writer-user' }
+            }
+            return null
+          }),
+        },
+      },
+      runWithAuth: vi.fn(async (auth: { token?: string }, fn: () => Promise<unknown>) => {
+        const previous = activeAuthToken
+        activeAuthToken = auth.token
+        try {
+          return await fn()
+        } finally {
+          activeAuthToken = previous
+        }
+      }),
+    }
+
+    const ctx = {
+      sdk,
+      workspaceRoot,
+      wss: { clients: new Set([readerClient, writerClient]) },
+      cards: [card],
+      clientAuthContexts: new Map([
+        [readerClient, { token: 'reader-token' }],
+        [writerClient, { token: 'writer-token' }],
+      ]),
+      clientEditingCardIds: new Map(),
+      currentBoardId: 'default',
+    } as unknown as Parameters<typeof broadcast>[0]
+
+    try {
+      broadcast(ctx, { type: 'init' })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      const readerPayload = JSON.parse(String(readerSend.mock.calls[0][0])) as { currentUser?: string }
+      const writerPayload = JSON.parse(String(writerSend.mock.calls[0][0])) as { currentUser?: string }
+
+      expect(readerPayload.currentUser).toBe('reader-user')
+      expect(writerPayload.currentUser).toBe('writer-user')
+    } finally {
+      fs.rmSync(workspaceRoot, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('Standalone Server Integration', () => {

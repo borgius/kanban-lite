@@ -201,7 +201,7 @@ The script:
 
 1. reads a `.kanban.json` file at deploy time
 2. generates a temporary Worker wrapper entrypoint plus a Durable Object class for active-card persistence and live-sync invalidations
-3. statically imports the requested plugin packages plus any configured `callback.runtime` module handlers when `plugins["callback.runtime"].provider === "cloudflare"`
+3. statically imports provider packages implied by the embedded config (including the default `webhook.delivery` provider `webhooks` → `kl-plugin-webhook` unless it is explicitly disabled), plus any requested `--plugin` packages and any configured `callback.runtime` module handlers when `plugins["callback.runtime"].provider === "cloudflare"`
 4. builds the standalone web assets (unless `--skip-build` is used)
 5. calls `wrangler deploy` with a generated config
 
@@ -215,6 +215,8 @@ Cloudflare Workers do not support the Node plugin discovery path used by the Nod
 - a prebuilt `moduleRegistry`
 
 Before deployment continues, the helper also validates that configured callback modules resolve cleanly and that each named handler export exists. If a module cannot be resolved or a named export is missing, deployment fails closed before the Worker is published.
+
+When `--create-resources` is enabled, the helper now reuses already-existing R2 buckets instead of surfacing Wrangler's “bucket already exists” API error on every deploy.
 
 If `callback.runtime` stays on the Node `callbacks` provider instead, the generated Worker remains fetch-only: it embeds the config snapshot but does not emit callback module imports or a queue consumer. When the provider is `cloudflare`, the generated Worker bundles only module handlers, rejects enabled `inline` / `process` rows, and delivers one compact queue message per committed event rather than one message per matched handler.
 
@@ -242,6 +244,8 @@ node scripts/deploy-cloudflare-worker.mjs \
   --plugin kl-plugin-webhook \
   --plugin kl-plugin-callback
 ```
+
+If your Cloudflare config leaves `plugins["webhook.delivery"]` unset, the deploy helper still bundles `kl-plugin-webhook` automatically because runtime normalization defaults that capability to `webhooks`. Only an explicit `provider: "none"` disables webhook delivery for the Worker bundle.
 
 ### Deploy with callback.runtime provider `cloudflare`
 

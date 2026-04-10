@@ -74,6 +74,7 @@ vi.mock('vscode', () => {
 
 vi.mock('./auth', () => ({
   getExtensionAuthStatus: vi.fn(),
+  resolveExtensionCurrentUser: vi.fn(async () => 'User'),
   resolveExtensionAuthContext: vi.fn(async () => ({ type: 'none' })),
 }))
 
@@ -85,6 +86,7 @@ vi.mock('./cardStateUi', () => ({
 
 import { KanbanPanel } from './KanbanPanel'
 import { performExplicitCardOpen } from './cardStateUi'
+import { getExtensionAuthStatus, resolveExtensionCurrentUser } from './auth'
 
 const redaction = {
   maskedValue: '••••••',
@@ -787,6 +789,33 @@ describe('KanbanPanel auth-scoped card flows', () => {
       cardId: 'card-live',
       content: '# Fresh card',
       comments: freshCard.comments,
+    }))
+  })
+
+  it('includes the resolved current user in init payloads sent to the webview', async () => {
+    const { harness, panel, sdk } = createSubject()
+
+    vi.mocked(getExtensionAuthStatus).mockResolvedValue({
+      configured: true,
+      tokenPresent: true,
+      tokenSource: 'secret-storage',
+      transport: 'extension',
+      identityProvider: 'local',
+      policyProvider: 'local',
+      identityEnabled: true,
+      policyEnabled: true,
+    })
+    vi.mocked(resolveExtensionCurrentUser).mockResolvedValue('alice')
+    sdk.listCards.mockResolvedValueOnce([makeCard({ id: 'card-visible' })])
+    harness.postMessage.mockClear()
+
+    await panel.reloadState()
+    await Promise.resolve()
+
+    expect(resolveExtensionCurrentUser).toHaveBeenCalledWith(expect.anything(), sdk)
+    expect(harness.postMessage).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'init',
+      currentUser: 'alice',
     }))
   })
 

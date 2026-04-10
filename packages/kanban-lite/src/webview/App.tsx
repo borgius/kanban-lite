@@ -128,6 +128,7 @@ function App(): React.JSX.Element {
     setBoards,
     setIsDarkMode,
     setWorkspace,
+    setCurrentUser,
     setCardSettings,
     setDrawerWidthPreview,
     clearDrawerWidthPreview,
@@ -458,6 +459,7 @@ function App(): React.JSX.Element {
           setColumns(message.columns ?? [])
           if (message.boards) setBoards(message.boards)
           if (message.workspace) setWorkspace(message.workspace)
+          setCurrentUser(message.currentUser ?? 'User')
           if (message.settings) {
             if (message.settings.markdownEditorMode && editingCard) {
               setEditingCard(null)
@@ -586,7 +588,7 @@ function App(): React.JSX.Element {
     }
 
     return () => window.removeEventListener('message', handleMessage)
-  }, [editingCard, mergeCardStates, setCards, setColumns, setBoards, setWorkspace, setCardSettings, setSettingsOpen, setLabelDefs, setActiveCardId, syncEditingCardFromCards])
+  }, [editingCard, mergeCardStates, setCards, setColumns, setBoards, setWorkspace, setCurrentUser, setCardSettings, setSettingsOpen, setLabelDefs, setActiveCardId, syncEditingCardFromCards])
 
   useEffect(() => {
     if (!isColumnVisibilityPersistenceReady) {

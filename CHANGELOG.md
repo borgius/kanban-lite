@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Cloudflare deploy script custom domains**: `scripts/deploy-cloudflare-worker.mjs` now accepts repeatable `--custom-domain <hostname>` values plus `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` env defaults, supports an explicit `--custom-domain-zone` / `KANBAN_CF_CUSTOM_DOMAIN_ZONE` override, emits Worker `custom_domain` route blocks in the generated `wrangler.toml`, and keeps `workers_dev = true` so deployments can attach hostnames such as `kk.incidentmidn.com` without manual Wrangler edits or losing the default `*.workers.dev` URL.
+- **Cloudflare deploy script custom domains**: `scripts/deploy-cloudflare-worker.mjs` now accepts repeatable `--custom-domain <hostname>` values plus `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` env defaults, supports an explicit `--custom-domain-zone` / `KANBAN_CF_CUSTOM_DOMAIN_ZONE` override, emits Worker `custom_domain` route blocks in the generated `wrangler.toml`, and keeps `workers_dev = true` so deployments can attach hostnames such as `kl.incidentmind.com` without manual Wrangler edits or losing the default `*.workers.dev` URL.
 
 - **Meta tab — inline YAML metadata editor**: The shared card editor now includes a `Meta` tab that lets users edit `frontmatter.metadata` as raw YAML inside a CodeMirror editor. In edit mode, valid changes are autosaved via the existing 800 ms debounce pipeline. In the create-card dialog, metadata is staged locally and included in the card payload when the dialog is saved; the Save button is disabled while the YAML draft is invalid. Invalid YAML is never persisted — it stays as local draft text with an inline error message until corrected.
 
@@ -53,9 +53,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin Options toggles and grouped capability forms**: The Settings panel now uses on/off toggles instead of Activate/Active buttons for provider selection, shows a spinner while a provider toggle mutation is pending, renders schema-driven options in dedicated sections after the capability list, hides duplicate auth-package capability aliases such as unselected `rbac` rows, and supports explicitly disabling `webhook.delivery` with `provider: "none"` while preserving stored webhook options for later re-enable.
 - **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
+- **Comment composer now uses CodeMirror**: The shared card comments tab now uses the same CodeMirror-backed markdown editor as the main body `Edit` tab, preserving toolbar shortcuts, preview, and draft-clear behavior after posting a new comment.
+- **Comment author defaults now follow session identity**: The shared card comments tab now pre-fills the author field from the logged-in username when the current session resolves an identity, and otherwise falls back to `User`.
+
 ### Fixed
 
 - **Standalone settings preservation for extension-only fields**: Opening or saving settings from standalone mode no longer stomps stored `showBuildWithAI` / `markdownEditorMode` values when the host hides those unsupported controls; support flags now hide the UI while preserving persisted config.
+
+- **Cloudflare deploy resource/plugin defaults**: Repeated `scripts/deploy-cloudflare-worker.mjs --create-resources` runs now reuse existing R2 buckets instead of surfacing Wrangler's “bucket already exists” error every time, and Worker bundles now honor the default `webhook.delivery` provider (`webhooks` → `kl-plugin-webhook`) unless Cloudflare config explicitly disables it with `provider: "none"`. The repo's default `.kanban.cloudflare.json` now keeps webhook delivery enabled for Cloudflare deploys.
 
 - **Cloudflare Worker live cross-tab refreshes**: Worker deployments now accept `/ws` through the generated Durable Object seam and use event-driven `syncRequired` invalidations plus HTTP latest-state resync, so committed mutations in one browser refresh other connected tabs without periodic polling. The Worker path still targets latest-state catch-up rather than full raw Node WebSocket payload parity.
 

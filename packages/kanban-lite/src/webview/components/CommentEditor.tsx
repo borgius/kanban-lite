@@ -1,9 +1,10 @@
 // src/webview/components/CommentEditor.tsx
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { markdown } from '@codemirror/lang-markdown'
 import { Bold, Italic, Quote, Code, Link, List, ListOrdered } from 'lucide-react'
-import { wrapSelection, ToolbarButton, parseCommentMarkdown, type FormatAction } from '../lib/markdownTools'
-
-const AUTHOR_KEY = 'kanban-comment-author'
+import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './CodeMirrorEditor'
+import { wrapEditorSelection, ToolbarButton, parseCommentMarkdown, type FormatAction } from '../lib/markdownTools'
+import { useStore } from '../store'
 
 interface CommentEditorProps {
   initialContent?: string
@@ -18,11 +19,28 @@ export function CommentEditor({
   onCancel,
   submitLabel = 'Comment',
 }: CommentEditorProps) {
-  const [author, setAuthor] = useState(() => localStorage.getItem(AUTHOR_KEY) ?? '')
+  const currentUser = useStore((state) => state.currentUser)
+  const suggestedAuthor = currentUser.trim() || 'User'
+  const [author, setAuthor] = useState(suggestedAuthor)
   const [content, setContent] = useState(initialContent)
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [editorResetKey, setEditorResetKey] = useState(0)
+  const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const isFirstRender = useRef(true)
+  const lastSuggestedAuthorRef = useRef(suggestedAuthor)
+  const markdownExtensions = useMemo(() => [markdown()], [])
+
+  useEffect(() => {
+    const previousSuggestedAuthor = lastSuggestedAuthorRef.current
+    setAuthor((currentAuthor) => {
+      if (currentAuthor.trim().length === 0 || currentAuthor === previousSuggestedAuthor) {
+        return suggestedAuthor
+      }
+
+      return currentAuthor
+    })
+    lastSuggestedAuthorRef.current = suggestedAuthor
+  }, [suggestedAuthor])
 
   useEffect(() => {
     if (isFirstRender.current) {
@@ -30,9 +48,15 @@ export function CommentEditor({
       return
     }
     if (activeTab === 'write') {
-      textareaRef.current?.focus()
+      editorRef.current?.focus()
     }
   }, [activeTab])
+
+  useEffect(() => {
+    if (editorResetKey > 0) {
+      editorRef.current?.focus()
+    }
+  }, [editorResetKey])
 
   const previewHtml = useMemo(() => {
     if (!content.trim()) return ''
@@ -40,37 +64,63 @@ export function CommentEditor({
   }, [content])
 
   const handleFormat = useCallback((action: FormatAction) => {
-    if (textareaRef.current) {
-      wrapSelection(textareaRef.current, content, setContent, action)
-    }
-  }, [content])
+    const editorView = editorRef.current?.getView()
+    if (!editorView) return
+    wrapEditorSelection(editorView, action)
+  }, [])
 
   const handleSubmit = () => {
     const trimmedAuthor = author.trim()
     const trimmedContent = content.trim()
     if (!trimmedAuthor || !trimmedContent) return
-    localStorage.setItem(AUTHOR_KEY, trimmedAuthor)
     onSubmit(trimmedAuthor, trimmedContent)
     if (!initialContent) {
       setContent('')
       setActiveTab('write')
+      setEditorResetKey(value => value + 1)
     }
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    const editorView = editorRef.current?.getView()
+    if (!editorView) return
+
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault()
       handleSubmit()
+      return
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault()
-      handleFormat('bold')
+      const selection = editorView.state.selection.main
+      editorView.dispatch({
+        changes: {
+          from: selection.from,
+          to: selection.to,
+          insert: '  ',
+        },
+        selection: {
+          anchor: selection.from + 2,
+          head: selection.from + 2,
+        },
+        userEvent: 'input',
+      })
+      editorView.focus()
+      return
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+      e.preventDefault()
+      e.stopPropagation()
+      handleFormat('bold')
+      return
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
       e.preventDefault()
       handleFormat('italic')
+      return
     }
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault()
       handleFormat('link')
     }
@@ -118,15 +168,25 @@ export function CommentEditor({
               <ToolbarButton icon={<ListOrdered size={12} />} title="Ordered list" onClick={() => handleFormat('ol')} />
             </div>
 
-            <textarea
-              ref={textareaRef}
+            <CodeMirrorEditor
+              key={editorResetKey}
+              ref={editorRef}
               value={content}
-              onChange={e => setContent(e.target.value)}
-              onKeyDown={handleKeyDown}
+              onChange={setContent}
+              onKeyDown={handleEditorKeyDown}
               placeholder="Add a comment... (Markdown supported)"
-              className="comment-editor-textarea text-xs outline-none"
-              style={{ color: 'var(--vscode-foreground)' }}
-              rows={5}
+              extensions={markdownExtensions}
+              className="comment-editor-codemirror"
+              fallbackTextareaClassName="comment-editor-textarea"
+              fallbackTextareaStyle={{
+                color: 'var(--vscode-foreground)',
+                fontFamily: 'var(--vscode-editor-font-family, monospace)',
+                fontSize: 'var(--vscode-editor-font-size, 13px)',
+              }}
+              minHeight="140px"
+              spellCheck={false}
+              testId="comment-markdown-editor"
+              ariaLabel="Comment markdown editor"
             />
           </>
         ) : (

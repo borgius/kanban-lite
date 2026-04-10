@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws'
 import type { Card, LogEntry } from '../shared/types'
 import { readConfig } from '../shared/config'
+import { resolveCurrentUserName } from '../sdk/resolveCurrentUserName'
 import type { AuthContext } from '../sdk/types'
 import { decorateCardsForWebview } from '../extension/cardStateUi'
 import type { StandaloneContext } from './context'
@@ -129,7 +130,7 @@ async function buildDecoratedCards(ctx: StandaloneContext, authContext?: AuthCon
   return decorateCardsForWebview(ctx.sdk, runWithAuth, cards, ctx.currentBoardId)
 }
 
-function buildBaseInitMessage(ctx: StandaloneContext): Record<string, unknown> {
+function buildBaseInitMessage(ctx: StandaloneContext, currentUser: string = 'User'): Record<string, unknown> {
   const config = readConfig(ctx.workspaceRoot)
   const settings = ctx.sdk.getSettings()
   settings.showBuildWithAI = false
@@ -140,6 +141,7 @@ function buildBaseInitMessage(ctx: StandaloneContext): Record<string, unknown> {
     settings,
     boards: ctx.sdk.listBoards(),
     currentBoard: ctx.currentBoardId || config.defaultBoard,
+    currentUser,
     workspace: {
       projectPath: ctx.workspaceRoot,
       kanbanDirectory: config.kanbanDirectory,
@@ -152,8 +154,9 @@ function buildBaseInitMessage(ctx: StandaloneContext): Record<string, unknown> {
 }
 
 async function buildClientInitMessage(ctx: StandaloneContext, authContext?: AuthContext): Promise<unknown> {
+  const currentUser = await resolveCurrentUserName(ctx.sdk, authContext)
   return {
-    ...buildBaseInitMessage(ctx),
+    ...buildBaseInitMessage(ctx, currentUser),
     cards: await buildDecoratedCards(ctx, authContext),
   }
 }

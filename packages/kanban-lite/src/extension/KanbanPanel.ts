@@ -22,7 +22,7 @@ import { readConfig, configToSettings, CONFIG_FILENAME, DEFAULT_CONFIG } from '.
 import type { PluginCapabilityNamespace } from '../shared/config'
 import { KanbanSDK, DEFAULT_PLUGIN_SETTINGS_REDACTION, PluginSettingsOperationError, createPluginSettingsErrorPayload } from '../sdk/KanbanSDK'
 import { AuthError, type AuthContext } from '../sdk/types'
-import { getExtensionAuthStatus, resolveExtensionAuthContext } from './auth'
+import { getExtensionAuthStatus, resolveExtensionAuthContext, resolveExtensionCurrentUser } from './auth'
 import { decorateCardsForWebview, formatCardStateWarning, performExplicitCardOpen } from './cardStateUi'
 
 
@@ -1731,6 +1731,7 @@ export class KanbanPanel {
         settings,
         boards,
         currentBoard,
+        currentUser: 'User',
         labels: {},
         minimizedColumnIds: []
       })
@@ -1742,7 +1743,8 @@ export class KanbanPanel {
     void Promise.all([
       decorateCardsForWebview(sdk, (fn) => this._runWithAuth(sdk, fn), this._cards, this._currentBoardId),
       getExtensionAuthStatus(this._context, sdk),
-    ]).then(([cards, authStatus]) => {
+      resolveExtensionCurrentUser(this._context, sdk),
+    ]).then(([cards, authStatus, currentUser]) => {
       if (nextVersion !== this._cardsToWebviewVersion) {
         return
       }
@@ -1754,6 +1756,7 @@ export class KanbanPanel {
         settings,
         boards,
         currentBoard,
+        currentUser,
         labels: sdk.getLabels(),
         minimizedColumnIds: sdk.getMinimizedColumns(this._currentBoardId),
         authStatus,
@@ -1764,7 +1767,10 @@ export class KanbanPanel {
       }
 
       vscode.window.showWarningMessage(`Failed to load card-state badges: ${error instanceof Error ? error.message : String(error)}`)
-      void getExtensionAuthStatus(this._context, sdk).then((authStatus) => {
+      void Promise.all([
+        getExtensionAuthStatus(this._context, sdk),
+        resolveExtensionCurrentUser(this._context, sdk),
+      ]).then(([authStatus, currentUser]) => {
         if (nextVersion !== this._cardsToWebviewVersion) {
           return
         }
@@ -1776,6 +1782,7 @@ export class KanbanPanel {
           settings,
           boards,
           currentBoard,
+          currentUser,
           labels: sdk.getLabels(),
           minimizedColumnIds: sdk.getMinimizedColumns(this._currentBoardId),
           authStatus,

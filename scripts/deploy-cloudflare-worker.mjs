@@ -356,7 +356,7 @@ function inferWebhookDeliveryProvider(config) {
   return normalizeProviderId(
     getCapabilityProvider(config, 'webhook.delivery')
       ?? getLegacyWebhookProvider(config)
-      ?? 'none',
+      ?? 'webhooks',
   )
 }
 

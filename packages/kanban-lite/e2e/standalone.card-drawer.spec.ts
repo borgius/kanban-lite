@@ -216,7 +216,7 @@ describeStandaloneScenario('card drawer - comment add', 'card-drawer', (scenario
 
   test('adds a new comment and it persists after reload', async ({ page }) => {
     await page.getByLabel('Comment author name').fill('Dana')
-    await page.getByPlaceholder('Add a comment... (Markdown supported)').fill('E2E comment from Playwright.')
+    await page.locator('[data-testid="comment-markdown-editor"] .cm-content').fill('E2E comment from Playwright.')
     await page.getByRole('button', { name: 'Comment', exact: true }).click()
     await saveAndReopen(page)
     await page.getByRole('button', { name: /Comments/ }).click()

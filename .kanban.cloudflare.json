@@ -32,6 +32,6 @@
     "card.storage": { "provider": "cloudflare" },
     "config.storage": { "provider": "cloudflare" },
     "attachment.storage": { "provider": "cloudflare" },
-    "webhook.delivery": { "provider": "none" }
+    "webhook.delivery": { "provider": "webhooks" }
   }
 }

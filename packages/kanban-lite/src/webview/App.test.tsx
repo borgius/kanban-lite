@@ -195,6 +195,7 @@ const storeState = {
   currentBoard: 'default',
   columnVisibilityByBoard: {} as Record<string, { hiddenColumnIds: string[]; minimizedColumnIds: string[] }>,
   workspace: null as WorkspaceInfo | null,
+  currentUser: 'User',
   cardSettings: { ...DEFAULT_CARD_SETTINGS },
   drawerWidthPreview: null as number | null,
   effectiveDrawerWidth: 50,
@@ -218,6 +219,9 @@ const storeState = {
   setIsDarkMode: vi.fn(),
   setWorkspace: vi.fn((workspace) => {
     storeState.workspace = workspace
+  }),
+  setCurrentUser: vi.fn((currentUser) => {
+    storeState.currentUser = currentUser
   }),
   setCardSettings: vi.fn((cardSettings) => {
     storeState.cardSettings = cardSettings
@@ -423,6 +427,7 @@ beforeEach(() => {
     currentBoard: 'default',
     columnVisibilityByBoard: {},
     workspace: null,
+    currentUser: 'User',
     cardSettings: { ...DEFAULT_CARD_SETTINGS },
     drawerWidthPreview: null,
     effectiveDrawerWidth: 50,
@@ -601,6 +606,38 @@ describe('App connection notices', () => {
         minimizedColumnIds: [],
       },
     })
+  })
+
+  it('stores the current user from init payloads and falls back to User when omitted', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+
+    renderApp()
+    renderApp()
+
+    dispatchMessage({
+      type: 'init',
+      cards: [],
+      columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+      settings: { ...DEFAULT_CARD_SETTINGS },
+      currentUser: 'alice',
+    } as ExtensionMessage)
+
+    renderApp()
+
+    expect(storeState.currentUser).toBe('alice')
+    expect(storeState.setCurrentUser).toHaveBeenCalledWith('alice')
+
+    dispatchMessage({
+      type: 'init',
+      cards: [],
+      columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+      settings: { ...DEFAULT_CARD_SETTINGS },
+    } as ExtensionMessage)
+
+    renderApp()
+
+    expect(storeState.currentUser).toBe('User')
+    expect(storeState.setCurrentUser).toHaveBeenLastCalledWith('User')
   })
 
   it('preserves unrelated board visibility state when init updates the current board', () => {

@@ -7,14 +7,33 @@ const nodeConsole = globalThis.console
 
 function spawnCapture(command, args) {
   const result = spawnSync(command, args, {
-    stdio: ['inherit', 'pipe', 'inherit'],
+    stdio: ['ignore', 'pipe', 'pipe'],
     encoding: 'utf8',
   })
-  return { status: result.status ?? 1, stdout: result.stdout ?? '' }
+  return {
+    status: result.status ?? 1,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  }
 }
 
 function parseJson(text) {
   try { return JSON.parse(text) } catch { return null }
+}
+
+function parseKeyedListValues(text, key) {
+  return [...text.matchAll(new RegExp(`^\\s*${key}:\\s*(.+?)\\s*$`, 'gm'))]
+    .map((match) => match[1]?.trim())
+    .filter(Boolean)
+}
+
+function formatCommandFailure(detail) {
+  const text = [detail.stdout, detail.stderr]
+    .filter((value) => typeof value === 'string' && value.trim())
+    .join('\n')
+    .trim()
+
+  return text ? `\n${text}` : ''
 }
 
 /**
@@ -62,18 +81,36 @@ export function ensureD1Database(name) {
 }
 
 /**
- * Creates an R2 bucket via wrangler. Logs a warning if it already exists (non-zero exit).
+ * Lists all R2 buckets in the account and returns the bucket name when present, or null.
+ * @param {string} name
+ * @returns {string | null}
+ */
+export function findR2BucketByName(name) {
+  const { status, stdout } = spawnCapture('npx', ['wrangler', 'r2', 'bucket', 'list'])
+  if (status !== 0) return null
+  return parseKeyedListValues(stdout, 'name').find((bucketName) => bucketName === name) ?? null
+}
+
+/**
+ * Creates an R2 bucket via wrangler when missing.
  * @param {string} name
  */
 export function ensureR2Bucket(name) {
-  nodeConsole.log(`  Ensuring R2 bucket: ${name}`)
-  const result = spawnSync('npx', ['wrangler', 'r2', 'bucket', 'create', name], {
-    stdio: 'inherit',
-    encoding: 'utf8',
-  })
-  if (result.status !== 0) {
-    nodeConsole.log(`  R2 bucket '${name}' may already exist — continuing`)
+  if (findR2BucketByName(name)) {
+    nodeConsole.log(`  Using existing R2 bucket: ${name}`)
+    return
   }
+
+  nodeConsole.log(`  Creating R2 bucket: ${name}`)
+  const result = spawnCapture('npx', ['wrangler', 'r2', 'bucket', 'create', name])
+  if (result.status === 0) return
+
+  if (findR2BucketByName(name)) {
+    nodeConsole.log(`  R2 bucket '${name}' already exists — continuing`)
+    return
+  }
+
+  throw new Error(`Failed to create R2 bucket: ${name}${formatCommandFailure(result)}`)
 }
 
 /**

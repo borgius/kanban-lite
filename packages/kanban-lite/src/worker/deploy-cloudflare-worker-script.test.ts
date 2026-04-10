@@ -295,6 +295,65 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     expect(entrySource).toMatch(/"kl-plugin-auth": moduleRegistryEntry\d+/)
   })
 
+  it('bundles kl-plugin-webhook for the default webhook.delivery provider when Cloudflare config omits it', async () => {
+    const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+    const workspaceDir = path.join(tempDir, 'workspace')
+    const configPath = path.join(workspaceDir, '.kanban.json')
+
+    fs.mkdirSync(workspaceDir, { recursive: true })
+    fs.writeFileSync(configPath, '{}\n', 'utf8')
+
+    const entryPath = await createGeneratedWorker(tempDir, {
+      name: 'kanban-test-worker',
+      configPath,
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+        plugins: {
+          'card.storage': { provider: 'cloudflare' },
+        },
+      },
+      plugins: [],
+      kanbanDir: '.kanban',
+      compatibilityDate: '2026-04-05',
+    })
+
+    const entrySource = fs.readFileSync(entryPath, 'utf8')
+    expect(entrySource).toMatch(/"kl-plugin-webhook": moduleRegistryEntry\d+/)
+  })
+
+  it('does not bundle kl-plugin-webhook when webhook.delivery is explicitly disabled', async () => {
+    const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+    const workspaceDir = path.join(tempDir, 'workspace')
+    const configPath = path.join(workspaceDir, '.kanban.json')
+
+    fs.mkdirSync(workspaceDir, { recursive: true })
+    fs.writeFileSync(configPath, '{}\n', 'utf8')
+
+    const entryPath = await createGeneratedWorker(tempDir, {
+      name: 'kanban-test-worker',
+      configPath,
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+        plugins: {
+          'card.storage': { provider: 'cloudflare' },
+          'webhook.delivery': { provider: 'none' },
+        },
+      },
+      plugins: [],
+      kanbanDir: '.kanban',
+      compatibilityDate: '2026-04-05',
+    })
+
+    const entrySource = fs.readFileSync(entryPath, 'utf8')
+    expect(entrySource).not.toMatch(/"kl-plugin-webhook": moduleRegistryEntry\d+/)
+  })
+
   it('generates import specifiers that resolve back to the source files from macOS temp directories', async () => {
     const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
     const tempDir = createTempDir()
@@ -398,7 +457,7 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     const wranglerConfigPath = await createGeneratedWranglerConfig(tempDir, {
       name: 'kanban-test-worker',
       compatibilityDate: '2026-04-05',
-      customDomains: [' KK.IncidentMidn.com ', 'kk.incidentmidn.com'],
+      customDomains: [' kl.incidentmind.com ', 'kl.incidentmind.com'],
       config: {
         version: 2,
         defaultBoard: 'default',
@@ -409,9 +468,9 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     const wranglerSource = fs.readFileSync(wranglerConfigPath, 'utf8')
 
     expect(wranglerSource.match(/\[\[routes\]\]/g)).toHaveLength(1)
-    expect(wranglerSource).toContain('pattern = "kk.incidentmidn.com"')
+    expect(wranglerSource).toContain('pattern = "kl.incidentmind.com"')
     expect(wranglerSource).toContain('custom_domain = true')
-    expect(wranglerSource).toContain('zone_name = "incidentmidn.com"')
+    expect(wranglerSource).toContain('zone_name = "incidentmind.com"')
   })
 
   it('rejects invalid custom-domain values before generating Wrangler config', async () => {
@@ -421,7 +480,7 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     await expect(createGeneratedWranglerConfig(tempDir, {
       name: 'kanban-test-worker',
       compatibilityDate: '2026-04-05',
-      customDomains: ['https://kk.incidentmidn.com'],
+      customDomains: ['https://kl.incidentmind.com'],
       config: {
         version: 2,
         defaultBoard: 'default',
@@ -437,7 +496,7 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     await expect(createGeneratedWranglerConfig(tempDir, {
       name: 'kanban-test-worker',
       compatibilityDate: '2026-04-05',
-      customDomains: ['kk.incidentmidn.com'],
+      customDomains: ['kl.incidentmind.com'],
       customDomainZoneName: 'example.com',
       config: {
         version: 2,

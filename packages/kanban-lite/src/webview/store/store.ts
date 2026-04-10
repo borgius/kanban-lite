@@ -1,16 +1,16 @@
 import { create } from 'zustand'
-import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport, CardViewMode } from '../../shared/types'
+import type { Card, CardViewMode } from '../../shared/types'
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
-import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
+import { normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
 import type { BoardSubTab, SettingsTab } from '../settingsTabs'
 
-import type { DueDateFilter, LayoutMode, SortOrder, CardTab, FixedCardTab, FormCardTab } from './card-tabs'
-import { FIXED_CARD_TABS, DEFAULT_CARD_TAB, FORM_CARD_TAB_PREFIX, isFixedCardTab, isFormCardTab, isCardTabRouteCandidate, createFormCardTabId, isRecord, sanitizeCardTab, hasResolvedAttachmentSchema, getCardFormTabIds, normalizeCardTab } from './card-tabs'
-import type { SavedView, ColumnVisibilityState, ColumnVisibilityByBoard } from './column-visibility'
-import { EMPTY_COLUMN_VISIBILITY, getBoardInfo, normalizeColumnVisibilityState, sanitizeColumnVisibilityState, hasColumnVisibilityState, getColumnVisibilityState, setBoardColumnVisibility, columnVisibilityStateEquals, sanitizeColumnVisibilityByBoard } from './column-visibility'
+import type { SortOrder } from './card-tabs'
+import { DEFAULT_CARD_TAB, normalizeCardTab } from './card-tabs'
+import type { SavedView } from './column-visibility'
+import { getBoardInfo, normalizeColumnVisibilityState, sanitizeColumnVisibilityState, getColumnVisibilityState, setBoardColumnVisibility } from './column-visibility'
 import type { KanbanState } from './state'
-import { getInitialDarkMode, isToday, isThisWeek, isOverdue, formatMetadataTokenValue, buildSearchQuery } from './state'
+import { getInitialDarkMode, isToday, isThisWeek, isOverdue, buildSearchQuery } from './state'
 
 export type { DueDateFilter, LayoutMode, SortOrder, CardTab, FixedCardTab, FormCardTab } from './card-tabs'
 export { FIXED_CARD_TABS, DEFAULT_CARD_TAB, isFixedCardTab, isFormCardTab, isCardTabRouteCandidate, createFormCardTabId, getCardFormTabIds, normalizeCardTab } from './card-tabs'
@@ -33,6 +33,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   columnSorts: {},
   layout: 'horizontal',
   workspace: null,
+  currentUser: 'User',
   cardSettings: {
     showPriorityBadges: true,
     showAssignee: true,
@@ -116,6 +117,7 @@ export const useStore = create<KanbanState>((set, get) => ({
     ),
   })),
   setWorkspace: (workspace) => set({ workspace }),
+  setCurrentUser: (currentUser) => set({ currentUser: currentUser.trim() || 'User' }),
   setLabelDefs: (labels) => set({ labelDefs: labels }),
   setCards: (cards) => set((state) => ({
     cards,

@@ -1,12 +1,8 @@
-import { create } from 'zustand'
-import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardFormAttachment, CardStateReadModelTransport, CardViewMode } from '../../shared/types'
-import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
-import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
-import { clampDrawerWidthPercent } from '../drawerResize'
+import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardStateReadModelTransport } from '../../shared/types'
 import type { BoardSubTab, SettingsTab } from '../settingsTabs'
 
 import type { DueDateFilter, LayoutMode, SortOrder, CardTab } from './card-tabs'
-import type { SavedView, ColumnVisibilityState, ColumnVisibilityByBoard } from './column-visibility'
+import type { SavedView, ColumnVisibilityState } from './column-visibility'
 
 export interface KanbanState {
   cards: Card[]
@@ -24,6 +20,7 @@ export interface KanbanState {
   columnSorts: Record<string, SortOrder>
   layout: LayoutMode
   workspace: WorkspaceInfo | null
+  currentUser: string
   cardSettings: CardDisplaySettings
   drawerWidthPreview: number | null
   effectiveDrawerWidth: number
@@ -55,6 +52,7 @@ export interface KanbanState {
   setActiveCardId: (id: string | null) => void
   setActiveCardTab: (tab: CardTab) => void
   setWorkspace: (workspace: WorkspaceInfo) => void
+  setCurrentUser: (currentUser: string) => void
   setLabelDefs: (labels: Record<string, LabelDefinition>) => void
   setCards: (cards: Card[]) => void
   setColumns: (columns: KanbanColumn[]) => void

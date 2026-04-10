@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 
 import { KanbanSDK } from '../sdk/KanbanSDK'
+import { resolveCurrentUserName } from '../sdk/resolveCurrentUserName'
 import type { AuthContext } from '../sdk/types'
 
 export const AUTH_TOKEN_SECRET_KEY = 'kanban-lite.authToken'
@@ -22,4 +23,8 @@ export async function getExtensionAuthStatus(context: vscode.ExtensionContext, s
     tokenSource: token ? 'secret-storage' : null,
     transport: 'extension',
   }
+}
+
+export async function resolveExtensionCurrentUser(context: vscode.ExtensionContext, sdk: KanbanSDK): Promise<string> {
+  return resolveCurrentUserName(sdk, await resolveExtensionAuthContext(context))
 }

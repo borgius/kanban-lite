@@ -63,6 +63,8 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **5-column workflow**: Backlog, To Do, In Progress, Review, Done (fully customizable per board)
 - **Drag-and-drop**: Move cards between columns and reorder within columns
 - **Split-view editor**: Board on left, inline CodeMirror markdown editor on right with the existing toolbar shortcuts preserved
+- **CodeMirror comments editor**: Card comments now use the same CodeMirror-backed markdown composer as the main body editor, with markdown toolbar actions, preview, and consistent keyboard shortcuts in both standalone and VS Code views
+- **Comment author defaults**: The comment composer now pre-fills the author field from the logged-in username when available, and otherwise falls back to `User`
 - **Dynamic form tabs**: Every attached card form renders as its own tab in the card editor, alongside the built-in markdown, comments, and logs tabs; fields display with consistent spacing and theme-aware styling in both standalone and VS Code webview runtimes
 - **Meta tab — inline YAML metadata editor**: The card editor includes a dedicated `Meta` tab for editing `frontmatter.metadata` as raw YAML inside a CodeMirror editor. In edit mode, valid changes autosave via the existing debounce pipeline; invalid YAML stays as local draft text with an inline error and never reaches storage. In the create-card dialog, metadata is staged locally and included in the card payload on Save; the Save button is disabled while any YAML errors remain unresolved.
 - **Layout toggle**: Switch between horizontal and vertical board layouts
@@ -1804,7 +1806,9 @@ When you deploy the standalone UI through the Cloudflare Worker entrypoint, the 
 
 The generated Durable Object also persists workspace active-card selection, so `/api/tasks/active`, preview routes, and follow-up requests keep working even though the Worker runtime has no writable local filesystem. Non-Worker hosts still fall back to the local `.active-card.json` sidecar, and the Node standalone server remains the only host with full raw WebSocket payload parity for push-heavy flows.
 
-The interactive `scripts/deploy-cloudflare-worker.mjs` flow also accepts repeatable `--custom-domain <hostname>` values (or `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` in `.env.cloudflare`) and emits Cloudflare Worker `custom_domain` route blocks in the generated `wrangler.toml`. Set `KANBAN_CF_CUSTOM_DOMAIN_ZONE` / `--custom-domain-zone <zone>` when you want to pin the target zone explicitly; otherwise the script infers it from the hostname. The generated config also keeps `workers_dev = true`, so env-driven deployments can attach hostnames like `kk.incidentmidn.com` without giving up the default `*.workers.dev` URL.
+The interactive `scripts/deploy-cloudflare-worker.mjs` flow also accepts repeatable `--custom-domain <hostname>` values (or `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` in `.env.cloudflare`) and emits Cloudflare Worker `custom_domain` route blocks in the generated `wrangler.toml`. Set `KANBAN_CF_CUSTOM_DOMAIN_ZONE` / `--custom-domain-zone <zone>` when you want to pin the target zone explicitly; otherwise the script infers it from the hostname. The generated config also keeps `workers_dev = true`, so env-driven deployments can attach hostnames like `kl.incidentmind.com` without giving up the default `*.workers.dev` URL.
+
+Cloudflare deploys now also reuse already-existing R2 buckets when `--create-resources` is enabled, so repeat deploys stop tripping Wrangler's noisy “bucket already exists” error. The same helper auto-bundles the default webhook delivery provider (`webhooks` → `kl-plugin-webhook`) unless the config explicitly sets `plugins["webhook.delivery"].provider` to `"none"`.
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 

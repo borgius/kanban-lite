@@ -1,6 +1,6 @@
 import type { Card, CardTask, Priority, KanbanColumn, BoardInfo, Comment, LogEntry, CardStateReadModelTransport, CardDisplaySettings, CardFormAttachment, CardFormDataMap } from './card'
 import type { CardFrontmatter, LabelDefinition, WorkspaceInfo, ResolvedFormDescriptor } from './forms'
-import type { ShowSettingsMessage, PluginSettingsResultMessage, PluginSettingsPayload, PluginSettingsInstallScope } from './plugin-settings'
+import type { ShowSettingsMessage, PluginSettingsResultMessage, PluginSettingsInstallScope } from './plugin-settings'
 import type { PluginCapabilityNamespace } from '../config'
 
 export interface CreateCardPayload {
@@ -105,7 +105,7 @@ export type SyncTransportMode = 'websocket' | 'http-sync-websocket-notify'
 
 // Messages between extension and webview
 export type ExtensionMessage =
-  | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition>; minimizedColumnIds?: string[] }
+  | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; currentUser?: string; labels?: Record<string, LabelDefinition>; minimizedColumnIds?: string[] }
   | ConnectionStatusMessage
   | { type: 'syncTransportMode'; mode: SyncTransportMode }
   | { type: 'syncRequired'; reason?: string }

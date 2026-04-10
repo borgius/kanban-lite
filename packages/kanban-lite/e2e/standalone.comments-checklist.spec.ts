@@ -33,6 +33,8 @@ async function openSeededCard(page: Page, baseURL: string): Promise<void> {
 async function openCommentsTab(page: Page): Promise<void> {
   await page.getByRole('button', { name: /Comments/ }).click()
   await expect(page.getByLabel('Comment author name')).toBeVisible()
+  await expect(page.getByLabel('Comment author name')).toHaveValue('User')
+  await expect(page.locator('[data-testid="comment-markdown-editor"] .cm-content')).toBeVisible()
 }
 
 async function openTasksTab(page: Page, expectedProgress?: string): Promise<void> {
@@ -50,7 +52,7 @@ describeStandaloneScenario('standalone comment detail flow', 'comments-checklist
 
   test('adds a visible comment from the card detail drawer', async ({ page }) => {
     await page.getByLabel('Comment author name').fill(commentDraft.author)
-    await page.getByPlaceholder('Add a comment... (Markdown supported)').fill(commentDraft.content)
+    await page.locator('[data-testid="comment-markdown-editor"] .cm-content').fill(commentDraft.content)
     await page.getByRole('button', { name: 'Comment', exact: true }).click()
 
     await expect(page.getByRole('button', { name: /Comments/ })).toContainText('2')

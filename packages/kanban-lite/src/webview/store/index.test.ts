@@ -81,6 +81,9 @@ function resetStore() {
     drawerWidthPreview: null,
     effectiveDrawerWidth: 50,
     settingsOpen: false,
+    settingsTab: 'general',
+    settingsPluginId: null,
+    settingsBoardSubTab: 'defaults',
     labelDefs: {},
     activeCardId: null,
     activeCardTab: 'preview',
@@ -96,6 +99,18 @@ afterEach(() => {
 })
 
 describe('webview store fuzzy search state', () => {
+  it('tracks board settings sub-tabs independently of other settings routing state', () => {
+    const store = useStore.getState()
+
+    store.setSettingsTab('board')
+    store.setSettingsBoardSubTab('meta')
+    store.setSettingsPluginId('auth.identity:local')
+
+    expect(useStore.getState().settingsTab).toBe('board')
+    expect(useStore.getState().settingsBoardSubTab).toBe('meta')
+    expect(useStore.getState().settingsPluginId).toBe('auth.identity:local')
+  })
+
   it('uses the shared SDK matcher for exact and fuzzy search semantics', () => {
     const store = useStore.getState()
     store.setCards([

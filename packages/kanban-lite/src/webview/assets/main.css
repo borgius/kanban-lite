@@ -1944,6 +1944,96 @@ input:focus-visible {
   color: var(--vscode-input-placeholderForeground);
 }
 
+/* Shared CodeMirror surfaces */
+.kl-codemirror-surface {
+  border: 1px solid var(--vscode-input-border, var(--vscode-panel-border));
+  border-radius: 0.5rem;
+  background: var(--vscode-input-background);
+  overflow: hidden;
+  transition: border-color 0.1s, box-shadow 0.1s;
+}
+
+.kl-codemirror-surface:hover {
+  border-color: var(--vscode-inputOption-activeBorder, var(--vscode-focusBorder));
+}
+
+.kl-codemirror-surface:has(.cm-editor.cm-focused) {
+  border-color: var(--vscode-focusBorder);
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder);
+}
+
+.kl-codemirror-surface--error {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground));
+}
+
+.kl-codemirror-surface .cm-editor {
+  background: transparent;
+}
+
+.kl-codemirror-surface .cm-editor.cm-focused {
+  outline: none;
+}
+
+.kl-codemirror-surface .cm-scroller,
+.kl-codemirror-surface .cm-content,
+.kl-codemirror-surface .cm-gutters {
+  font-family: var(--vscode-editor-font-family, var(--vscode-font-family, monospace));
+  font-size: calc(var(--vscode-editor-font-size, 13px) * var(--card-zoom, 1));
+}
+
+.kl-codemirror-surface .cm-gutters {
+  background: transparent;
+  border-right: 1px solid var(--vscode-panel-border);
+}
+
+.kl-codemirror-surface .cm-activeLine,
+.kl-codemirror-surface .cm-activeLineGutter {
+  background: var(--vscode-editor-lineHighlightBackground, rgba(255, 255, 255, 0.05));
+}
+
+.kl-codemirror-surface .cm-placeholder {
+  color: var(--vscode-input-placeholderForeground);
+}
+
+.card-markdown-codemirror {
+  min-height: 200px;
+}
+
+.card-markdown-codemirror .cm-editor,
+.card-markdown-codemirror .cm-scroller,
+.card-markdown-codemirror .cm-content {
+  min-height: 200px;
+}
+
+.card-markdown-codemirror .cm-content {
+  padding: 1rem;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.card-markdown-codemirror .cm-line {
+  padding: 0;
+}
+
+.card-metadata-codemirror {
+  min-height: 12rem;
+}
+
+.card-metadata-codemirror .cm-editor,
+.card-metadata-codemirror .cm-scroller,
+.card-metadata-codemirror .cm-content {
+  min-height: 12rem;
+}
+
+.card-metadata-codemirror .cm-content {
+  padding: 0.875rem 1rem;
+  line-height: 1.6;
+}
+
+.card-metadata-codemirror .cm-line {
+  padding: 0;
+}
+
 /* Card inline markdown description */
 .card-inline-markdown code {
   font-family: var(--vscode-editor-font-family, 'SF Mono', Monaco, Menlo, Consolas, monospace);

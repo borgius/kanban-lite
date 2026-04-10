@@ -4,7 +4,7 @@ import type { BoardMetaFieldDef } from '../../shared/config'
 import { MetaBuilderSection } from './MetaBuilderSection'
 
 describe('MetaBuilderSection', () => {
-  it('renders overview stats and polished field summaries for existing metadata', () => {
+  it('renders a simpler field list for existing metadata', () => {
     const boardMeta: Record<string, BoardMetaFieldDef> = {
       ticketId: {
         default: 'INC-42',
@@ -21,11 +21,11 @@ describe('MetaBuilderSection', () => {
       <MetaBuilderSection boardMeta={boardMeta} />,
     )
 
-    expect(markup).toContain('Shape richer card context without cluttering the board.')
+    expect(markup).toContain('Keep board metadata simple: define reusable keys')
+    expect(markup).toContain('3 total')
     expect(markup).toContain('Shown on cards')
-    expect(markup).toContain('Documented')
-    expect(markup).toContain('Default · INC-42')
-    expect(markup).toContain('Preview behavior')
+    expect(markup).toContain('Default:')
+    expect(markup).toContain('INC-42')
     expect(markup).toContain('ticketId')
     expect(markup).toContain('location')
   })
@@ -36,7 +36,7 @@ describe('MetaBuilderSection', () => {
     )
 
     expect(markup).toContain('No metadata fields yet')
-    expect(markup).toContain('Create first field')
+    expect(markup).toContain('Add field')
     expect(markup).toContain('customer names, or locations')
   })
 })

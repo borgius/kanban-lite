@@ -104,6 +104,7 @@ interface SettingsPanelProps {
   onDeleteLabel?: (name: string) => void
   onPluginOptionsTabActivated?: () => void
   onTabChange?: (tab: SettingsTab) => void
+  onBoardSubTabChange?: (tab: BoardSubTab) => void
   initialTab?: SettingsTab
   initialBoardSubTab?: BoardSubTab
   boardMeta?: Record<string, BoardMetaFieldDef>
@@ -136,6 +137,7 @@ export function SettingsPanel({
   onDeleteLabel,
   onPluginOptionsTabActivated,
   onTabChange,
+  onBoardSubTabChange,
   initialTab,
   initialBoardSubTab,
   boardMeta,
@@ -168,6 +170,7 @@ export function SettingsPanel({
       onDeleteLabel={onDeleteLabel}
       onPluginOptionsTabActivated={onPluginOptionsTabActivated}
       onTabChange={onTabChange}
+      onBoardSubTabChange={onBoardSubTabChange}
       initialTab={initialTab}
       initialBoardSubTab={initialBoardSubTab}
       boardMeta={boardMeta}
@@ -1997,6 +2000,7 @@ function SettingsPanelContent({
   onDeleteLabel,
   onPluginOptionsTabActivated,
   onTabChange,
+  onBoardSubTabChange,
   initialTab,
   initialBoardSubTab,
   boardMeta,
@@ -2008,12 +2012,17 @@ function SettingsPanelContent({
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
-  const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>(initialBoardSubTab ?? 'defaults')
+  const [boardSubTab, setBoardSubTabRaw] = useState<BoardSubTab>(initialBoardSubTab ?? 'defaults')
 
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab)
     onTabChange?.(tab)
   }, [onTabChange])
+
+  const setBoardSubTab = useCallback((tab: BoardSubTab) => {
+    setBoardSubTabRaw(tab)
+    onBoardSubTabChange?.(tab)
+  }, [onBoardSubTabChange])
 
   // Sync activeTab when initialTab changes from URL navigation
   useEffect(() => {
@@ -2028,7 +2037,7 @@ function SettingsPanelContent({
 
   useEffect(() => {
     if (initialBoardSubTab && initialBoardSubTab !== boardSubTab) {
-      setBoardSubTab(initialBoardSubTab)
+      setBoardSubTabRaw(initialBoardSubTab)
     }
   }, [boardSubTab, initialBoardSubTab])
 

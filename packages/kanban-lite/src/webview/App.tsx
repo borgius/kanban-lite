@@ -121,6 +121,7 @@ function App(): React.JSX.Element {
     settingsOpen,
     settingsTab,
     settingsPluginId,
+    settingsBoardSubTab,
     selectedCardIds,
     setCards,
     setColumns,
@@ -133,6 +134,7 @@ function App(): React.JSX.Element {
     setSettingsOpen,
     setSettingsTab,
     setSettingsPluginId,
+    setSettingsBoardSubTab,
     setLabelDefs,
     mergeCardStates,
     selectCardRange,
@@ -1305,6 +1307,8 @@ function App(): React.JSX.Element {
           onRenameLabel={(oldName, newName) => vscode.postMessage({ type: 'renameLabel', oldName, newName })}
           onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
           initialTab={settingsTab}
+          initialBoardSubTab={settingsBoardSubTab}
+          onBoardSubTabChange={setSettingsBoardSubTab}
           boardMeta={boards.find(b => b.id === currentBoard)?.metadata}
           boardTitle={boards.find(b => b.id === currentBoard)?.title}
           boardActions={boards.find(b => b.id === currentBoard)?.actions}

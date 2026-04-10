@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { markdown } from '@codemirror/lang-markdown'
 import { marked } from 'marked'
 import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle, ScrollText } from 'lucide-react'
 import type { Comment, LogEntry, CardFrontmatter, SubmitFormTransportResult } from '../../shared/types'
@@ -6,8 +7,9 @@ import { buildChecklistReadModel, type ChecklistReadModel } from '../../sdk/modu
 import { cn } from '../lib/utils'
 import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
+import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import { MetadataEditorTab } from './MetadataEditorTab'
-import { wrapSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
+import { wrapEditorSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
 import { useStore, type CardTab, createFormCardTabId } from '../store'
 import { CardFormTab, resolveCardFormDescriptors } from './CardFormTab'
 
@@ -302,11 +304,12 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
     if (isEditMode) setStoreActiveCardTab(tab)
     else setLocalTab(tab)
   }, [isEditMode, setStoreActiveCardTab])
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const activeBoard = useMemo(
     () => boards.find((board) => board.id === currentBoard),
     [boards, currentBoard],
   )
+  const markdownExtensions = useMemo(() => [markdown()], [])
   const checklist = useMemo(() => {
     if (!isEditMode || !frontmatter || !Array.isArray(frontmatter.tasks)) {
       return null
@@ -331,54 +334,67 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
 
   // Auto-focus textarea when switching to write tab
   useEffect(() => {
-    if (activeTab === 'write' && textareaRef.current) {
-      textareaRef.current.focus()
+    if (activeTab === 'write') {
+      editorRef.current?.focus()
     }
   }, [activeTab])
 
   // Initial auto-focus
   useEffect(() => {
-    if (autoFocus && textareaRef.current) {
-      textareaRef.current.focus()
+    if (autoFocus) {
+      editorRef.current?.focus()
     }
   }, [autoFocus])
 
   const handleFormat = useCallback((action: FormatAction) => {
-    if (textareaRef.current) {
-      wrapSelection(textareaRef.current, value, onChange, action)
-    }
-  }, [value, onChange])
+    const editorView = editorRef.current?.getView()
+    if (!editorView) return
+    wrapEditorSelection(editorView, action)
+  }, [])
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleEditorKeyDown = useCallback((e: React.KeyboardEvent<HTMLElement>) => {
+    const editorView = editorRef.current?.getView()
+    if (!editorView) return
+
     // Tab key inserts spaces instead of changing focus
-    if (e.key === 'Tab') {
+    if (e.key === 'Tab' && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault()
-      const textarea = e.currentTarget
-      const start = textarea.selectionStart
-      const end = textarea.selectionEnd
-      const newValue = value.substring(0, start) + '  ' + value.substring(end)
-      onChange(newValue)
-      requestAnimationFrame(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + 2
+      const selection = editorView.state.selection.main
+      editorView.dispatch({
+        changes: {
+          from: selection.from,
+          to: selection.to,
+          insert: '  ',
+        },
+        selection: {
+          anchor: selection.from + 2,
+          head: selection.from + 2,
+        },
+        userEvent: 'input',
       })
+      editorView.focus()
+      return
     }
+
     // Ctrl/Cmd+B for bold
-    if ((e.metaKey || e.ctrlKey) && e.key === 'b') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
       e.preventDefault()
       e.stopPropagation()
       handleFormat('bold')
+      return
     }
     // Ctrl/Cmd+I for italic
-    if ((e.metaKey || e.ctrlKey) && e.key === 'i') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
       e.preventDefault()
       handleFormat('italic')
+      return
     }
     // Ctrl/Cmd+K for link
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
       e.preventDefault()
       handleFormat('link')
     }
-  }
+  }, [handleFormat])
 
   return (
     <div className={cn('card-markdown-shell h-full', className)}>
@@ -492,14 +508,20 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {activeTab === 'write' && (
-          <textarea
-            ref={textareaRef}
+          <CodeMirrorEditor
+            ref={editorRef}
             value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onKeyDown={handleKeyDown}
+            onChange={onChange}
+            onKeyDown={handleEditorKeyDown}
             placeholder={placeholder}
-            className="markdown-editor-textarea"
+            extensions={markdownExtensions}
+            className="kl-codemirror-surface card-markdown-codemirror"
+            fallbackTextareaClassName="markdown-editor-textarea"
+            minHeight="200px"
             spellCheck={false}
+            autoFocus={autoFocus}
+            testId="card-markdown-editor"
+            ariaLabel="Card markdown editor"
           />
         )}
         {activeTab === 'preview' && (

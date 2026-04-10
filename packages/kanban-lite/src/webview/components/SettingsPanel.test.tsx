@@ -686,6 +686,87 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(actionsMarkup).toContain('Rollback release')
   })
 
+  it('renders the remaining routed board settings sub-tabs', () => {
+    const previousLabelDefs = storeState.labelDefs
+    const previousCards = storeState.cards
+
+    try {
+      storeState.labelDefs = {
+        urgent: { color: '#ef4444', group: 'Priority' },
+      }
+      storeState.cards = [{
+        version: 1,
+        id: 'card-1',
+        status: 'backlog',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2026-03-18T00:00:00.000Z',
+        modified: '2026-03-18T00:00:00.000Z',
+        completedAt: null,
+        labels: ['urgent'],
+        attachments: [],
+        comments: [],
+        order: 'a0',
+        content: '# Card',
+        filePath: '/tmp/card-1.md',
+      }]
+
+      const defaultsMarkup = renderToStaticMarkup(
+        <SettingsPanel
+          isOpen
+          settings={{ ...DEFAULT_CARD_SETTINGS }}
+          workspace={null}
+          initialTab="board"
+          initialBoardSubTab="defaults"
+          onClose={() => {}}
+          onSave={() => {}}
+        />
+      )
+
+      expect(defaultsMarkup).toContain('Default Priority')
+      expect(defaultsMarkup).toContain('Default Status')
+
+      const labelsMarkup = renderToStaticMarkup(
+        <SettingsPanel
+          isOpen
+          settings={{ ...DEFAULT_CARD_SETTINGS }}
+          workspace={null}
+          initialTab="board"
+          initialBoardSubTab="labels"
+          onClose={() => {}}
+          onSave={() => {}}
+        />
+      )
+
+      expect(labelsMarkup).toContain('Labels')
+      expect(labelsMarkup).toContain('urgent')
+      expect(labelsMarkup).toContain('Priority')
+
+      const metadataMarkup = renderToStaticMarkup(
+        <SettingsPanel
+          isOpen
+          settings={{ ...DEFAULT_CARD_SETTINGS }}
+          workspace={null}
+          initialTab="board"
+          initialBoardSubTab="meta"
+          boardMeta={{
+            ticketId: { highlighted: true, description: 'Ticket number' },
+          }}
+          onClose={() => {}}
+          onSave={() => {}}
+        />
+      )
+
+      expect(metadataMarkup).toContain('Metadata Fields')
+      expect(metadataMarkup).toContain('ticketId')
+      expect(metadataMarkup).toContain('Add field')
+    } finally {
+      storeState.labelDefs = previousLabelDefs
+      storeState.cards = previousCards
+    }
+  })
+
   it('renders schema-driven provider options for auth and storage providers', () => {
     const authMarkup = renderToStaticMarkup(
       <SettingsPanel

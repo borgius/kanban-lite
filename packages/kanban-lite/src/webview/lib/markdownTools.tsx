@@ -1,17 +1,17 @@
 // src/webview/lib/markdownTools.tsx
 import { Marked } from 'marked'
 import type React from 'react'
+import type { EditorView } from '@uiw/react-codemirror'
 
 export type FormatAction = 'heading' | 'bold' | 'italic' | 'quote' | 'code' | 'link' | 'ul' | 'ol' | 'tasklist'
 
-export function wrapSelection(
-  textarea: HTMLTextAreaElement,
-  value: string,
-  onChange: (v: string) => void,
-  action: FormatAction
-) {
-  const start = textarea.selectionStart
-  const end = textarea.selectionEnd
+interface FormatSelectionResult {
+  nextValue: string
+  selectionStart: number
+  selectionEnd: number
+}
+
+export function formatMarkdownSelection(value: string, start: number, end: number, action: FormatAction): FormatSelectionResult {
   const selected = value.substring(start, end)
   let before = value.substring(0, start)
   const after = value.substring(end)
@@ -88,13 +88,48 @@ export function wrapSelection(
     }
   }
 
-  const newValue = before + replacement + after
-  onChange(newValue)
+  const nextValue = before + replacement + after
+  const nextCursor = start + (selected ? replacement.length : cursorOffset)
+
+  return {
+    nextValue,
+    selectionStart: nextCursor,
+    selectionEnd: nextCursor,
+  }
+}
+
+export function wrapSelection(
+  textarea: HTMLTextAreaElement,
+  value: string,
+  onChange: (v: string) => void,
+  action: FormatAction
+) {
+  const result = formatMarkdownSelection(value, textarea.selectionStart, textarea.selectionEnd, action)
+  onChange(result.nextValue)
   requestAnimationFrame(() => {
     textarea.focus()
-    const newPos = start + (selected ? replacement.length : cursorOffset)
-    textarea.selectionStart = textarea.selectionEnd = newPos
+    textarea.selectionStart = result.selectionStart
+    textarea.selectionEnd = result.selectionEnd
   })
+}
+
+export function wrapEditorSelection(editorView: EditorView, action: FormatAction) {
+  const selection = editorView.state.selection.main
+  const result = formatMarkdownSelection(editorView.state.doc.toString(), selection.from, selection.to, action)
+
+  editorView.dispatch({
+    changes: {
+      from: 0,
+      to: editorView.state.doc.length,
+      insert: result.nextValue,
+    },
+    selection: {
+      anchor: result.selectionStart,
+      head: result.selectionEnd,
+    },
+    userEvent: 'input',
+  })
+  editorView.focus()
 }
 
 interface ToolbarButtonProps {

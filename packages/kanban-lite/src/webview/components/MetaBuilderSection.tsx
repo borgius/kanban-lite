@@ -1,21 +1,35 @@
-import { useId, useMemo, useState } from 'react'
-import { Eye, FileText, Hash, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useId, useMemo, useState, type CSSProperties } from 'react'
 import type { BoardMetaFieldDef } from '../../shared/config'
-import {
-  MetaBadge,
-  MetaFieldActionButton,
-  MetaStat,
-  MetaVisibilitySwitch,
-  bodyTextStyle,
-  heroStyle,
-  inputStyle,
-  mutedTextStyle,
-  surfaceStyle,
-} from './MetaBuilderSection.chrome'
 
 interface MetaBuilderSectionProps {
   boardMeta?: Record<string, BoardMetaFieldDef>
   onSave?: (meta: Record<string, BoardMetaFieldDef>) => void
+}
+
+const sectionStyle: CSSProperties = {
+  borderColor: 'var(--vscode-panel-border)',
+  background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
+}
+
+const inputStyle: CSSProperties = {
+  borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+  background: 'var(--vscode-input-background)',
+  color: 'var(--vscode-input-foreground)',
+}
+
+const codeStyle: CSSProperties = {
+  background: 'var(--vscode-textCodeBlock-background, var(--vscode-editor-background))',
+  color: 'var(--vscode-foreground)',
+}
+
+const accentBadgeStyle: CSSProperties = {
+  background: 'var(--vscode-button-background)',
+  color: 'var(--vscode-button-foreground)',
+}
+
+const subtleBadgeStyle: CSSProperties = {
+  background: 'var(--vscode-badge-background)',
+  color: 'var(--vscode-badge-foreground)',
 }
 
 function cloneBoardMeta(boardMeta?: Record<string, BoardMetaFieldDef>): Record<string, BoardMetaFieldDef> {
@@ -37,6 +51,16 @@ function formatMetaPreviewValue(value: unknown): string {
 
 function createMetaBuilderResetKey(boardMeta: Record<string, BoardMetaFieldDef>): string {
   return JSON.stringify(boardMeta)
+}
+
+function createMetaSummaryText(total: number, visible: number, described: number): string {
+  if (total === 0) return 'No fields yet.'
+
+  return [
+    `${total} total`,
+    `${visible} shown on cards`,
+    `${described} with descriptions`,
+  ].join(' • ')
 }
 
 export function MetaBuilderSection({ boardMeta, onSave }: MetaBuilderSectionProps) {
@@ -77,8 +101,16 @@ function MetaBuilderSectionContent({
   const isDuplicateKey = trimmedKey.length > 0
     && trimmedKey !== editingKey
     && Object.prototype.hasOwnProperty.call(meta, trimmedKey)
+  const visibleEntries = useMemo(
+    () => entries.filter(([key]) => key !== editingKey),
+    [editingKey, entries],
+  )
+  const summaryText = useMemo(
+    () => createMetaSummaryText(entries.length, visibleCount, describedCount),
+    [describedCount, entries.length, visibleCount],
+  )
   const validationMessage = trimmedKey.length === 0
-    ? 'Name is required so cards have a stable metadata key to store values under.'
+    ? 'Name is required so cards have a stable metadata key.'
     : isDuplicateKey
       ? 'A field with this name already exists. Pick a unique key or edit the existing field instead.'
       : null
@@ -147,70 +179,40 @@ function MetaBuilderSectionContent({
   }
 
   const renderEditor = () => {
-    const title = editingKey ? `Editing ${editingKey}` : 'Create a metadata field'
+    const title = editingKey ? `Edit ${editingKey}` : 'Add metadata field'
     const nameInputId = `${editorIdBase}-name`
     const nameHintId = `${editorIdBase}-name-hint`
     const defaultInputId = `${editorIdBase}-default`
     const defaultHintId = `${editorIdBase}-default-hint`
     const descriptionInputId = `${editorIdBase}-description`
+    const descriptionHintId = `${editorIdBase}-description-hint`
+    const visibilityInputId = `${editorIdBase}-visibility`
     const visibilityHintId = `${editorIdBase}-visibility-hint`
     const validationId = `${editorIdBase}-validation`
+    const fieldScopeSummary = trimmedKey.length > 0
+      ? draftHighlighted
+        ? `${trimmedKey} will be shown on card previews.`
+        : `${trimmedKey} will stay in the card details only.`
+      : 'Choose a stable field name and decide whether it belongs on card previews.'
 
     return (
-      <div className="rounded-3xl border p-4 md:p-5" style={surfaceStyle}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="space-y-2">
-            <MetaBadge tone="accent">{editingKey ? 'Field editor' : 'New field'}</MetaBadge>
-            <div>
-              <div className="text-base font-semibold" style={bodyTextStyle}>{title}</div>
-              <p className="mt-1 max-w-2xl text-xs leading-6" style={mutedTextStyle}>
-                Give the field a stable key, an optional default value, and a short description so teammates know when to use it.
-              </p>
-            </div>
-          </div>
-
-          <div
-            className="min-w-0 rounded-2xl border p-4 xl:w-[280px]"
-            style={{
-              borderColor: 'color-mix(in srgb, var(--vscode-panel-border) 82%, transparent)',
-              background: 'color-mix(in srgb, var(--vscode-editor-background) 66%, transparent)',
-            }}
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
-              Preview
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span
-                translate="no"
-                className="inline-flex max-w-full items-center rounded-full px-3 py-1 font-mono text-xs"
-                style={{
-                  background: 'color-mix(in srgb, var(--vscode-textCodeBlock-background, var(--vscode-editor-background)) 78%, transparent)',
-                  color: 'var(--vscode-foreground)',
-                }}
-              >
-                {trimmedKey || 'field_key'}
-              </span>
-              <MetaBadge tone={draftHighlighted ? 'accent' : 'subtle'}>
-                {draftHighlighted ? 'Shown on cards' : 'Details only'}
-              </MetaBadge>
-            </div>
-            <p className="mt-3 text-xs leading-6" style={mutedTextStyle}>
-              {trimmedDescription || 'Add a description to clarify what belongs in this field.'}
+      <div className="max-w-4xl rounded-xl border px-4 py-4 space-y-4" style={sectionStyle}>
+        <div className="max-w-2xl space-y-2">
+          <div>
+            <div className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>{title}</div>
+            <p className="mt-1 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+              Use a stable key, an optional default value, and a short description so the field stays clear and consistent.
             </p>
-            {previewDefault && (
-              <div className="mt-3 rounded-2xl border px-3 py-2" style={{ borderColor: 'var(--vscode-panel-border)' }}>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
-                  Default value
-                </div>
-                <div className="mt-1 font-mono text-xs" style={bodyTextStyle}>{previewDefault}</div>
-              </div>
-            )}
+            <p className="mt-1 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+              {fieldScopeSummary}
+              {previewDefault ? ` Default: ${previewDefault}.` : ''}
+            </p>
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-2">
-          <label className="space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <label className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
               Name
             </span>
             <input
@@ -220,6 +222,7 @@ function MetaBuilderSectionContent({
               value={draftKey}
               onChange={(event) => setDraftKey(event.target.value)}
               placeholder="ticketId…"
+              className="rounded border px-2 py-1.5 text-sm"
               style={inputStyle}
               autoComplete="off"
               spellCheck={false}
@@ -229,13 +232,13 @@ function MetaBuilderSectionContent({
               }}
               autoFocus
             />
-            <span id={nameHintId} className="text-xs leading-5" style={mutedTextStyle}>
+            <span id={nameHintId} className="block text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
               Use stable keys like <code>ticketId</code>, <code>customer.segment</code>, or <code>location</code>.
             </span>
           </label>
 
-          <label className="space-y-1.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
+          <label className="flex min-w-0 flex-col gap-1.5">
+            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
               Default
             </span>
             <input
@@ -245,6 +248,7 @@ function MetaBuilderSectionContent({
               value={draftDefault}
               onChange={(event) => setDraftDefault(event.target.value)}
               placeholder="Optional starter value…"
+              className="rounded border px-2 py-1.5 text-sm"
               style={inputStyle}
               autoComplete="off"
               onKeyDown={(event) => {
@@ -252,70 +256,73 @@ function MetaBuilderSectionContent({
                 if (event.key === 'Escape') cancelEdit()
               }}
             />
-            <span id={defaultHintId} className="text-xs leading-5" style={mutedTextStyle}>
+            <span id={defaultHintId} className="block text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
               Prefill a sensible starting value when new cards don’t provide one yet.
             </span>
           </label>
         </div>
 
-        <label className="mt-3 block space-y-1.5">
-          <span className="text-xs font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
+        <label className="flex min-w-0 flex-col gap-1.5">
+          <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
             Description
           </span>
-          <input
+          <textarea
             id={descriptionInputId}
             name="metadataFieldDescription"
+            aria-describedby={descriptionHintId}
             value={draftDescription}
             onChange={(event) => setDraftDescription(event.target.value)}
             placeholder="Explain when teammates should use this field…"
+            rows={3}
+            className="min-h-[88px] resize-y rounded border px-2 py-2 text-sm"
             style={inputStyle}
-            autoComplete="off"
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') commitEdit()
-              if (event.key === 'Escape') cancelEdit()
-            }}
           />
+          <span id={descriptionHintId} className="block text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            Optional. Explain what belongs in this field so teammates know when to use it.
+          </span>
         </label>
 
-        <div
-          className="mt-4 rounded-2xl border px-4 py-3"
-          style={{
-            borderColor: 'var(--vscode-panel-border)',
-            background: 'color-mix(in srgb, var(--vscode-editor-background) 72%, transparent)',
-          }}
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <div className="text-sm font-medium" style={bodyTextStyle}>Show on card previews</div>
-              <p id={visibilityHintId} className="mt-1 text-xs leading-5" style={mutedTextStyle}>
-                Highlight important metadata directly on board cards so people can scan it without opening details.
-              </p>
-            </div>
-            <MetaVisibilitySwitch checked={draftHighlighted} onChange={setDraftHighlighted} />
-          </div>
+        <div className="rounded-xl border px-3 py-3" style={{ borderColor: 'var(--vscode-panel-border)' }}>
+          <label className="flex items-start gap-3">
+            <input
+              id={visibilityInputId}
+              name="metadataFieldHighlighted"
+              type="checkbox"
+              checked={draftHighlighted}
+              onChange={(event) => setDraftHighlighted(event.target.checked)}
+              aria-describedby={visibilityHintId}
+              className="mt-0.5"
+            />
+            <span className="space-y-1">
+              <span className="block text-sm font-medium" style={{ color: 'var(--vscode-foreground)' }}>
+                Show on card previews
+              </span>
+              <span id={visibilityHintId} className="block text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                Turn this on only for fields people should notice while scanning the board.
+              </span>
+            </span>
+          </label>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="space-y-3 border-t pt-3" style={{ borderColor: 'var(--vscode-panel-border)' }}>
           <div
-            className="rounded-2xl border px-3 py-2 text-xs leading-5"
+            className="rounded border px-3 py-2 text-xs leading-5"
             style={{
               borderColor: validationMessage ? 'var(--vscode-errorForeground, #f87171)' : 'var(--vscode-panel-border)',
-              background: validationMessage
-                ? 'color-mix(in srgb, var(--vscode-errorForeground, #f87171) 10%, transparent)'
-                : 'color-mix(in srgb, var(--vscode-editor-background) 72%, transparent)',
+              background: validationMessage ? 'color-mix(in srgb, var(--vscode-errorForeground, #f87171) 10%, transparent)' : 'transparent',
               color: validationMessage ? 'var(--vscode-errorForeground, #f87171)' : 'var(--vscode-descriptionForeground)',
             }}
             id={validationId}
             role={validationMessage ? 'alert' : 'status'}
             aria-live="polite"
           >
-            {validationMessage ?? 'Looks good. Save to apply this field to the board configuration immediately.'}
+            {validationMessage ?? 'Looks good. Saving updates the board metadata immediately.'}
           </div>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              className="rounded-xl px-4 py-2 text-sm font-medium"
+              className="rounded px-3 py-1.5 text-xs font-medium"
               style={{
                 background: 'var(--vscode-button-secondaryBackground)',
                 color: 'var(--vscode-button-secondaryForeground)',
@@ -327,7 +334,7 @@ function MetaBuilderSectionContent({
             <button
               type="button"
               disabled={!canSave}
-              className="rounded-xl px-4 py-2 text-sm font-medium disabled:cursor-default disabled:opacity-60"
+              className="rounded px-3 py-1.5 text-xs font-medium disabled:cursor-default disabled:opacity-60"
               style={{
                 background: 'var(--vscode-button-background)',
                 color: 'var(--vscode-button-foreground)',
@@ -343,165 +350,125 @@ function MetaBuilderSectionContent({
   }
 
   return (
-    <div className="px-4 py-4">
-      <div className="rounded-3xl border p-4 md:p-5" style={heroStyle}>
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="px-4 py-4 space-y-4">
+      <div className="flex flex-col gap-3 rounded-xl border px-3 py-3 md:flex-row md:items-start md:justify-between" style={sectionStyle}>
+        <div className="space-y-1">
           <div className="space-y-2">
-            <MetaBadge tone="accent">Metadata fields</MetaBadge>
             <div>
-              <h3 className="text-balance text-lg font-semibold" style={bodyTextStyle}>
-                Shape richer card context without cluttering the board.
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
+                Metadata Fields
               </h3>
-              <p className="mt-2 max-w-2xl text-sm leading-6" style={mutedTextStyle}>
-                Define reusable metadata keys, keep defaults close at hand, and choose which fields deserve a spot on the card preview.
+              <p className="mt-1 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                Keep board metadata simple: define reusable keys, add optional defaults, and decide which fields should appear on cards.
+              </p>
+              <p className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                {summaryText}
               </p>
             </div>
           </div>
-
-          <div className="grid gap-2 sm:grid-cols-3">
-            <MetaStat icon={Hash} label="Fields" value={String(entries.length)} />
-            <MetaStat icon={Eye} label="Shown on cards" value={String(visibleCount)} />
-            <MetaStat icon={FileText} label="Documented" value={String(describedCount)} />
-          </div>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <p className="text-xs leading-5" style={mutedTextStyle}>
-            Tip: highlight only the fields people need for quick scanning — everything else can stay tucked into the card details.
-          </p>
+        <div className="flex items-center justify-end">
           <button
             type="button"
             onClick={startAdd}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium"
+            className="rounded px-3 py-1.5 text-xs font-medium"
             style={{
               background: 'var(--vscode-button-background)',
               color: 'var(--vscode-button-foreground)',
             }}
           >
-            <Plus size={15} />
             Add field
           </button>
         </div>
       </div>
 
-      {(isAdding || editingKey !== null) && <div className="mt-4">{renderEditor()}</div>}
+      {(isAdding || editingKey !== null) && renderEditor()}
 
       {entries.length === 0 && !isAdding ? (
         <div
-          className="mt-4 rounded-3xl border border-dashed px-6 py-8 text-center"
+          className="rounded-xl border border-dashed px-6 py-8 text-center"
           style={{
             borderColor: 'var(--vscode-panel-border)',
-            background: 'color-mix(in srgb, var(--vscode-editorWidget-background, var(--vscode-sideBar-background)) 82%, transparent)',
+            background: 'transparent',
           }}
         >
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: 'color-mix(in srgb, var(--vscode-button-background) 14%, transparent)' }}>
-            <Hash size={20} style={{ color: 'var(--vscode-button-background)' }} />
-          </div>
-          <h4 className="mt-4 text-base font-semibold" style={bodyTextStyle}>No metadata fields yet</h4>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={mutedTextStyle}>
+          <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>No metadata fields yet</h4>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: 'var(--vscode-descriptionForeground)' }}>
             Add your first field to capture extra card context like ticket IDs, customer names, or locations.
           </p>
           <button
             type="button"
             onClick={startAdd}
-            className="mt-5 inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-sm font-medium"
+            className="mt-5 rounded px-3 py-1.5 text-xs font-medium"
             style={{
               background: 'var(--vscode-button-background)',
               color: 'var(--vscode-button-foreground)',
             }}
           >
-            <Plus size={15} />
-            Create first field
+            Add field
           </button>
         </div>
-      ) : (
-        <div className="mt-4 grid gap-3 xl:grid-cols-2">
-          {entries.map(([key, def]) => {
-            if (editingKey === key) {
-              return <div key={key}>{renderEditor()}</div>
-            }
-
+      ) : visibleEntries.length > 0 ? (
+        <div className="rounded-xl border" style={sectionStyle}>
+          {visibleEntries.map(([key, def], index) => {
             const defaultValue = def.default !== undefined ? formatMetaPreviewValue(def.default) : ''
             const isPendingDelete = pendingDeleteKey === key
 
             return (
               <div
                 key={key}
-                className="rounded-3xl border p-4 transition-colors md:p-5"
-                style={def.highlighted
-                  ? {
-                      ...surfaceStyle,
-                      borderColor: 'color-mix(in srgb, var(--vscode-button-background) 38%, var(--vscode-panel-border))',
-                      background: 'linear-gradient(180deg, color-mix(in srgb, var(--vscode-button-background) 8%, transparent), var(--vscode-editorWidget-background, var(--vscode-sideBar-background)))',
-                    }
-                  : surfaceStyle}
-                onMouseEnter={(event) => {
-                  event.currentTarget.style.background = 'color-mix(in srgb, var(--vscode-list-hoverBackground) 68%, var(--vscode-editorWidget-background, var(--vscode-sideBar-background)))'
-                }}
-                onMouseLeave={(event) => {
-                  event.currentTarget.style.background = def.highlighted
-                    ? 'linear-gradient(180deg, color-mix(in srgb, var(--vscode-button-background) 8%, transparent), var(--vscode-editorWidget-background, var(--vscode-sideBar-background)))'
-                    : 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))'
-                }}
+                className="space-y-3 px-3 py-3"
+                style={index === 0 ? undefined : { borderTop: '1px solid var(--vscode-panel-border)' }}
               >
-                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="min-w-0 flex-1 space-y-3">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
                         translate="no"
-                        className="inline-flex max-w-full items-center rounded-full px-3 py-1 font-mono text-xs"
-                        style={{
-                          background: 'color-mix(in srgb, var(--vscode-textCodeBlock-background, var(--vscode-editor-background)) 78%, transparent)',
-                          color: 'var(--vscode-foreground)',
-                        }}
+                        className="inline-flex max-w-full items-center rounded px-2 py-0.5 font-mono text-xs"
+                        style={codeStyle}
                       >
                         {key}
                       </span>
-                      <MetaBadge tone={def.highlighted ? 'accent' : 'subtle'}>
-                        {def.highlighted ? 'Shown on cards' : 'Details only'}
-                      </MetaBadge>
-                      {defaultValue && <MetaBadge>Default · {defaultValue}</MetaBadge>}
-                    </div>
-
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(220px,0.9fr)]">
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
-                          Description
-                        </div>
-                        <p className="mt-2 break-words text-sm leading-6" style={def.description ? bodyTextStyle : mutedTextStyle}>
-                          {def.description || 'No description yet. Add one to explain how this field should be used.'}
-                        </p>
-                      </div>
-
-                      <div
-                        className="rounded-2xl border px-4 py-3"
-                        style={{
-                          borderColor: 'var(--vscode-panel-border)',
-                          background: 'color-mix(in srgb, var(--vscode-editor-background) 72%, transparent)',
-                        }}
+                      <span
+                        className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                        style={def.highlighted ? accentBadgeStyle : subtleBadgeStyle}
                       >
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em]" style={mutedTextStyle}>
-                          Preview behavior
-                        </div>
-                        <p className="mt-2 break-words text-xs leading-6" style={mutedTextStyle}>
-                          {def.highlighted
-                            ? 'This field appears directly on the board card preview for faster scanning.'
-                            : 'This field stays inside the card details until you decide it should appear on previews.'}
-                        </p>
-                      </div>
+                        {def.highlighted ? 'Shown on cards' : 'Details only'}
+                      </span>
+                      {defaultValue && (
+                        <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                          Default: <span className="font-mono" style={{ color: 'var(--vscode-foreground)' }}>{defaultValue}</span>
+                        </span>
+                      )}
                     </div>
+
+                    <p className="break-words text-sm leading-5" style={{ color: def.description ? 'var(--vscode-foreground)' : 'var(--vscode-descriptionForeground)' }}>
+                      {def.description || 'No description yet.'}
+                    </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => startEdit(key)}
+                      className="rounded border px-2 py-1 text-xs font-medium"
+                      style={{
+                        borderColor: 'var(--vscode-panel-border)',
+                        color: 'var(--vscode-foreground)',
+                      }}
+                    >
+                      Edit
+                    </button>
                     {isPendingDelete ? (
                       <>
-                        <span className="text-xs font-medium" style={mutedTextStyle}>Delete this field?</span>
                         <button
                           type="button"
-                          className="rounded-xl px-3 py-2 text-xs font-medium"
+                          className="rounded border px-2 py-1 text-xs font-medium"
                           style={{
-                            background: 'var(--vscode-button-secondaryBackground)',
-                            color: 'var(--vscode-button-secondaryForeground)',
+                            borderColor: 'var(--vscode-panel-border)',
+                            color: 'var(--vscode-foreground)',
                           }}
                           onClick={() => setPendingDeleteKey(null)}
                         >
@@ -509,33 +476,42 @@ function MetaBuilderSectionContent({
                         </button>
                         <button
                           type="button"
-                          className="rounded-xl px-3 py-2 text-xs font-medium"
+                          className="rounded border px-2 py-1 text-xs font-medium"
                           style={{
-                            background: 'color-mix(in srgb, var(--vscode-errorForeground, #f87171) 14%, transparent)',
+                            borderColor: 'color-mix(in srgb, var(--vscode-errorForeground, #f87171) 40%, var(--vscode-panel-border))',
                             color: 'var(--vscode-errorForeground, #f87171)',
                           }}
                           onClick={() => deleteField(key)}
                         >
-                          Delete
+                          Confirm delete
                         </button>
                       </>
                     ) : (
-                      <>
-                        <MetaFieldActionButton label={`Edit ${key}`} onClick={() => startEdit(key)}>
-                          <Pencil size={15} />
-                        </MetaFieldActionButton>
-                        <MetaFieldActionButton label={`Delete ${key}`} danger onClick={() => setPendingDeleteKey(key)}>
-                          <Trash2 size={15} />
-                        </MetaFieldActionButton>
-                      </>
+                      <button
+                        type="button"
+                        onClick={() => setPendingDeleteKey(key)}
+                        className="rounded border px-2 py-1 text-xs font-medium"
+                        style={{
+                          borderColor: 'color-mix(in srgb, var(--vscode-errorForeground, #f87171) 40%, var(--vscode-panel-border))',
+                          color: 'var(--vscode-errorForeground, #f87171)',
+                        }}
+                      >
+                        Delete
+                      </button>
                     )}
                   </div>
                 </div>
+
+                {isPendingDelete && (
+                  <p className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                    Delete this field from the board metadata configuration?
+                  </p>
+                )}
               </div>
             )
           })}
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

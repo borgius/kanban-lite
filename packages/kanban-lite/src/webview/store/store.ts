@@ -3,7 +3,7 @@ import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, Work
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
-import type { SettingsTab } from '../settingsTabs'
+import type { BoardSubTab, SettingsTab } from '../settingsTabs'
 
 import type { DueDateFilter, LayoutMode, SortOrder, CardTab, FixedCardTab, FormCardTab } from './card-tabs'
 import { FIXED_CARD_TABS, DEFAULT_CARD_TAB, FORM_CARD_TAB_PREFIX, isFixedCardTab, isFormCardTab, isCardTabRouteCandidate, createFormCardTabId, isRecord, sanitizeCardTab, hasResolvedAttachmentSchema, getCardFormTabIds, normalizeCardTab } from './card-tabs'
@@ -58,6 +58,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   settingsOpen: false,
   settingsTab: 'general' as SettingsTab,
   settingsPluginId: null,
+  settingsBoardSubTab: 'defaults' as BoardSubTab,
   labelDefs: {},
   activeCardId: null,
   activeCardTab: DEFAULT_CARD_TAB,
@@ -243,6 +244,7 @@ export const useStore = create<KanbanState>((set, get) => ({
   setSettingsOpen: (open) => set({ settingsOpen: open }),
   setSettingsTab: (tab) => set({ settingsTab: tab }),
   setSettingsPluginId: (id) => set({ settingsPluginId: id }),
+  setSettingsBoardSubTab: (tab) => set({ settingsBoardSubTab: tab }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFuzzySearch: (enabled) => set({ fuzzySearch: enabled }),
   clearPlainTextSearch: () => set((state) => {

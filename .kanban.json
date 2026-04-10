@@ -6,14 +6,26 @@
       "title": [
         "ticketId"
       ],
-      "metadata": [
-        "ticketId",
-        "location",
-        "company",
-        "position",
-        "jobUrl",
-        "salary"
-      ],
+      "metadata": {
+        "ticketId": {
+          "highlighted": true
+        },
+        "location": {
+          "highlighted": true
+        },
+        "company": {
+          "highlighted": true
+        },
+        "position": {
+          "highlighted": true
+        },
+        "jobUrl": {
+          "highlighted": true
+        },
+        "salary": {
+          "highlighted": true
+        }
+      },
       "columns": [
         {
           "id": "backlog",
@@ -56,7 +68,7 @@
   "showAssignee": true,
   "showDueDate": true,
   "showLabels": true,
-  "showBuildWithAI": true,
+  "showBuildWithAI": false,
   "showFileName": false,
   "cardViewMode": "compact",
   "markdownEditorMode": false,
@@ -66,10 +78,11 @@
   "boardBackgroundMode": "fancy",
   "boardBackgroundPreset": "aurora",
   "port": 2954,
+  "drawerPosition": "right",
   "labels": {},
   "compactMode": false,
   "panelMode": "drawer",
-  "drawerWidth": 54.22997754491018,
+  "drawerWidth": 45.883941650390625,
   "forms": {
     "editorial-review": {
       "name": "Editorial Review",

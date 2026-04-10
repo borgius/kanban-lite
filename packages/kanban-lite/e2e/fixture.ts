@@ -40,6 +40,10 @@ const standaloneScenarioDefinitions = {
     templateDir: path.join(fixtureTemplatesDir, 'card-drawer'),
     port: 4178,
   },
+  'board-settings': {
+    templateDir: path.join(fixtureTemplatesDir, 'board-settings'),
+    port: 4179,
+  },
 } as const
 
 export type StandaloneE2EScenarioName = keyof typeof standaloneScenarioDefinitions

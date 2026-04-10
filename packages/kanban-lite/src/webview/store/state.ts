@@ -3,7 +3,7 @@ import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, Work
 import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
 import { generateSlug, normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
-import type { SettingsTab } from '../settingsTabs'
+import type { BoardSubTab, SettingsTab } from '../settingsTabs'
 
 import type { DueDateFilter, LayoutMode, SortOrder, CardTab } from './card-tabs'
 import type { SavedView, ColumnVisibilityState, ColumnVisibilityByBoard } from './column-visibility'
@@ -30,6 +30,7 @@ export interface KanbanState {
   settingsOpen: boolean
   settingsTab: SettingsTab
   settingsPluginId: string | null
+  settingsBoardSubTab: BoardSubTab
   labelDefs: Record<string, LabelDefinition>
 
   /** ID of the currently open card in the editor (null if none) */
@@ -75,6 +76,7 @@ export interface KanbanState {
   setSettingsOpen: (open: boolean) => void
   setSettingsTab: (tab: SettingsTab) => void
   setSettingsPluginId: (id: string | null) => void
+  setSettingsBoardSubTab: (tab: BoardSubTab) => void
   setSearchQuery: (query: string) => void
   setFuzzySearch: (enabled: boolean) => void
   clearPlainTextSearch: () => void

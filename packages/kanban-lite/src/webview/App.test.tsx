@@ -199,6 +199,9 @@ const storeState = {
   drawerWidthPreview: null as number | null,
   effectiveDrawerWidth: 50,
   settingsOpen: false,
+  settingsTab: 'general',
+  settingsPluginId: null as string | null,
+  settingsBoardSubTab: 'defaults',
   selectedCardIds: [] as string[],
   setCards: vi.fn((cards) => {
     storeState.cards = cards
@@ -230,6 +233,15 @@ const storeState = {
   }),
   setSettingsOpen: vi.fn((settingsOpen) => {
     storeState.settingsOpen = settingsOpen
+  }),
+  setSettingsTab: vi.fn((settingsTab) => {
+    storeState.settingsTab = settingsTab
+  }),
+  setSettingsPluginId: vi.fn((settingsPluginId) => {
+    storeState.settingsPluginId = settingsPluginId
+  }),
+  setSettingsBoardSubTab: vi.fn((settingsBoardSubTab) => {
+    storeState.settingsBoardSubTab = settingsBoardSubTab
   }),
   setLabelDefs: vi.fn(),
   toggleSelectCard: vi.fn(),
@@ -415,6 +427,9 @@ beforeEach(() => {
     drawerWidthPreview: null,
     effectiveDrawerWidth: 50,
     settingsOpen: false,
+    settingsTab: 'general',
+    settingsPluginId: null,
+    settingsBoardSubTab: 'defaults',
     selectedCardIds: [],
   })
 
@@ -972,6 +987,32 @@ describe('App plugin settings bridge', () => {
         rollback: 'Rollback',
       },
     })
+  })
+
+  it('passes routed board settings sub-tab props through the app shell', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    storeState.settingsTab = 'board'
+    storeState.settingsBoardSubTab = 'meta'
+
+    renderApp()
+    renderApp()
+
+    dispatchMessage({
+      type: 'showSettings',
+      settings: { ...DEFAULT_CARD_SETTINGS },
+      pluginSettings: PLUGIN_SETTINGS_FIXTURE,
+    })
+
+    renderApp()
+
+    const latestSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    expect(latestSettingsPanelProps?.initialTab).toBe('board')
+    expect(latestSettingsPanelProps?.initialBoardSubTab).toBe('meta')
+
+    ;(latestSettingsPanelProps?.onBoardSubTabChange as ((tab: string) => void) | undefined)?.('labels')
+
+    expect(storeState.setSettingsBoardSubTab).toHaveBeenCalledWith('labels')
   })
 })
 

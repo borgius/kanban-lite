@@ -3,13 +3,14 @@
  *
  * URL schema:
  *   /<boardId>/<cardId>/<tabId>?priority=&labels=&assignee=&dueDate=&q=
- *   /settings/<general|defaults|labels>
+ *   /settings/<general>
+ *   /settings/board/<defaults|title|actions|labels|meta>
  *   /settings/plugins/<pluginId>
  *
  * Architecture:
  *  - rootRoute renders <App /> + <URLSync /> + <Outlet />
  *  - boardRoute / cardRoute / tabRoute extend the URL (nested paths)
- *  - settingsRoute / settingsTabRoute / settingsPluginIdRoute handle settings URLs
+ *  - settingsRoute / settingsBoardRoute / settingsTabRoute / settingsPluginIdRoute handle settings URLs
  *  - URLSync is the single bridge between the URL and Zustand store
  *
  * The Zustand store is always the source of truth for UI state.
@@ -33,7 +34,14 @@ import {
 import App from './App'
 import { useStore, type DueDateFilter, isCardTabRouteCandidate, normalizeCardTab } from './store'
 import type { Priority } from '../shared/types'
-import { SETTINGS_TAB_FROM_SLUG, SETTINGS_TAB_TO_SLUG } from './settingsTabs'
+import {
+  BOARD_SETTINGS_TAB_FROM_SLUG,
+  BOARD_SETTINGS_TAB_TO_SLUG,
+  DEFAULT_BOARD_SUBTAB,
+  LEGACY_BOARD_SETTINGS_TAB_FROM_SETTINGS_SLUG,
+  SETTINGS_TAB_FROM_SLUG,
+  SETTINGS_TAB_TO_SLUG,
+} from './settingsTabs'
 import { shouldUseMemoryHistory } from './routerHistory'
 import { buildSearchStr, parseRouteBoolean, validateSearch, type RouteSearch } from './routerSearch'
 
@@ -60,6 +68,7 @@ function URLSync() {
     cardId?: string
     tabId?: string
     settingsTab?: string
+    boardSettingsTab?: string
     pluginId?: string
   }
   const search = useSearch({ strict: false }) as RouteSearch
@@ -75,6 +84,7 @@ function URLSync() {
     setSettingsOpen,
     setSettingsTab,
     setSettingsPluginId,
+    setSettingsBoardSubTab,
   } = useStore.getState()
 
   const columns = useStore(s => s.columns)
@@ -90,10 +100,22 @@ function URLSync() {
   const settingsOpen = useStore(s => s.settingsOpen)
   const settingsTab = useStore(s => s.settingsTab)
   const settingsPluginId = useStore(s => s.settingsPluginId)
+  const settingsBoardSubTab = useStore(s => s.settingsBoardSubTab)
 
   // Detect initial settings route from URL params
-  const initialSettingsTabResolved = params.settingsTab ? SETTINGS_TAB_FROM_SLUG[params.settingsTab] : undefined
-  const isInitialSettings = Boolean(initialSettingsTabResolved || params.pluginId)
+  const initialSettingsTabResolved = params.pluginId
+    ? 'pluginOptions'
+    : params.boardSettingsTab
+      ? 'board'
+      : params.settingsTab
+        ? SETTINGS_TAB_FROM_SLUG[params.settingsTab]
+        : undefined
+  const initialBoardSettingsTabResolved = params.boardSettingsTab
+    ? BOARD_SETTINGS_TAB_FROM_SLUG[params.boardSettingsTab]
+    : params.settingsTab
+      ? LEGACY_BOARD_SETTINGS_TAB_FROM_SETTINGS_SLUG[params.settingsTab]
+      : undefined
+  const isInitialSettings = Boolean(initialSettingsTabResolved)
 
   // Initialise prevStateRef from current URL (not store defaults) to prevent
   // spurious navigation on the first Store→URL effect run.
@@ -105,9 +127,10 @@ function URLSync() {
     searchStr: buildSearchStr(search),
     settingsOpen: isInitialSettings,
     settingsTab: isInitialSettings
-      ? (params.pluginId ? 'plugins' : SETTINGS_TAB_TO_SLUG[initialSettingsTabResolved ?? 'general'])
+      ? SETTINGS_TAB_TO_SLUG[initialSettingsTabResolved ?? 'general']
       : 'general',
     settingsPluginId: params.pluginId ?? null,
+    settingsBoardSubTab: BOARD_SETTINGS_TAB_TO_SLUG[initialBoardSettingsTabResolved ?? initialStore.settingsBoardSubTab ?? DEFAULT_BOARD_SUBTAB],
   })
 
   // ── 1. URL → Store: one-time initialisation on mount ──────────────────────
@@ -149,11 +172,29 @@ function URLSync() {
       setSettingsOpen(true)
       setSettingsTab('pluginOptions')
       setSettingsPluginId(params.pluginId)
+    } else if (params.boardSettingsTab) {
+      const resolvedBoardSettingsTab = BOARD_SETTINGS_TAB_FROM_SLUG[params.boardSettingsTab]
+      if (resolvedBoardSettingsTab) {
+        setSettingsOpen(true)
+        setSettingsTab('board')
+        setSettingsPluginId(null)
+        setSettingsBoardSubTab(resolvedBoardSettingsTab)
+      }
     } else if (params.settingsTab) {
+      const legacyBoardSettingsTab = LEGACY_BOARD_SETTINGS_TAB_FROM_SETTINGS_SLUG[params.settingsTab]
+      if (legacyBoardSettingsTab) {
+        setSettingsOpen(true)
+        setSettingsTab('board')
+        setSettingsPluginId(null)
+        setSettingsBoardSubTab(legacyBoardSettingsTab)
+        return
+      }
+
       const resolved = SETTINGS_TAB_FROM_SLUG[params.settingsTab]
       if (resolved) {
         setSettingsOpen(true)
         setSettingsTab(resolved)
+        setSettingsPluginId(null)
       }
     }
 
@@ -179,24 +220,33 @@ function URLSync() {
   useEffect(() => {
     if (!settingsOpen) return
     const tabSlug = SETTINGS_TAB_TO_SLUG[settingsTab] ?? 'general'
+    const boardSettingsTabSlug = BOARD_SETTINGS_TAB_TO_SLUG[settingsBoardSubTab] ?? DEFAULT_BOARD_SUBTAB
     const prev = prevStateRef.current
     const justOpened = !prev.settingsOpen
     const tabChanged = prev.settingsTab !== tabSlug
     const pluginChanged = prev.settingsPluginId !== settingsPluginId
+    const boardSettingsTabChanged = settingsTab === 'board' && prev.settingsBoardSubTab !== boardSettingsTabSlug
 
-    if (!justOpened && !tabChanged && !pluginChanged) return
+    if (!justOpened && !tabChanged && !pluginChanged && !boardSettingsTabChanged) return
 
     prevStateRef.current = {
       ...prev,
       settingsOpen: true,
       settingsTab: tabSlug,
       settingsPluginId: settingsPluginId,
+      settingsBoardSubTab: boardSettingsTabSlug,
     }
 
     if (settingsTab === 'pluginOptions' && settingsPluginId) {
       navigate({
         to: '/settings/plugins/$pluginId',
         params: { pluginId: settingsPluginId },
+        replace: !justOpened,
+      })
+    } else if (settingsTab === 'board') {
+      navigate({
+        to: '/settings/board/$boardSettingsTab',
+        params: { boardSettingsTab: boardSettingsTabSlug },
         replace: !justOpened,
       })
     } else {
@@ -206,7 +256,7 @@ function URLSync() {
         replace: !justOpened,
       })
     }
-  }, [settingsOpen, settingsTab, settingsPluginId, navigate])
+  }, [settingsOpen, settingsTab, settingsPluginId, settingsBoardSubTab, navigate])
 
   // ── 3b. Board URL sync — waits for columns ────────────────────────────────
   const firstNavRef = useRef(true)
@@ -351,6 +401,43 @@ const settingsIndexRoute = createRoute({
   component: () => null,
 })
 
+// "/settings/board" — board settings layout
+const settingsBoardRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: 'board',
+  component: () => <Outlet />,
+})
+
+// "/settings/board/" — redirect to /settings/board/defaults
+const settingsBoardIndexRoute = createRoute({
+  getParentRoute: () => settingsBoardRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({
+      to: '/settings/board/$boardSettingsTab',
+      params: { boardSettingsTab: BOARD_SETTINGS_TAB_TO_SLUG[DEFAULT_BOARD_SUBTAB] },
+    })
+  },
+  component: () => null,
+})
+
+// "/settings/board/$boardSettingsTab" — defaults / title / actions / labels / meta
+const settingsBoardTabRoute = createRoute({
+  getParentRoute: () => settingsBoardRoute,
+  path: '$boardSettingsTab',
+  beforeLoad: ({ params }) => {
+    if (BOARD_SETTINGS_TAB_FROM_SLUG[params.boardSettingsTab]) {
+      return
+    }
+
+    throw redirect({
+      to: '/settings/board/$boardSettingsTab',
+      params: { boardSettingsTab: BOARD_SETTINGS_TAB_TO_SLUG[DEFAULT_BOARD_SUBTAB] },
+    })
+  },
+  component: () => null,
+})
+
 // "/settings/plugins" — plugin options tab
 const settingsPluginsRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -379,10 +466,25 @@ const settingsPluginIdRoute = createRoute({
   component: () => null,
 })
 
-// "/settings/$settingsTab" — general / defaults / labels
+// "/settings/$settingsTab" — general + legacy defaults/labels redirects
 const settingsTabRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: '$settingsTab',
+  beforeLoad: ({ params }) => {
+    const legacyBoardSettingsTab = LEGACY_BOARD_SETTINGS_TAB_FROM_SETTINGS_SLUG[params.settingsTab]
+    if (legacyBoardSettingsTab) {
+      throw redirect({
+        to: '/settings/board/$boardSettingsTab',
+        params: { boardSettingsTab: BOARD_SETTINGS_TAB_TO_SLUG[legacyBoardSettingsTab] },
+      })
+    }
+
+    if (SETTINGS_TAB_FROM_SLUG[params.settingsTab]) {
+      return
+    }
+
+    throw redirect({ to: '/settings/$settingsTab', params: { settingsTab: 'general' } })
+  },
   component: () => null,
 })
 
@@ -393,6 +495,10 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   settingsRoute.addChildren([
     settingsIndexRoute,
+    settingsBoardRoute.addChildren([
+      settingsBoardIndexRoute,
+      settingsBoardTabRoute,
+    ]),
     settingsPluginsRoute.addChildren([
       settingsPluginsIndexRoute,
       settingsPluginIdRoute,

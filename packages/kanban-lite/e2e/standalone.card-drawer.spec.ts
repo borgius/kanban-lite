@@ -57,7 +57,7 @@ describeStandaloneScenario('card drawer - read-only checks', 'card-drawer', (sce
 
   test('shows seeded metadata YAML in the meta tab', async ({ page }) => {
     await page.getByRole('button', { name: 'Meta', exact: true }).click()
-    const metaArea = page.getByPlaceholder('key: value\nanother: 123')
+    const metaArea = page.locator('[data-testid="card-metadata-editor"] .cm-content')
     await expect(metaArea).toBeVisible()
     await expect(metaArea).toContainText('region: east')
     await expect(metaArea).toContainText('ticket: PROJ-99')
@@ -110,13 +110,11 @@ describeStandaloneScenario('card drawer - body edit', 'card-drawer', (scenario) 
 
   test('edits the body in the Edit tab and persists after reload', async ({ page }) => {
     await page.getByRole('button', { name: 'Edit', exact: true }).click()
-    const body = page.getByPlaceholder('Start writing...')
-    await body.click()
-    await page.keyboard.press('End')
-    await page.keyboard.press('Control+End')
-    await page.keyboard.type('\n\nPlaywright edit.')
+    const body = page.locator('[data-testid="card-markdown-editor"] .cm-content')
+    await body.fill('# Webhook retry logic\n\nPlaywright edit.')
     await saveAndReopen(page)
-    await expect(page.getByText('Playwright edit.', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Edit', exact: true }).click()
+    await expect(page.locator('[data-testid="card-markdown-editor"] .cm-content')).toContainText('Playwright edit.')
   })
 })
 
@@ -237,11 +235,11 @@ describeStandaloneScenario('card drawer - metadata edit', 'card-drawer', (scenar
   })
 
   test('edits metadata YAML and persists after reload', async ({ page }) => {
-    const metaArea = page.getByPlaceholder('key: value\nanother: 123')
+    const metaArea = page.locator('[data-testid="card-metadata-editor"] .cm-content')
     await metaArea.fill('region: west\nticket: PROJ-99')
     await saveAndReopen(page)
     await page.getByRole('button', { name: 'Meta', exact: true }).click()
-    await expect(page.getByPlaceholder('key: value\nanother: 123')).toContainText('region: west')
+    await expect(page.locator('[data-testid="card-metadata-editor"] .cm-content')).toContainText('region: west')
   })
 })
 

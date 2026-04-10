@@ -18,7 +18,7 @@ function standaloneServerPlugin(configFile: string, port = 2954): Plugin {
       if (child) return // already running after first build
       child = spawn(
         'tsx',
-        ['src/standalone/index.ts', '--port', String(port), '--no-browser', '--config', configFile],
+        ['src/standalone/bin.ts', '--port', String(port), '--no-browser', '--config', configFile],
         { stdio: 'inherit', cwd: resolve(__dirname) }
       )
       process.on('exit', () => child?.kill())

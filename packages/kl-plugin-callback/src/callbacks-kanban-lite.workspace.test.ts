@@ -15,8 +15,8 @@ import * as callbackRuntimeModule from './index'
 const execFileAsync = promisify(execFile)
 const REPO_ROOT = path.resolve(__dirname, '../../..')
 const TSX_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
-const CLI_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/cli/index.ts')
-const MCP_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/mcp-server/index.ts')
+const CLI_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/cli/bin.ts')
+const MCP_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/mcp-server/bin.ts')
 const SDK_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/dist/sdk/index.cjs')
 const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 

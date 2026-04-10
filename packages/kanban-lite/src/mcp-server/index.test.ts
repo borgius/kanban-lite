@@ -25,7 +25,7 @@ import { mcpPlugin } from '../../../kl-plugin-webhook/src/index'
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..')
 const TSX_CLI_PATH = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
-const MCP_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/mcp-server/index.ts')
+const MCP_ENTRYPOINT = path.join(REPO_ROOT, 'packages/kanban-lite/src/mcp-server/bin.ts')
 
 type CapabilityBag = ReturnType<typeof resolveCapabilityBag>
 

@@ -6,11 +6,11 @@
   "scripts": {
     "dev": "node ./scripts/run-local-stack.mjs dev",
     "dev:chat": "next dev --port 3001",
-    "dev:kanban": "tsx ../../packages/kanban-lite/src/standalone/index.ts --config ./demo-workspace/.kanban.json --dir ./demo-workspace/.kanban --port 3000 --no-browser",
+    "dev:kanban": "tsx ../../packages/kanban-lite/src/standalone/bin.ts --config ./demo-workspace/.kanban.json --dir ./demo-workspace/.kanban --port 3000 --no-browser",
     "build": "next build",
     "start": "node ./scripts/run-local-stack.mjs start",
     "start:chat": "next start --port 3001",
-    "start:kanban": "tsx ../../packages/kanban-lite/src/standalone/index.ts --config ./demo-workspace/.kanban.json --dir ./demo-workspace/.kanban --port 3000 --no-browser",
+    "start:kanban": "tsx ../../packages/kanban-lite/src/standalone/bin.ts --config ./demo-workspace/.kanban.json --dir ./demo-workspace/.kanban --port 3000 --no-browser",
     "test": "npm run test:integration",
     "test:integration": "vitest run --config vitest.config.ts"
   },

@@ -22,6 +22,7 @@ export default function AuthScreen() {
   const [showEntryInput, setShowEntryInput] = useState(false)
   const [showQrScanner, setShowQrScanner] = useState(false)
   const credentialScope = state.resolvedWorkspaceOrigin ?? 'workspace-entry'
+  const resolvedWorkspaceOrigin = state.resolvedWorkspaceOrigin ?? credentialScope
 
   const submitWorkspace = () => {
     setEntryInput('')
@@ -217,7 +218,7 @@ export default function AuthScreen() {
                 text: colors.text,
               }}
               pendingTarget={state.pendingTarget}
-              resolvedWorkspaceOrigin={state.resolvedWorkspaceOrigin}
+              resolvedWorkspaceOrigin={resolvedWorkspaceOrigin}
               onBack={controller.resetWorkspace}
               onSubmit={submitCredentials}
             />

@@ -17,11 +17,12 @@ import type {
   CardFrontmatter,
   CardDisplaySettings,
   LogEntry,
+  SettingsSupport,
   PluginSettingsInstallTransportResult,
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
 } from '../shared/types'
-import { DELETED_STATUS_ID, getDisplayTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
+import { DELETED_STATUS_ID, DEFAULT_SETTINGS_SUPPORT, getDisplayTitleFromContent, normalizeBoardBackgroundSettings } from '../shared/types'
 import { buildConnectionNotice, type ConnectionNotice } from './connectionStatusNotice'
 
 import { getVsCodeApi } from './vsCodeApi'
@@ -183,6 +184,10 @@ function App(): React.JSX.Element {
   const [pluginSettingsProvider, setPluginSettingsProvider] = useState<PluginSettingsProviderTransport | null>(null)
   const [pluginSettingsInstall, setPluginSettingsInstall] = useState<PluginSettingsInstallTransportResult | null>(null)
   const [pluginSettingsError, setPluginSettingsError] = useState<string | null>(null)
+  const [settingsDialogState, setSettingsDialogState] = useState<{
+    settings: CardDisplaySettings
+    settingsSupport: SettingsSupport
+  } | null>(null)
   const pendingDeletesRef = useRef(pendingDeletes)
   const currentBoardTitleFields = boards.find(board => board.id === currentBoard)?.title
   useEffect(() => {
@@ -479,7 +484,10 @@ function App(): React.JSX.Element {
           setLabelDefs(message.labels)
           break
         case 'showSettings':
-          setCardSettings(message.settings)
+          setSettingsDialogState({
+            settings: message.settings,
+            settingsSupport: message.settingsSupport ?? DEFAULT_SETTINGS_SUPPORT,
+          })
           setPluginSettings(message.pluginSettings)
           setPluginSettingsProvider(null)
           setPluginSettingsInstall(null)
@@ -836,6 +844,10 @@ function App(): React.JSX.Element {
   }
 
   const handleSaveSettings = (settings: CardDisplaySettings): void => {
+    setSettingsDialogState((previous) => ({
+      settings,
+      settingsSupport: previous?.settingsSupport ?? DEFAULT_SETTINGS_SUPPORT,
+    }))
     vscode.postMessage({ type: 'saveSettings', settings })
   }
 
@@ -1255,14 +1267,18 @@ function App(): React.JSX.Element {
       <Suspense fallback={null}>
         <LazySettingsPanel
           isOpen={settingsOpen}
-          settings={cardSettings}
+          settings={settingsDialogState?.settings ?? cardSettings}
+          settingsSupport={settingsDialogState?.settingsSupport ?? DEFAULT_SETTINGS_SUPPORT}
           workspace={workspace}
           pluginSettings={pluginSettings}
           pluginSettingsProvider={pluginSettingsProvider}
           pluginSettingsInstall={pluginSettingsInstall}
           pluginSettingsError={pluginSettingsError}
           activePluginId={settingsPluginId}
-          onClose={() => setSettingsOpen(false)}
+          onClose={() => {
+            setSettingsOpen(false)
+            setSettingsDialogState(null)
+          }}
           onSave={handleSaveSettings}
           onReadPluginSettingsProvider={(capability, providerId) => {
             setPluginSettingsError(null)
@@ -1290,7 +1306,11 @@ function App(): React.JSX.Element {
           onDeleteLabel={(name) => vscode.postMessage({ type: 'deleteLabel', name })}
           initialTab={settingsTab}
           boardMeta={boards.find(b => b.id === currentBoard)?.metadata}
+          boardTitle={boards.find(b => b.id === currentBoard)?.title}
+          boardActions={boards.find(b => b.id === currentBoard)?.actions}
           onSaveBoardMeta={(metadata) => vscode.postMessage({ type: 'updateBoardMeta', boardId: currentBoard, metadata })}
+          onSaveBoardTitle={(title) => vscode.postMessage({ type: 'updateBoardTitle', boardId: currentBoard, title })}
+          onSaveBoardActions={(actions) => vscode.postMessage({ type: 'updateBoardActions', boardId: currentBoard, actions })}
         />
       </Suspense>
 

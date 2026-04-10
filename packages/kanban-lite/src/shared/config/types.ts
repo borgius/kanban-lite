@@ -346,6 +346,8 @@ export interface KanbanConfig {
   panelMode?: 'popup' | 'drawer'
   /** Width of the right-side drawer as a percentage of the viewport (20–80). Default 50. */
   drawerWidth?: number
+  /** Which edge the drawer anchors to when `panelMode` is `'drawer'`. Default `'right'`. */
+  drawerPosition?: 'right' | 'left' | 'top' | 'bottom'
   /** Persisted log panel filter preferences. */
   logsFilter?: {
     limit: number | 'all'

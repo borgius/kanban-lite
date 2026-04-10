@@ -8,6 +8,7 @@ import type {
   PluginSettingsOptionsSchemaMetadata,
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
+  SettingsSupport,
 } from '../../shared/types'
 
 vi.mock('./JsonFormsCodeEditorControl', () => ({
@@ -33,6 +34,13 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   boardBackgroundPreset: 'aurora',
   panelMode: 'drawer',
   drawerWidth: 50,
+  drawerPosition: 'right',
+}
+
+const STANDALONE_SETTINGS_SUPPORT: SettingsSupport = {
+  showBuildWithAI: false,
+  markdownEditorMode: false,
+  drawerPosition: true,
 }
 
 const storeState = {
@@ -149,15 +157,50 @@ const AUTH_POLICY_OPTIONS_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
     type: 'object',
     additionalProperties: false,
     properties: {
-      matrix: {
-        type: 'object',
+      permissions: {
+        type: 'array',
         title: 'Role matrix',
-        additionalProperties: {
-          type: 'array',
-          items: { type: 'string' },
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            role: { type: 'string', title: 'Role' },
+            actions: {
+              type: 'array',
+              title: 'Allowed actions',
+              items: { type: 'string', title: 'Action' },
+            },
+          },
         },
       },
     },
+  },
+  uiSchema: {
+    type: 'VerticalLayout',
+    elements: [
+      {
+        type: 'Group',
+        label: 'Role matrix',
+        elements: [
+          {
+            type: 'Control',
+            scope: '#/properties/permissions',
+            label: 'Permission rules',
+            options: {
+              elementLabelProp: 'role',
+              showSortButtons: true,
+              detail: {
+                type: 'VerticalLayout',
+                elements: [
+                  { type: 'Control', scope: '#/properties/role', label: 'Role' },
+                  { type: 'Control', scope: '#/properties/actions', label: 'Allowed actions', options: { showSortButtons: true } },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    ],
   },
   secrets: [],
 }
@@ -444,6 +487,26 @@ const CALLBACK_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
   },
 }
 
+const AUTH_POLICY_PROVIDER_FIXTURE: PluginSettingsProviderTransport = {
+  capability: 'auth.policy',
+  providerId: 'kl-plugin-auth',
+  packageName: 'kl-plugin-auth',
+  discoverySource: 'workspace',
+  selected: {
+    capability: 'auth.policy',
+    providerId: 'kl-plugin-auth',
+    source: 'config',
+  },
+  optionsSchema: AUTH_POLICY_OPTIONS_SCHEMA,
+  options: {
+    values: {
+      permissions: [{ role: 'admin', actions: ['*'] }],
+    },
+    redactedPaths: [],
+    redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+  },
+}
+
 const INSTALL_RESULT_FIXTURE: PluginSettingsInstallTransportResult = {
   packageName: 'kl-plugin-auth',
   scope: 'workspace',
@@ -522,7 +585,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Capabilities')
     expect(markup).toContain('markdown')
     expect(markup).toContain('kl-plugin-auth')
-    expect(markup).toContain('data-testid="plugin-package-kl-plugin-auth"')
+    expect(markup).toContain('data-testid="plugin-package-auth.identity:local"')
     expect(markup).toContain('auth.identity')
     expect(markup).toContain('Provider: local')
     expect(markup).toContain('Built-in')
@@ -534,6 +597,93 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).not.toContain('Package name')
     expect(markup).not.toContain('Global install')
     expect(markup).not.toContain('Install safely')
+  })
+
+  it('renders settings controls for shared config fields and hides unsupported extension-only controls when requested', () => {
+    const supportedMarkup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS, showBuildWithAI: false, markdownEditorMode: true }}
+        workspace={null}
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(supportedMarkup).toContain('Show Build with AI')
+    expect(supportedMarkup).toContain('Markdown Editor Mode')
+    expect(supportedMarkup).toContain('Drawer Position')
+
+    const unsupportedMarkup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS, showBuildWithAI: true, markdownEditorMode: true }}
+        settingsSupport={STANDALONE_SETTINGS_SUPPORT}
+        workspace={null}
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(unsupportedMarkup).not.toContain('Show Build with AI')
+    expect(unsupportedMarkup).not.toContain('Markdown Editor Mode')
+    expect(unsupportedMarkup).toContain('Drawer Position')
+  })
+
+  it('renders current-board title and action editors in the board settings tab', () => {
+    const titleMarkup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        initialTab="board"
+        initialBoardSubTab="title"
+        boardMeta={{
+          ticketId: { highlighted: true },
+          region: { highlighted: false },
+        }}
+        boardTitle={['ticketId', 'region']}
+        boardActions={{
+          deploy: 'Deploy now',
+          rollback: 'Rollback release',
+        }}
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(titleMarkup).toContain('Title')
+    expect(titleMarkup).toContain('Actions')
+    expect(titleMarkup).toContain('Title Fields')
+    expect(titleMarkup).toContain('ticketId')
+    expect(titleMarkup).toContain('region')
+
+    const actionsMarkup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        initialTab="board"
+        initialBoardSubTab="actions"
+        boardMeta={{
+          ticketId: { highlighted: true },
+          region: { highlighted: false },
+        }}
+        boardTitle={['ticketId', 'region']}
+        boardActions={{
+          deploy: 'Deploy now',
+          rollback: 'Rollback release',
+        }}
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(actionsMarkup).toContain('Board Actions')
+    expect(actionsMarkup).toContain('deploy')
+    expect(actionsMarkup).toContain('Deploy now')
+    expect(actionsMarkup).toContain('rollback')
+    expect(actionsMarkup).toContain('Rollback release')
   })
 
   it('renders schema-driven provider options for auth and storage providers', () => {
@@ -644,7 +794,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('kl-jsonforms-code-editor')
   })
 
-  it('prefers the routed plugin package id when choosing the active plugin detail view', () => {
+  it('prefers the routed capability-provider id when choosing the active plugin detail view', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         isOpen
@@ -652,7 +802,7 @@ describe('SettingsPanel drawer resize integration', () => {
         workspace={null}
         pluginSettings={PLUGIN_SETTINGS_FIXTURE}
         initialTab="pluginOptions"
-        activePluginId="kl-plugin-storage-sqlite"
+        activePluginId="card.storage:sqlite"
         onClose={() => {}}
         onSave={() => {}}
       />
@@ -677,7 +827,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(css).toContain('.card-jsonforms .validation.validation_error')
   })
 
-  it('groups plugin capabilities by namespace and keeps options outside the capability cards', () => {
+  it('renders same-package provider entries separately and scopes options to the selected provider', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         isOpen
@@ -701,13 +851,36 @@ describe('SettingsPanel drawer resize integration', () => {
       />
     )
 
-    expect(markup).toContain('2 capabilities')
+    expect(markup).toContain('data-testid="plugin-package-auth.identity:kl-plugin-auth"')
+    expect(markup).toContain('data-testid="plugin-package-auth.policy:kl-plugin-auth"')
     expect(markup).toContain('auth.identity')
     expect(markup).toContain('auth.policy')
+    expect(markup).toContain('API token')
     expect(markup).not.toContain('Provider: rbac')
     expect(markup).not.toContain('Role matrix')
     expect((markup.match(/Save options/g) ?? []).length).toBe(1)
     expect(markup.lastIndexOf('Options')).toBeGreaterThan(markup.indexOf('Capabilities'))
+  })
+
+  it('treats same-package provider variants as distinct plugin option identities', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={PLUGIN_SETTINGS_AUTH_PACKAGE_FIXTURE}
+        pluginSettingsProvider={AUTH_POLICY_PROVIDER_FIXTURE}
+        initialTab="pluginOptions"
+        activePluginId="auth.policy:kl-plugin-auth"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('data-testid="plugin-package-auth.identity:kl-plugin-auth"')
+    expect(markup).toContain('data-testid="plugin-package-auth.policy:kl-plugin-auth"')
+    expect(markup).toContain('Role matrix')
+    expect(markup).not.toContain('API token')
   })
 
   it('annotates masked secret schema fields without redisplaying raw values', () => {

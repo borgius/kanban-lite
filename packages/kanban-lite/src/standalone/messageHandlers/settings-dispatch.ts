@@ -1,5 +1,6 @@
 import { WebSocket } from 'ws'
 import {
+  DEFAULT_SETTINGS_SUPPORT,
   createEmptyPluginSettingsPayload,
   type CardDisplaySettings,
   type PluginSettingsInstallTransportResult,
@@ -29,6 +30,12 @@ import {
 } from '../mutationService'
 
 type RunWithScopedAuth = <T>(fn: () => Promise<T>) => Promise<T>
+
+const STANDALONE_SETTINGS_SUPPORT = {
+  ...DEFAULT_SETTINGS_SUPPORT,
+  showBuildWithAI: false,
+  markdownEditorMode: false,
+}
 
 function buildEmptyPluginSettingsPayload(): PluginSettingsPayload {
   return createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION)
@@ -158,19 +165,19 @@ async function sendSettingsBridgePayload(
   runWithScopedAuth: RunWithScopedAuth,
 ): Promise<void> {
   const settings = ctx.sdk.getSettings()
-  settings.showBuildWithAI = false
-  settings.markdownEditorMode = false
 
   try {
     ws.send(JSON.stringify({
       type: 'showSettings',
       settings,
+      settingsSupport: STANDALONE_SETTINGS_SUPPORT,
       pluginSettings: await getPluginSettingsPayload(ctx, runWithScopedAuth),
     }))
   } catch (error) {
     ws.send(JSON.stringify({
       type: 'showSettings',
       settings,
+      settingsSupport: STANDALONE_SETTINGS_SUPPORT,
       pluginSettings: buildEmptyPluginSettingsPayload(),
     }))
     sendPluginSettingsResult(ws, {

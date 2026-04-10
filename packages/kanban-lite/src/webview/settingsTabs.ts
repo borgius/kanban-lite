@@ -1,7 +1,7 @@
 export type SettingsTab = 'general' | 'board' | 'pluginOptions'
 
 /** Sub-tab within the "Board" tab */
-export type BoardSubTab = 'defaults' | 'labels' | 'meta'
+export type BoardSubTab = 'defaults' | 'title' | 'actions' | 'labels' | 'meta'
 
 /** URL-safe slug → internal SettingsTab */
 export const SETTINGS_TAB_FROM_SLUG: Record<string, SettingsTab> = {

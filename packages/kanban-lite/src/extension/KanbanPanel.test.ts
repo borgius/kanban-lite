@@ -7,6 +7,7 @@ import type {
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
   PluginSettingsResultMessage,
+  SettingsSupport,
   PluginSettingsTransportAction,
   ShowSettingsMessage,
   WebviewMessage,
@@ -164,6 +165,12 @@ const installTransport: PluginSettingsInstallTransportResult = {
   redaction,
 }
 
+const FULL_SETTINGS_SUPPORT: SettingsSupport = {
+  showBuildWithAI: true,
+  markdownEditorMode: true,
+  drawerPosition: true,
+}
+
 type Handler = (message: WebviewMessage) => Promise<void> | void
 
 function createPanelHarness() {
@@ -238,6 +245,7 @@ function createSdkStub() {
       ...configToSettings(DEFAULT_CONFIG),
       showLabels: false,
       markdownEditorMode: true,
+      drawerPosition: 'left',
     })),
     listCards: createTypedMock<KanbanSDK['listCards']>(async () => []),
     getCard: createTypedMock<KanbanSDK['getCard']>(async (cardId: string) => makeCard({ id: cardId })),
@@ -263,6 +271,18 @@ function createSdkStub() {
     canPerformAction: createTypedMock<KanbanSDK['canPerformAction']>(async () => true),
     addChecklistItem: createTypedMock<KanbanSDK['addChecklistItem']>(async (cardId: string) => makeCard({ id: cardId })),
     updateCard: createTypedMock<KanbanSDK['updateCard']>(async (cardId: string) => makeCard({ id: cardId })),
+    updateBoard: createTypedMock<KanbanSDK['updateBoard']>(async (_boardId: string, updates: Record<string, unknown>) => ({
+      ...DEFAULT_CONFIG.boards.default,
+      ...updates,
+    })),
+    getBoardActions: createTypedMock<KanbanSDK['getBoardActions']>(() => ({
+      deploy: 'Deploy',
+      retire: 'Retire',
+    })),
+    addBoardAction: createTypedMock<KanbanSDK['addBoardAction']>(async () => ({
+      deploy: 'Deploy',
+    })),
+    removeBoardAction: createTypedMock<KanbanSDK['removeBoardAction']>(async () => ({})),
     listPluginSettings: createTypedMock<KanbanSDK['listPluginSettings']>(async () => pluginSettingsPayload),
     getPluginSettings: createTypedMock<KanbanSDK['getPluginSettings']>(async () => providerTransport),
     selectPluginSettingsProvider: createTypedMock<KanbanSDK['selectPluginSettingsProvider']>(async () => providerTransport),
@@ -313,11 +333,38 @@ describe('KanbanPanel plugin-settings bridge', () => {
     expect(harness.postMessage).toHaveBeenCalledWith({
       type: 'showSettings',
       settings: sdk.getSettings.mock.results[0]?.value,
+      settingsSupport: FULL_SETTINGS_SUPPORT,
       pluginSettings: {
         capabilities: [],
         redaction,
       },
     } satisfies ShowSettingsMessage)
+  })
+
+  it('routes board title and board action settings through typed host mutations', async () => {
+    const { harness, sdk } = createSubject()
+
+    await harness.dispatch({ type: 'updateBoardTitle', boardId: 'default', title: ['ticketId', 'region'] })
+
+    expect(sdk.updateBoard).toHaveBeenCalledWith('default', { title: ['ticketId', 'region'] })
+
+    sdk.getBoardActions.mockClear()
+    sdk.addBoardAction.mockClear()
+    sdk.removeBoardAction.mockClear()
+
+    await harness.dispatch({
+      type: 'updateBoardActions',
+      boardId: 'default',
+      actions: {
+        deploy: 'Deploy now',
+        rollback: 'Rollback',
+      },
+    })
+
+    expect(sdk.getBoardActions).toHaveBeenCalledWith('default')
+    expect(sdk.removeBoardAction).toHaveBeenCalledWith('default', 'retire')
+    expect(sdk.addBoardAction).toHaveBeenCalledWith('default', 'deploy', 'Deploy now')
+    expect(sdk.addBoardAction).toHaveBeenCalledWith('default', 'rollback', 'Rollback')
   })
 
   it('routes plugin-settings requests through the shared transport contract', async () => {

@@ -23,6 +23,30 @@ import {
 
 type RunWithScopedAuth = <T>(fn: () => Promise<T>) => Promise<T>
 
+function normalizeBoardTitleFields(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value.filter((field): field is string => typeof field === 'string' && field.trim().length > 0)
+}
+
+function normalizeBoardActions(value: unknown): Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, title]) => {
+      if (key.trim().length === 0) {
+        return []
+      }
+
+      return [[key, String(title ?? key)]] as const
+    })
+  )
+}
+
 export async function dispatchBoardMessage(
   ctx: StandaloneContext,
   ws: WebSocket,
@@ -188,6 +212,36 @@ export async function dispatchBoardMessage(
       const boardId = (msg.boardId as string | undefined) ?? ctx.currentBoardId ?? undefined
       if (boardId) {
         await runWithScopedAuth(() => ctx.sdk.updateBoard(boardId, { metadata: msg.metadata as Record<string, BoardMetaFieldDef> }))
+        broadcast(ctx, buildInitMessage(ctx))
+      }
+      break
+    }
+
+    case 'updateBoardTitle': {
+      const boardId = (msg.boardId as string | undefined) ?? ctx.currentBoardId ?? undefined
+      if (boardId) {
+        await runWithScopedAuth(() => ctx.sdk.updateBoard(boardId, { title: normalizeBoardTitleFields(msg.title) }))
+        broadcast(ctx, buildInitMessage(ctx))
+      }
+      break
+    }
+
+    case 'updateBoardActions': {
+      const boardId = (msg.boardId as string | undefined) ?? ctx.currentBoardId ?? undefined
+      if (boardId) {
+        const nextActions = normalizeBoardActions(msg.actions)
+        const existingActions = ctx.sdk.getBoardActions(boardId)
+
+        for (const key of Object.keys(existingActions)) {
+          if (!(key in nextActions)) {
+            await runWithScopedAuth(() => ctx.sdk.removeBoardAction(boardId, key))
+          }
+        }
+
+        for (const [key, title] of Object.entries(nextActions)) {
+          await runWithScopedAuth(() => ctx.sdk.addBoardAction(boardId, key, title))
+        }
+
         broadcast(ctx, buildInitMessage(ctx))
       }
       break

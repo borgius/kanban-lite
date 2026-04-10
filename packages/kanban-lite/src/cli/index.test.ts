@@ -14,7 +14,7 @@ const execFileAsync = promisify(execFile)
 const WORKSPACE_ROOT = path.resolve(__dirname, '../../../..')
 const PACKAGE_ROOT = path.resolve(__dirname, '../..')
 const TSX_CLI_PATH = path.join(WORKSPACE_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs')
-const CLI_ENTRYPOINT = path.join(__dirname, 'index.ts')
+const CLI_ENTRYPOINT = path.join(__dirname, 'bin.ts')
 const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g')
 
 function stripAnsi(value: string): string {

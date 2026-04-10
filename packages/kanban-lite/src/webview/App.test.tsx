@@ -9,6 +9,7 @@ import type {
   PluginSettingsInstallTransportResult,
   PluginSettingsPayload,
   PluginSettingsProviderTransport,
+  SettingsSupport,
   WorkspaceInfo,
 } from '../shared/types'
 
@@ -30,6 +31,13 @@ const DEFAULT_CARD_SETTINGS: CardDisplaySettings = {
   boardBackgroundPreset: 'aurora',
   panelMode: 'drawer',
   drawerWidth: 50,
+  drawerPosition: 'right',
+}
+
+const STANDALONE_SETTINGS_SUPPORT: SettingsSupport = {
+  showBuildWithAI: false,
+  markdownEditorMode: false,
+  drawerPosition: true,
 }
 
 const PLUGIN_SETTINGS_FIXTURE: PluginSettingsPayload = {
@@ -297,7 +305,7 @@ vi.mock('react', async (importOriginal) => {
       hookRuntime.cursor++
       return callback
     },
-    lazy<T extends React.ComponentType<never>>(
+    lazy<T extends React.ComponentType<unknown>>(
       factory: () => Promise<{ default: T }>
     ): React.LazyExoticComponent<T> {
       // Non-throwing wrapper: factory Promise resolves on the next microtask tick.
@@ -307,9 +315,9 @@ vi.mock('react', async (importOriginal) => {
         (mod: { default: T }) => { resolved = mod.default },
         () => { /* ignore load errors in tests */ }
       )
-      function LazyWrapper(props: React.ComponentPropsWithoutRef<T>): React.ReactElement | null {
+      function LazyWrapper(props: Record<string, unknown>): React.ReactElement | null {
         return resolved
-          ? (actual.createElement(resolved as React.ComponentType<React.ComponentPropsWithoutRef<T>>, props) as React.ReactElement)
+          ? (actual.createElement(resolved as React.ElementType, props) as React.ReactElement)
           : null
       }
       return LazyWrapper as unknown as React.LazyExoticComponent<T>
@@ -860,6 +868,110 @@ describe('App plugin settings bridge', () => {
 
     expect(errorSettingsPanelProps?.pluginSettingsError).toBe('Use an exact package name like kl-plugin-auth.')
     expect(errorSettingsPanelProps?.pluginSettingsInstall).toBeNull()
+  })
+
+  it('keeps the modal settings snapshot separate from runtime-safe init settings and forwards support metadata', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+
+    renderApp()
+    renderApp()
+
+    dispatchMessage({
+      type: 'showSettings',
+      settings: {
+        ...DEFAULT_CARD_SETTINGS,
+        showBuildWithAI: true,
+        markdownEditorMode: true,
+        drawerPosition: 'left',
+      },
+      settingsSupport: STANDALONE_SETTINGS_SUPPORT,
+      pluginSettings: PLUGIN_SETTINGS_FIXTURE,
+    })
+
+    renderApp()
+
+    let latestSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+    expect(latestSettingsPanelProps).toMatchObject({
+      settings: expect.objectContaining({
+        showBuildWithAI: true,
+        markdownEditorMode: true,
+        drawerPosition: 'left',
+      }),
+      settingsSupport: STANDALONE_SETTINGS_SUPPORT,
+    })
+
+    dispatchMessage({
+      type: 'init',
+      cards: [],
+      columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+      settings: {
+        ...DEFAULT_CARD_SETTINGS,
+        showBuildWithAI: false,
+        markdownEditorMode: false,
+        drawerPosition: 'right',
+      },
+    })
+
+    renderApp()
+
+    latestSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+    expect(storeState.cardSettings).toMatchObject({
+      showBuildWithAI: false,
+      markdownEditorMode: false,
+      drawerPosition: 'right',
+    })
+    expect(latestSettingsPanelProps).toMatchObject({
+      settings: expect.objectContaining({
+        showBuildWithAI: true,
+        markdownEditorMode: true,
+        drawerPosition: 'left',
+      }),
+      settingsSupport: STANDALONE_SETTINGS_SUPPORT,
+    })
+  })
+
+  it('routes board title and board action saves through typed webview messages', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    storeState.boards = [{
+      id: 'default',
+      name: 'Default',
+      title: ['ticketId'],
+      actions: { deploy: 'Deploy' },
+    }]
+
+    renderApp()
+    renderApp()
+
+    dispatchMessage({
+      type: 'showSettings',
+      settings: { ...DEFAULT_CARD_SETTINGS },
+      pluginSettings: PLUGIN_SETTINGS_FIXTURE,
+    })
+
+    renderApp()
+
+    postMessageSpy.mockClear()
+    const latestSettingsPanelProps = settingsPanelSpy.mock.lastCall?.[0] as Record<string, unknown> | undefined
+
+    ;(latestSettingsPanelProps?.onSaveBoardTitle as ((title: string[]) => void) | undefined)?.(['ticketId', 'region'])
+    ;(latestSettingsPanelProps?.onSaveBoardActions as ((actions: Record<string, string>) => void) | undefined)?.({
+      deploy: 'Deploy now',
+      rollback: 'Rollback',
+    })
+
+    expect(postMessageSpy).toHaveBeenNthCalledWith(1, {
+      type: 'updateBoardTitle',
+      boardId: 'default',
+      title: ['ticketId', 'region'],
+    })
+    expect(postMessageSpy).toHaveBeenNthCalledWith(2, {
+      type: 'updateBoardActions',
+      boardId: 'default',
+      actions: {
+        deploy: 'Deploy now',
+        rollback: 'Rollback',
+      },
+    })
   })
 })
 

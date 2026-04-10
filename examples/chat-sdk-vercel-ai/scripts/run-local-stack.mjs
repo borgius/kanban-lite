@@ -127,7 +127,7 @@ function spawnKanbanProcess() {
     `${mode}:kanban`,
     resolveLocalBin('tsx'),
     [
-      '../../packages/kanban-lite/src/standalone/index.ts',
+      '../../packages/kanban-lite/src/standalone/bin.ts',
       '--config',
       './demo-workspace/.kanban.json',
       '--dir',

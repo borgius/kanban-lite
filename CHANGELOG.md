@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Settings-panel config coverage**: The shared settings UI now persists `showBuildWithAI`, `markdownEditorMode`, and `drawerPosition`, adds board-level editors for `boards.<id>.title` and `boards.<id>.actions`, and keeps plugin-provider rows distinct by `capability + providerId` so same-package variants no longer collapse into one entry.
+
+- **Metadata field settings UX refresh**: The Board → Meta settings view now uses a modern card-based metadata builder with overview stats, stronger helper copy, duplicate-key validation, inline field previews, and clearer field cards for preview visibility, defaults, and descriptions.
+
 - **First-party plugin package builds now run on shared Vite library config**: All `kl-plugin-*` packages now build CommonJS output and `.d.ts` declarations through one `vite build` entrypoint backed by a shared workspace config, replacing the old split `esbuild` + `tsc --emitDeclarationOnly` flow.
 - **First-party plugin package watch mode now mirrors the shared Vite build**: All `kl-plugin-*` packages now expose a `watch` script that runs the same shared Vite library build in watch mode, so root `watch:workspace` picks them up automatically.
 
@@ -46,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Callback inline-source authoring UI**: The shared Plugin Options form now renders `kl-plugin-callback` inline `source` fields with an embedded CodeMirror JavaScript editor instead of a plain multiline text input, while keeping the same schema-driven `handlers[]` contract.
 
 ### Fixed
+
+- **Standalone settings preservation for extension-only fields**: Opening or saving settings from standalone mode no longer stomps stored `showBuildWithAI` / `markdownEditorMode` values when the host hides those unsupported controls; support flags now hide the UI while preserving persisted config.
 
 - **Cloudflare Worker live cross-tab refreshes**: Worker deployments now accept `/ws` through the generated Durable Object seam and use event-driven `syncRequired` invalidations plus HTTP latest-state resync, so committed mutations in one browser refresh other connected tabs without periodic polling. The Worker path still targets latest-state catch-up rather than full raw Node WebSocket payload parity.
 

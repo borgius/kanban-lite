@@ -2,7 +2,7 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
-import { getDisplayTitleFromContent, CARD_FORMAT_VERSION, createEmptyPluginSettingsPayload } from '../shared/types'
+import { getDisplayTitleFromContent, CARD_FORMAT_VERSION, createEmptyPluginSettingsPayload, DEFAULT_SETTINGS_SUPPORT } from '../shared/types'
 import type {
   Card,
   KanbanColumn,
@@ -436,6 +436,53 @@ export class KanbanPanel {
             }
             break
           }
+          case 'updateBoardTitle': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            try {
+              const boardId = message.boardId ?? this._currentBoardId
+              if (boardId) {
+                await this._runWithAuth(sdk, () => sdk.updateBoard(boardId, {
+                  title: message.title.filter((field: unknown): field is string => typeof field === 'string'),
+                }))
+                this._sendCardsToWebview()
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to update board title fields: ${err}`)
+            }
+            break
+          }
+          case 'updateBoardActions': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            try {
+              const boardId = message.boardId ?? this._currentBoardId
+              if (boardId) {
+                const nextActions = Object.fromEntries(
+                  Object.entries(message.actions).flatMap(([key, value]) => {
+                    if (typeof key !== 'string' || key.trim().length === 0) return []
+                    return [[key, String(value ?? key)]] as const
+                  })
+                )
+                const existingActions = sdk.getBoardActions(boardId)
+
+                for (const key of Object.keys(existingActions)) {
+                  if (!(key in nextActions)) {
+                    await this._runWithAuth(sdk, () => sdk.removeBoardAction(boardId, key))
+                  }
+                }
+
+                for (const [key, title] of Object.entries(nextActions)) {
+                  await this._runWithAuth(sdk, () => sdk.addBoardAction(boardId, key, title))
+                }
+
+                this._sendCardsToWebview()
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to update board actions: ${err}`)
+            }
+            break
+          }
           case 'renameLabel': {
             const sdk = this._getSDK()
             if (!sdk) break
@@ -812,6 +859,7 @@ export class KanbanPanel {
     this._panel.webview.postMessage({
       type: 'showSettings',
       settings,
+      settingsSupport: DEFAULT_SETTINGS_SUPPORT,
       pluginSettings: createEmptyPluginSettingsPayload(DEFAULT_PLUGIN_SETTINGS_REDACTION),
     })
   }

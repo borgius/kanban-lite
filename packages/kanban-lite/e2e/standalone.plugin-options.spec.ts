@@ -2,16 +2,16 @@ import type { Locator, Page } from '@playwright/test'
 import { describeStandaloneScenario, test, expect } from './fixture'
 
 const seedCardId = '41-plugin-settings-public'
-const pluginPackageName = 'kl-plugin-auth-visibility'
 const capability = 'auth.visibility'
 const providerId = 'kl-plugin-auth-visibility'
+const providerCacheKey = `${capability}:${providerId}`
 
 function seededCard(page: Page): Locator {
   return page.locator(`[data-card-id="${seedCardId}"]`)
 }
 
 function pluginListEntry(page: Page): Locator {
-  return page.getByTestId(`plugin-package-${pluginPackageName}`)
+  return page.getByTestId(`plugin-package-${providerCacheKey}`)
 }
 
 function pluginOptionsSection(page: Page): Locator {

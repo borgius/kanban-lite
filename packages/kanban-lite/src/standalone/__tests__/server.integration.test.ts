@@ -2106,8 +2106,12 @@ describe('Standalone Server Integration', () => {
       expect(response.settings).toBeDefined()
       const settings = response.settings as Record<string, unknown>
       expect(settings.showPriorityBadges).toBe(true)
-      expect(settings.showBuildWithAI).toBe(false)
+      expect(settings.showBuildWithAI).toBe(true)
       expect(settings.markdownEditorMode).toBe(false)
+      expect(response.settingsSupport).toMatchObject({
+        showBuildWithAI: false,
+        markdownEditorMode: false,
+      })
       expect(response.pluginSettings).toMatchObject({
         redaction: expect.objectContaining({ maskedValue: '••••••' }),
         capabilities: expect.any(Array),

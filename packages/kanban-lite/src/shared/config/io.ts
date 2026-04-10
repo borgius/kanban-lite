@@ -129,6 +129,7 @@ export const DEFAULT_CONFIG: KanbanConfig = {
   boardBackgroundMode: DEFAULT_BOARD_BACKGROUND_MODE,
   boardBackgroundPreset: getDefaultBoardBackgroundPreset(DEFAULT_BOARD_BACKGROUND_MODE),
   port: 2954,
+  drawerPosition: 'right',
   labels: {}
 }
 
@@ -204,7 +205,7 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
   // (e.g. webhooks manually added before upgrading, or partially-upgraded configs)
   const modernPassthroughKeys = [
     'webhooks', 'webhookPlugin', 'labels', 'forms', 'plugins', 'auth',
-    'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'logsFilter',
+    'storageEngine', 'sqlitePath', 'panelMode', 'drawerWidth', 'drawerPosition', 'logsFilter',
     'boardBackgroundMode', 'boardBackgroundPreset',
     'actionWebhookUrl', 'showDeletedColumn', 'boardZoom', 'cardZoom', 'columnWidth', 'port'
   ]
@@ -530,6 +531,7 @@ export function configToSettings(config: KanbanConfig): CardDisplaySettings {
     boardBackgroundPreset: background.boardBackgroundPreset,
     panelMode: config.panelMode,
     drawerWidth: config.drawerWidth,
+    drawerPosition: config.drawerPosition,
     logsFilter: config.logsFilter
   }
 }
@@ -556,8 +558,10 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     showAssignee: settings.showAssignee,
     showDueDate: settings.showDueDate,
     showLabels: settings.showLabels,
+    showBuildWithAI: settings.showBuildWithAI,
     showFileName: settings.showFileName,
     cardViewMode: settings.cardViewMode,
+    markdownEditorMode: settings.markdownEditorMode,
     showDeletedColumn: settings.showDeletedColumn,
     defaultPriority: settings.defaultPriority,
     defaultStatus: settings.defaultStatus,
@@ -568,6 +572,7 @@ export function settingsToConfig(config: KanbanConfig, settings: CardDisplaySett
     boardBackgroundPreset: background.boardBackgroundPreset,
     panelMode: settings.panelMode,
     drawerWidth: settings.drawerWidth,
+    drawerPosition: settings.drawerPosition,
     logsFilter: settings.logsFilter
   }
 }

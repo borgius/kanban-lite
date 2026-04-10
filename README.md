@@ -71,8 +71,11 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **SQLite `card.state` auto-derived from storage**: When using an external storage plugin (e.g. `sqlite`, `mongodb`, `postgresql`, `mysql`, `redis`), card-state is automatically derived from the same storage package — no separate `card.state` configuration or package installation required
 - **Real-time updates**: WebSocket-powered live sync on the Node standalone server, plus an event-driven Cloudflare Worker mode that uses Durable Object WebSocket invalidations with HTTP latest-state resync between tabs
 - **Light & dark mode** support
-- **Tabbed settings panel**: Settings organized into **General**, **Defaults**, **Labels**, and **Plugin Options** tabs
-- **Plugin Options tab**: Discover providers by capability, flip provider toggles on/off with in-flight loading feedback, edit schema-driven options in dedicated sections after the capability list even before a provider is enabled, reuse provider-authored JSON Forms `uiSchema` layouts for grouped sections, inline array editors, and code-enabled controls such as callback inline source, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
+- **Tabbed settings panel**: Settings are organized into **General**, **Board**, and **Plugin Options** tabs, with board-level subviews for **Defaults**, **Title**, **Actions**, **Labels**, and **Meta**
+- **Broader shared settings coverage**: The shared settings UI now exposes `showBuildWithAI`, `markdownEditorMode`, and drawer position alongside the existing layout and display controls
+- **Board title/action editors**: Manage `boards.<id>.title` metadata prefixes and `boards.<id>.actions` toolbar actions directly from **Board → Title** and **Board → Actions**
+- **Redesigned metadata field builder**: The Board → **Meta** settings view now includes a cleaner card-based editor with overview stats, inline field previews, duplicate-name validation, and clearer controls for deciding which metadata appears on card previews
+- **Plugin Options tab**: Discover providers by capability, flip provider toggles on/off with in-flight loading feedback, edit schema-driven options in dedicated sections after the capability list even before a provider is enabled, keep same-package provider variants separate by `capability + providerId`, reuse provider-authored JSON Forms `uiSchema` layouts for grouped sections, inline array editors, and code-enabled controls such as callback inline source, reopen stored secrets as masked write-only fields, and install supported `kl-*` packages from the UI
 - **Flexible panel layouts**: Open card details and creation flows as a right-side drawer or a centered popup
 - **Adjustable drawer width**: Tune drawer mode between 20–80% of the viewport from the Layout settings
 - **Polished card detail view**: Card details now open with a calmer desktop-first split layout, tighter control density, cleaner attachment/comment presentation, and refined popup/drawer styling in both drawer and popup modes
@@ -828,6 +831,8 @@ curl -X POST http://localhost:3000/api/tasks \
 ## Board Actions
 
 Board actions are the board-level sibling to card actions. Define them once per board, and they appear in the toolbar **Actions** dropdown for that board.
+
+If you prefer not to edit raw JSON, the shared settings panel now exposes the same per-board action list under **Board → Actions**, including stable action keys and user-facing titles.
 
 ### How it works
 
@@ -1802,11 +1807,11 @@ The interactive `scripts/deploy-cloudflare-worker.mjs` flow also accepts repeata
 
 Columns are fully customizable per board — add, remove, rename, or recolor them from the web UI, CLI, or REST API.
 
-`boards.<id>.title` is an optional ordered string array of metadata keys whose rendered values prefix user-visible card titles without changing stored markdown titles, slugs, or filenames. For example, with `"title": ["ticket", "customer"]`, a card whose markdown title is `# Investigate outage` and metadata is `{ "ticket": "INC-42", "customer": "Acme" }` renders as `INC-42 Acme Investigate outage` across the webview, VS Code sidebar, CLI, and MCP read surfaces.
+`boards.<id>.title` is an optional ordered string array of metadata keys whose rendered values prefix user-visible card titles without changing stored markdown titles, slugs, or filenames. For example, with `"title": ["ticket", "customer"]`, a card whose markdown title is `# Investigate outage` and metadata is `{ "ticket": "INC-42", "customer": "Acme" }` renders as `INC-42 Acme Investigate outage` across the webview, VS Code sidebar, CLI, and MCP read surfaces. You can edit the same ordered list from **Board → Title** in the shared settings panel.
 
 `boardZoom` and `cardZoom` set the default zoom percentage (75–150) for the board view and card detail panel respectively. They can also be adjusted live in the Settings panel or with `Ctrl/Cmd + =` / `Ctrl/Cmd + -` keyboard shortcuts.
 
-`panelMode` controls whether card flows open as a centered popup or a right-side drawer. When using drawer mode, `drawerWidth` sets the default width percentage (20–80) for card creation and detail panels.
+`panelMode` controls whether card flows open as a centered popup or a drawer. When using drawer mode, `drawerWidth` sets the default width percentage (20–80) for card creation and detail panels, and `drawerPosition` chooses which edge (`right`, `left`, `top`, or `bottom`) the drawer uses.
 
 `forms` defines reusable JSON Schema/JSON Forms descriptors that any card can attach by name. Card-local inline forms still live on the card frontmatter under `forms`, while submitted values persist per card under `formData`.
 

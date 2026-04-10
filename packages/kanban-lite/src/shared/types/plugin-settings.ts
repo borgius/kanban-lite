@@ -49,6 +49,20 @@ export type PluginSettingsRedactionTarget = 'read' | 'list' | 'error'
 /** Supported install destinations for in-product plugin installation flows. */
 export type PluginSettingsInstallScope = 'workspace' | 'global'
 
+/** Host support flags for shared settings controls that may not be available on every surface. */
+export interface SettingsSupport {
+  showBuildWithAI?: boolean
+  markdownEditorMode?: boolean
+  drawerPosition?: boolean
+}
+
+/** Default host support flags used when a surface supports the shared settings controls. */
+export const DEFAULT_SETTINGS_SUPPORT: Required<SettingsSupport> = {
+  showBuildWithAI: true,
+  markdownEditorMode: true,
+  drawerPosition: true,
+}
+
 /** Shared secret redaction policy reused across SDK, REST, CLI, MCP, and host transports. */
 export interface PluginSettingsRedactionPolicy {
   maskedValue: string
@@ -171,6 +185,7 @@ export type PluginSettingsTransportAction = 'read' | 'select' | 'updateOptions' 
 export interface ShowSettingsMessage {
   type: 'showSettings'
   settings: CardDisplaySettings
+  settingsSupport?: SettingsSupport
   pluginSettings: PluginSettingsPayload
 }
 

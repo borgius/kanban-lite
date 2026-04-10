@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG, readConfig } from './config'
+import { DEFAULT_CONFIG, configToSettings, readConfig, settingsToConfig } from './config'
 import { DEFAULT_COLUMNS } from './types'
 
 describe('config defaults', () => {
@@ -25,5 +25,21 @@ describe('config defaults', () => {
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true })
     }
+  })
+
+  it('round-trips shared settings values that are opened in the settings modal', () => {
+    const settings = {
+      ...configToSettings(DEFAULT_CONFIG),
+      showBuildWithAI: false,
+      markdownEditorMode: true,
+      drawerPosition: 'left' as const,
+    }
+
+    const updated = settingsToConfig(DEFAULT_CONFIG, settings)
+
+    expect(updated.showBuildWithAI).toBe(false)
+    expect(updated.markdownEditorMode).toBe(true)
+    expect(updated.drawerPosition).toBe('left')
+    expect(configToSettings(updated)).toMatchObject(settings)
   })
 })

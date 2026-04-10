@@ -1,0 +1,424 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - 'button "Switch board: Default" [ref=e7] [cursor=pointer]':
+        - generic [ref=e8]: Default
+        - img [ref=e9]
+      - button "Star board" [ref=e11] [cursor=pointer]:
+        - img [ref=e12]
+      - button "Create new board" [ref=e14] [cursor=pointer]:
+        - img [ref=e15]
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - img [ref=e18]
+        - textbox "Search cards" [ref=e21]:
+          - /placeholder: Search cards, people, labels...
+      - generic [ref=e22]:
+        - checkbox "Fuzzy" [ref=e23]
+        - generic [ref=e24]: Fuzzy
+    - button "New Card" [ref=e25] [cursor=pointer]:
+      - img [ref=e26]
+      - generic [ref=e27]: New Card
+    - button "Filters" [ref=e28] [cursor=pointer]:
+      - img [ref=e29]
+      - generic [ref=e30]: Filters
+    - button "Views" [ref=e32] [cursor=pointer]:
+      - img [ref=e33]
+      - generic [ref=e35]: Views
+    - button "Add List" [ref=e36] [cursor=pointer]:
+      - img [ref=e37]
+      - generic [ref=e38]: Add List
+    - button "Keyboard shortcuts (?)" [ref=e39] [cursor=pointer]:
+      - img [ref=e40]
+    - button "Switch to row layout" [ref=e42] [cursor=pointer]:
+      - img [ref=e43]
+    - 'button "Board options: Default" [ref=e46] [cursor=pointer]':
+      - img [ref=e47]
+  - generic [ref=e54]:
+    - generic [ref=e55]:
+      - generic [ref=e56]:
+        - generic [ref=e57]:
+          - heading "Backlog" [level=3] [ref=e59]
+          - generic [ref=e60]: "0"
+        - generic [ref=e61]:
+          - button "Add to Backlog" [ref=e62] [cursor=pointer]:
+            - img [ref=e63]
+          - button "Column options" [ref=e65] [cursor=pointer]:
+            - img [ref=e66]
+      - generic [ref=e71]:
+        - img [ref=e72]
+        - generic [ref=e75]: No cards yet
+        - generic [ref=e76]: Drag cards here or click + to add one
+      - button "Add card" [ref=e78] [cursor=pointer]:
+        - img [ref=e79]
+        - generic [ref=e80]: Add card
+    - generic [ref=e81]:
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - heading "To Do" [level=3] [ref=e85]
+          - generic [ref=e86]: "0"
+        - generic [ref=e87]:
+          - button "Add to To Do" [ref=e88] [cursor=pointer]:
+            - img [ref=e89]
+          - button "Column options" [ref=e91] [cursor=pointer]:
+            - img [ref=e92]
+      - generic [ref=e97]:
+        - img [ref=e98]
+        - generic [ref=e101]: No cards yet
+        - generic [ref=e102]: Drag cards here or click + to add one
+      - button "Add card" [ref=e104] [cursor=pointer]:
+        - img [ref=e105]
+        - generic [ref=e106]: Add card
+    - generic [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e109]:
+          - heading "In Progress" [level=3] [ref=e111]
+          - generic [ref=e112]: "0"
+        - generic [ref=e113]:
+          - button "Add to In Progress" [ref=e114] [cursor=pointer]:
+            - img [ref=e115]
+          - button "Column options" [ref=e117] [cursor=pointer]:
+            - img [ref=e118]
+      - generic [ref=e123]:
+        - img [ref=e124]
+        - generic [ref=e127]: No cards yet
+        - generic [ref=e128]: Drag cards here or click + to add one
+      - button "Add card" [ref=e130] [cursor=pointer]:
+        - img [ref=e131]
+        - generic [ref=e132]: Add card
+    - generic [ref=e133]:
+      - generic [ref=e134]:
+        - generic [ref=e135]:
+          - heading "Review" [level=3] [ref=e137]
+          - generic [ref=e138]: "0"
+        - generic [ref=e139]:
+          - button "Add to Review" [ref=e140] [cursor=pointer]:
+            - img [ref=e141]
+          - button "Column options" [ref=e143] [cursor=pointer]:
+            - img [ref=e144]
+      - generic [ref=e149]:
+        - img [ref=e150]
+        - generic [ref=e153]: No cards yet
+        - generic [ref=e154]: Drag cards here or click + to add one
+      - button "Add card" [ref=e156] [cursor=pointer]:
+        - img [ref=e157]
+        - generic [ref=e158]: Add card
+    - generic [ref=e159]:
+      - generic [ref=e160]:
+        - generic [ref=e161]:
+          - heading "Done" [level=3] [ref=e163]
+          - generic [ref=e164]: "0"
+        - generic [ref=e165]:
+          - button "Add to Done" [ref=e166] [cursor=pointer]:
+            - img [ref=e167]
+          - button "Column options" [ref=e169] [cursor=pointer]:
+            - img [ref=e170]
+      - generic [ref=e175]:
+        - img [ref=e176]
+        - generic [ref=e179]: No cards yet
+        - generic [ref=e180]: Drag cards here or click + to add one
+      - button "Add card" [ref=e182] [cursor=pointer]:
+        - img [ref=e183]
+        - generic [ref=e184]: Add card
+  - dialog "Settings" [ref=e185]:
+    - button "Resize drawer" [ref=e186]
+    - generic [ref=e188]:
+      - heading "Settings" [level=2] [ref=e189]
+      - button "Close settings" [ref=e190] [cursor=pointer]:
+        - img [ref=e191]
+    - generic [ref=e194]:
+      - button "General" [ref=e195] [cursor=pointer]
+      - button "Board" [ref=e196] [cursor=pointer]
+      - button "Plugin Options" [active] [ref=e197] [cursor=pointer]: Plugin Options
+    - generic [ref=e200]:
+      - generic [ref=e201]:
+        - heading "Plugin providers" [level=3] [ref=e202]
+        - paragraph [ref=e203]: Select a plugin to view its capabilities and configure options, or install a new package.
+      - generic [ref=e204]:
+        - generic [ref=e206]:
+          - generic [ref=e207] [cursor=pointer]:
+            - generic [ref=e208]:
+              - generic [ref=e209]: localfs
+              - generic [ref=e210]: attachment.storage · localfs
+            - generic [ref=e211]:
+              - generic [ref=e212]: Built-in
+              - generic [ref=e213]: Active
+          - generic [ref=e214] [cursor=pointer]:
+            - generic [ref=e215]:
+              - generic [ref=e216]: localfs
+              - generic [ref=e217]: card.state · localfs
+            - generic [ref=e218]:
+              - generic [ref=e219]: Built-in
+              - generic [ref=e220]: Active
+          - generic [ref=e221] [cursor=pointer]:
+            - generic [ref=e222]:
+              - generic [ref=e223]: localfs
+              - generic [ref=e224]: card.storage · localfs
+            - generic [ref=e225]:
+              - generic [ref=e226]: Built-in
+              - generic [ref=e227]: Active
+          - generic [ref=e228] [cursor=pointer]:
+            - generic [ref=e229]:
+              - generic [ref=e230]: localfs
+              - generic [ref=e231]: config.storage · localfs
+            - generic [ref=e232]:
+              - generic [ref=e233]: Built-in
+              - generic [ref=e234]: Active
+          - generic [ref=e235] [cursor=pointer]:
+            - generic [ref=e236]:
+              - generic [ref=e237]: noop
+              - generic [ref=e238]: auth.identity · noop
+            - generic [ref=e239]:
+              - generic [ref=e240]: Built-in
+              - generic [ref=e241]: Active
+          - generic [ref=e242] [cursor=pointer]:
+            - generic [ref=e243]:
+              - generic [ref=e244]: noop
+              - generic [ref=e245]: auth.policy · noop
+            - generic [ref=e246]:
+              - generic [ref=e247]: Built-in
+              - generic [ref=e248]: Active
+          - generic [ref=e249] [cursor=pointer]:
+            - generic [ref=e250]:
+              - generic [ref=e251]: kl-plugin-auth-visibility
+              - generic [ref=e252]: auth.visibility · kl-plugin-auth-visibility
+            - generic [ref=e253]:
+              - generic [ref=e254]: Workspace
+              - generic [ref=e255]: Active
+          - generic [ref=e256] [cursor=pointer]:
+            - generic [ref=e257]:
+              - generic [ref=e258]: kl-plugin-webhook
+              - generic [ref=e259]: webhook.delivery · webhooks
+            - generic [ref=e260]:
+              - generic [ref=e261]: Workspace
+              - generic [ref=e262]: Active
+          - generic [ref=e263] [cursor=pointer]:
+            - generic [ref=e264]:
+              - generic [ref=e265]: kl-plugin-attachment-s3
+              - generic [ref=e266]: attachment.storage · kl-plugin-attachment-s3
+            - generic [ref=e268]: Workspace
+          - generic [ref=e269] [cursor=pointer]:
+            - generic [ref=e270]:
+              - generic [ref=e271]: kl-plugin-auth
+              - generic [ref=e272]: auth.identity · kl-plugin-auth
+            - generic [ref=e274]: Workspace
+          - generic [ref=e275] [cursor=pointer]:
+            - generic [ref=e276]:
+              - generic [ref=e277]: kl-plugin-auth
+              - generic [ref=e278]: auth.identity · local
+            - generic [ref=e280]: Workspace
+          - generic [ref=e281] [cursor=pointer]:
+            - generic [ref=e282]:
+              - generic [ref=e283]: kl-plugin-auth
+              - generic [ref=e284]: auth.identity · rbac
+            - generic [ref=e286]: Workspace
+          - generic [ref=e287] [cursor=pointer]:
+            - generic [ref=e288]:
+              - generic [ref=e289]: kl-plugin-auth
+              - generic [ref=e290]: auth.policy · kl-plugin-auth
+            - generic [ref=e292]: Workspace
+          - generic [ref=e293] [cursor=pointer]:
+            - generic [ref=e294]:
+              - generic [ref=e295]: kl-plugin-auth
+              - generic [ref=e296]: auth.policy · local
+            - generic [ref=e298]: Workspace
+          - generic [ref=e299] [cursor=pointer]:
+            - generic [ref=e300]:
+              - generic [ref=e301]: kl-plugin-auth
+              - generic [ref=e302]: auth.policy · rbac
+            - generic [ref=e304]: Workspace
+          - generic [ref=e305] [cursor=pointer]:
+            - generic [ref=e306]:
+              - generic [ref=e307]: kl-plugin-callback
+              - generic [ref=e308]: callback.runtime · callbacks
+            - generic [ref=e310]: Workspace
+          - generic [ref=e311] [cursor=pointer]:
+            - generic [ref=e312]:
+              - generic [ref=e313]: kl-plugin-cloudflare
+              - generic [ref=e314]: attachment.storage · cloudflare
+            - generic [ref=e316]: Workspace
+          - generic [ref=e317] [cursor=pointer]:
+            - generic [ref=e318]:
+              - generic [ref=e319]: kl-plugin-cloudflare
+              - generic [ref=e320]: callback.runtime · cloudflare
+            - generic [ref=e322]: Workspace
+          - generic [ref=e323] [cursor=pointer]:
+            - generic [ref=e324]:
+              - generic [ref=e325]: kl-plugin-cloudflare
+              - generic [ref=e326]: card.state · cloudflare
+            - generic [ref=e328]: Workspace
+          - generic [ref=e329] [cursor=pointer]:
+            - generic [ref=e330]:
+              - generic [ref=e331]: kl-plugin-cloudflare
+              - generic [ref=e332]: card.storage · cloudflare
+            - generic [ref=e334]: Workspace
+          - generic [ref=e335] [cursor=pointer]:
+            - generic [ref=e336]:
+              - generic [ref=e337]: kl-plugin-cloudflare
+              - generic [ref=e338]: config.storage · cloudflare
+            - generic [ref=e340]: Workspace
+          - generic [ref=e341] [cursor=pointer]:
+            - generic [ref=e342]:
+              - generic [ref=e343]: kl-plugin-storage-mongodb
+              - generic [ref=e344]: card.state · mongodb
+            - generic [ref=e346]: Workspace
+          - generic [ref=e347] [cursor=pointer]:
+            - generic [ref=e348]:
+              - generic [ref=e349]: kl-plugin-storage-mongodb
+              - generic [ref=e350]: card.storage · mongodb
+            - generic [ref=e352]: Workspace
+          - generic [ref=e353] [cursor=pointer]:
+            - generic [ref=e354]:
+              - generic [ref=e355]: kl-plugin-storage-redis
+              - generic [ref=e356]: card.state · redis
+            - generic [ref=e358]: Workspace
+          - generic [ref=e359] [cursor=pointer]:
+            - generic [ref=e360]:
+              - generic [ref=e361]: kl-plugin-storage-redis
+              - generic [ref=e362]: card.storage · redis
+            - generic [ref=e364]: Workspace
+          - generic [ref=e365] [cursor=pointer]:
+            - generic [ref=e366]:
+              - generic [ref=e367]: kl-plugin-storage-redis
+              - generic [ref=e368]: config.storage · redis
+            - generic [ref=e370]: Workspace
+          - generic [ref=e371] [cursor=pointer]:
+            - generic [ref=e372]:
+              - generic [ref=e373]: kl-plugin-storage-sqlite
+              - generic [ref=e374]: attachment.storage · sqlite
+            - generic [ref=e376]: Workspace
+          - generic [ref=e377] [cursor=pointer]:
+            - generic [ref=e378]:
+              - generic [ref=e379]: kl-plugin-storage-sqlite
+              - generic [ref=e380]: card.state · sqlite
+            - generic [ref=e382]: Workspace
+          - generic [ref=e383] [cursor=pointer]:
+            - generic [ref=e384]:
+              - generic [ref=e385]: kl-plugin-storage-sqlite
+              - generic [ref=e386]: card.storage · sqlite
+            - generic [ref=e388]: Workspace
+          - generic [ref=e389] [cursor=pointer]:
+            - img [ref=e390]
+            - generic [ref=e391]: Install package
+        - generic [ref=e394]:
+          - generic [ref=e395]:
+            - heading "kl-plugin-auth-visibility" [level=4] [ref=e396]
+            - generic [ref=e397]:
+              - generic [ref=e398]: Workspace
+              - generic [ref=e399]: auth.visibility · kl-plugin-auth-visibility
+          - generic [ref=e400]:
+            - generic [ref=e401]: Capabilities
+            - generic [ref=e403]:
+              - generic [ref=e404]:
+                - generic [ref=e405]: auth.visibility
+                - generic [ref=e406]: "Provider: kl-plugin-auth-visibility"
+              - generic [ref=e407]:
+                - generic [ref=e408]: "On"
+                - switch "Toggle auth.visibility provider kl-plugin-auth-visibility" [checked] [ref=e409] [cursor=pointer]
+            - generic [ref=e411]:
+              - generic [ref=e412]: Options
+              - generic [ref=e413]:
+                - generic [ref=e414]:
+                  - generic [ref=e415]: auth.visibility
+                  - generic [ref=e416]: "Provider: kl-plugin-auth-visibility · On"
+                - generic [ref=e417]:
+                  - generic [ref=e418]:
+                    - generic [ref=e419]: kl-plugin-auth-visibility
+                    - generic [ref=e420]: "Package: kl-plugin-auth-visibility"
+                  - group "Visibility rules" [ref=e424]:
+                    - generic [ref=e425]: Visibility rules
+                    - generic [ref=e427]:
+                      - banner [ref=e428]:
+                        - generic [ref=e429]: Role rules
+                        - button "Add to Role rules" [ref=e430] [cursor=pointer]
+                      - generic [ref=e432]:
+                        - generic [ref=e433]:
+                          - group "Who this rule applies to" [ref=e435]:
+                            - generic [ref=e436]: Who this rule applies to
+                            - generic [ref=e438]:
+                              - banner [ref=e439]:
+                                - generic [ref=e440]: Matching roles
+                                - button "Add to Matching roles" [ref=e441] [cursor=pointer]
+                              - table [ref=e442]:
+                                - rowgroup [ref=e443]:
+                                  - row "Items Valid" [ref=e444]:
+                                    - columnheader "Items" [ref=e445]
+                                    - columnheader "Valid" [ref=e446]
+                                    - columnheader [ref=e447]
+                                - rowgroup [ref=e448]:
+                                  - row "viewer Delete button" [ref=e449]:
+                                    - cell "viewer" [ref=e450]:
+                                      - textbox [ref=e451]: viewer
+                                    - cell [ref=e452]
+                                    - cell "Delete button" [ref=e453]:
+                                      - button "Delete button" [ref=e454] [cursor=pointer]: Delete
+                          - group "Which cards become visible" [ref=e456]:
+                            - generic [ref=e457]: Which cards become visible
+                            - generic [ref=e459]:
+                              - banner [ref=e460]:
+                                - generic [ref=e461]: Statuses / columns
+                                - button "Add to Statuses / columns" [ref=e462] [cursor=pointer]
+                              - table [ref=e463]:
+                                - rowgroup [ref=e464]:
+                                  - row "Items Valid" [ref=e465]:
+                                    - columnheader "Items" [ref=e466]
+                                    - columnheader "Valid" [ref=e467]
+                                    - columnheader [ref=e468]
+                                - rowgroup [ref=e469]:
+                                  - row "No data" [ref=e470]:
+                                    - cell "No data" [ref=e471]
+                            - generic [ref=e473]:
+                              - banner [ref=e474]:
+                                - generic [ref=e475]: Labels
+                                - button "Add to Labels" [ref=e476] [cursor=pointer]
+                              - table [ref=e477]:
+                                - rowgroup [ref=e478]:
+                                  - row "Items Valid" [ref=e479]:
+                                    - columnheader "Items" [ref=e480]
+                                    - columnheader "Valid" [ref=e481]
+                                    - columnheader [ref=e482]
+                                - rowgroup [ref=e483]:
+                                  - row "public Delete button" [ref=e484]:
+                                    - cell "public" [ref=e485]:
+                                      - textbox [ref=e486]: public
+                                    - cell [ref=e487]
+                                    - cell "Delete button" [ref=e488]:
+                                      - button "Delete button" [ref=e489] [cursor=pointer]: Delete
+                            - generic [ref=e491]:
+                              - banner [ref=e492]:
+                                - generic [ref=e493]: Priorities
+                                - button "Add to Priorities" [ref=e494] [cursor=pointer]
+                              - table [ref=e495]:
+                                - rowgroup [ref=e496]:
+                                  - row "Items Valid" [ref=e497]:
+                                    - columnheader "Items" [ref=e498]
+                                    - columnheader "Valid" [ref=e499]
+                                    - columnheader [ref=e500]
+                                - rowgroup [ref=e501]:
+                                  - row "No data" [ref=e502]:
+                                    - cell "No data" [ref=e503]
+                            - generic [ref=e505]:
+                              - banner [ref=e506]:
+                                - generic [ref=e507]: Assignees
+                                - button "Add to Assignees" [ref=e508] [cursor=pointer]
+                              - table [ref=e509]:
+                                - rowgroup [ref=e510]:
+                                  - row "Items Valid" [ref=e511]:
+                                    - columnheader "Items" [ref=e512]
+                                    - columnheader "Valid" [ref=e513]
+                                    - columnheader [ref=e514]
+                                - rowgroup [ref=e515]:
+                                  - row "No data" [ref=e516]:
+                                    - cell "No data" [ref=e517]
+                        - button "Delete button" [ref=e519] [cursor=pointer]: ×Delete
+                  - generic [ref=e520]:
+                    - generic [ref=e521]: Save to persist this provider and its redacted option payload.
+                    - button "Save options" [ref=e522] [cursor=pointer]
+    - paragraph [ref=e524]: Settings are saved automatically and apply to all connected clients.
+  - generic [ref=e527]:
+    - generic [ref=e528]: Reconnecting…
+    - generic [ref=e529]: Trying to reconnect to the standalone backend (attempt 1 of 5). Next retry in 250ms. The previous socket closed unexpectedly. Form submissions pause until the backend reconnects.
+```

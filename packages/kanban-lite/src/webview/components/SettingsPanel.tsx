@@ -10,7 +10,6 @@ import type {
   CardDisplaySettings,
   Priority,
   CardStatus,
-  SettingsSupport,
   WorkspaceInfo,
   LabelDefinition,
   PluginSettingsDiscoverySource,
@@ -21,7 +20,7 @@ import type {
   PluginSettingsProviderTransport,
   PluginSettingsSecretFieldMetadata,
 } from '../../shared/types'
-import { DEFAULT_SETTINGS_SUPPORT, DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
+import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
 import type { CardViewMode } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
@@ -85,7 +84,6 @@ const plainBackgroundOptions: { value: BoardBackgroundPreset; label: string }[] 
 interface SettingsPanelProps {
   isOpen: boolean
   settings: CardDisplaySettings
-  settingsSupport?: SettingsSupport
   workspace?: WorkspaceInfo | null
   pluginSettings?: PluginSettingsPayload | null
   pluginSettingsProvider?: PluginSettingsProviderTransport | null
@@ -104,21 +102,14 @@ interface SettingsPanelProps {
   onDeleteLabel?: (name: string) => void
   onPluginOptionsTabActivated?: () => void
   onTabChange?: (tab: SettingsTab) => void
-  onBoardSubTabChange?: (tab: BoardSubTab) => void
   initialTab?: SettingsTab
-  initialBoardSubTab?: BoardSubTab
   boardMeta?: Record<string, BoardMetaFieldDef>
-  boardTitle?: string[]
-  boardActions?: Record<string, string>
   onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
-  onSaveBoardTitle?: (title: string[]) => void
-  onSaveBoardActions?: (actions: Record<string, string>) => void
 }
 
 export function SettingsPanel({
   isOpen,
   settings,
-  settingsSupport,
   workspace,
   pluginSettings,
   pluginSettingsProvider,
@@ -137,21 +128,14 @@ export function SettingsPanel({
   onDeleteLabel,
   onPluginOptionsTabActivated,
   onTabChange,
-  onBoardSubTabChange,
   initialTab,
-  initialBoardSubTab,
   boardMeta,
-  boardTitle,
-  boardActions,
   onSaveBoardMeta,
-  onSaveBoardTitle,
-  onSaveBoardActions,
 }: SettingsPanelProps) {
   if (!isOpen) return null
   return (
     <SettingsPanelContent
       settings={settings}
-      settingsSupport={settingsSupport}
       workspace={workspace}
       pluginSettings={pluginSettings}
       pluginSettingsProvider={pluginSettingsProvider}
@@ -170,15 +154,9 @@ export function SettingsPanel({
       onDeleteLabel={onDeleteLabel}
       onPluginOptionsTabActivated={onPluginOptionsTabActivated}
       onTabChange={onTabChange}
-      onBoardSubTabChange={onBoardSubTabChange}
       initialTab={initialTab}
-      initialBoardSubTab={initialBoardSubTab}
       boardMeta={boardMeta}
-      boardTitle={boardTitle}
-      boardActions={boardActions}
       onSaveBoardMeta={onSaveBoardMeta}
-      onSaveBoardTitle={onSaveBoardTitle}
-      onSaveBoardActions={onSaveBoardActions}
     />
   )
 }
@@ -310,300 +288,6 @@ function SettingsInfo({ label, value }: { label: string; value: string }) {
         title={value}
       >
         {value}
-      </div>
-    </div>
-  )
-}
-
-function normalizeBoardTitleFields(fields: string[]): string[] {
-  return [...new Set(fields.map((field) => field.trim()).filter(Boolean))]
-}
-
-function BoardTitleSection({
-  boardTitle,
-  boardMeta,
-  onSaveBoardTitle,
-}: {
-  boardTitle?: string[]
-  boardMeta?: Record<string, BoardMetaFieldDef>
-  onSaveBoardTitle?: (title: string[]) => void
-}) {
-  const initialFields = useMemo(() => normalizeBoardTitleFields(boardTitle ?? []), [boardTitle])
-  const suggestedFields = useMemo(() => Object.keys(boardMeta ?? {}), [boardMeta])
-  const resetKey = useMemo(
-    () => JSON.stringify({ initialFields, suggestedFields }),
-    [initialFields, suggestedFields],
-  )
-
-  return (
-    <BoardTitleSectionContent
-      key={resetKey}
-      initialFields={initialFields}
-      suggestedFields={suggestedFields}
-      onSaveBoardTitle={onSaveBoardTitle}
-    />
-  )
-}
-
-function BoardTitleSectionContent({
-  initialFields,
-  suggestedFields,
-  onSaveBoardTitle,
-}: {
-  initialFields: string[]
-  suggestedFields: string[]
-  onSaveBoardTitle?: (title: string[]) => void
-}) {
-  const [fields, setFields] = useState<string[]>(initialFields)
-  const [draftField, setDraftField] = useState('')
-
-  const commitFields = useCallback((nextFields: string[]) => {
-    const normalizedFields = normalizeBoardTitleFields(nextFields)
-    setFields(normalizedFields)
-    onSaveBoardTitle?.(normalizedFields)
-  }, [onSaveBoardTitle])
-
-  const addField = useCallback((rawField: string) => {
-    if (rawField.trim().length === 0) return
-    commitFields([...fields, rawField])
-    setDraftField('')
-  }, [commitFields, fields])
-
-  const removeField = useCallback((field: string) => {
-    commitFields(fields.filter((entry) => entry !== field))
-  }, [commitFields, fields])
-
-  const availableSuggestions = suggestedFields.filter((field) => !fields.includes(field))
-
-  return (
-    <div className="px-4 py-4 space-y-4">
-      <div className="space-y-1">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-          Title Fields
-        </h3>
-        <p className="text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-          Choose the metadata fields that prefix the rendered card title on this board, in the order they should appear.
-        </p>
-      </div>
-
-      <div className="rounded-xl border px-3 py-3 space-y-3" style={{ borderColor: 'var(--vscode-panel-border)' }}>
-        {fields.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            No title fields yet. Add one below to prefix titles with board metadata.
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {fields.map((field) => (
-              <span
-                key={field}
-                className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium"
-                style={{
-                  background: 'var(--vscode-badge-background)',
-                  color: 'var(--vscode-badge-foreground)',
-                }}
-              >
-                {field}
-                <button
-                  type="button"
-                  aria-label={`Remove title field ${field}`}
-                  onClick={() => removeField(field)}
-                  className="rounded-full p-0.5"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </span>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2">
-          <input
-            value={draftField}
-            onChange={(event) => setDraftField(event.target.value)}
-            placeholder="metadata key…"
-            className="flex-1 rounded border px-2 py-1.5 text-sm"
-            style={{
-              borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
-              background: 'var(--vscode-input-background)',
-              color: 'var(--vscode-input-foreground)',
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                addField(draftField)
-              }
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => addField(draftField)}
-            className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium"
-            style={{
-              background: 'var(--vscode-button-background)',
-              color: 'var(--vscode-button-foreground)',
-            }}
-          >
-            <Plus size={12} />
-            Add
-          </button>
-        </div>
-
-        {availableSuggestions.length > 0 && (
-          <div className="space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-              Suggested from board metadata
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {availableSuggestions.map((field) => (
-                <button
-                  key={field}
-                  type="button"
-                  onClick={() => addField(field)}
-                  className="rounded-full border px-2.5 py-1 text-xs"
-                  style={{
-                    borderColor: 'var(--vscode-panel-border)',
-                    color: 'var(--vscode-foreground)',
-                  }}
-                >
-                  {field}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-type BoardActionDraft = {
-  key: string
-  title: string
-}
-
-function normalizeBoardActionDrafts(rows: BoardActionDraft[]): Record<string, string> {
-  const nextActions: Record<string, string> = {}
-
-  for (const row of rows) {
-    const key = row.key.trim()
-    if (key.length === 0) continue
-    const title = row.title.trim()
-    nextActions[key] = title.length > 0 ? title : key
-  }
-
-  return nextActions
-}
-
-function BoardActionsSection({
-  boardActions,
-  onSaveBoardActions,
-}: {
-  boardActions?: Record<string, string>
-  onSaveBoardActions?: (actions: Record<string, string>) => void
-}) {
-  const initialRows = useMemo<BoardActionDraft[]>(() => Object.entries(boardActions ?? {}).map(([key, title]) => ({ key, title })), [boardActions])
-  const resetKey = useMemo(() => JSON.stringify(initialRows), [initialRows])
-
-  return (
-    <BoardActionsSectionContent
-      key={resetKey}
-      initialRows={initialRows}
-      onSaveBoardActions={onSaveBoardActions}
-    />
-  )
-}
-
-function BoardActionsSectionContent({
-  initialRows,
-  onSaveBoardActions,
-}: {
-  initialRows: BoardActionDraft[]
-  onSaveBoardActions?: (actions: Record<string, string>) => void
-}) {
-  const [rows, setRows] = useState<BoardActionDraft[]>(initialRows.length > 0 ? initialRows : [{ key: '', title: '' }])
-
-  const commitRows = useCallback((nextRows: BoardActionDraft[]) => {
-    const normalizedRows = nextRows.length > 0 ? nextRows : [{ key: '', title: '' }]
-    setRows(normalizedRows)
-    onSaveBoardActions?.(normalizeBoardActionDrafts(normalizedRows))
-  }, [onSaveBoardActions])
-
-  const updateRow = useCallback((index: number, patch: Partial<BoardActionDraft>) => {
-    const nextRows = rows.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row)
-    commitRows(nextRows)
-  }, [commitRows, rows])
-
-  const removeRow = useCallback((index: number) => {
-    commitRows(rows.filter((_, rowIndex) => rowIndex !== index))
-  }, [commitRows, rows])
-
-  const addRow = useCallback(() => {
-    setRows((currentRows) => [...currentRows, { key: '', title: '' }])
-  }, [])
-
-  return (
-    <div className="px-4 py-4 space-y-4">
-      <div className="space-y-1">
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-          Board Actions
-        </h3>
-        <p className="text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-          Configure the toolbar actions available for this board. Each action uses a stable key plus the title shown to people in the UI.
-        </p>
-      </div>
-
-      <div className="rounded-xl border px-3 py-3 space-y-3" style={{ borderColor: 'var(--vscode-panel-border)' }}>
-        {rows.map((row, index) => (
-          <div key={`${index}:${row.key}:${row.title}`} className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_auto] md:items-center">
-            <input
-              value={row.key}
-              onChange={(event) => updateRow(index, { key: event.target.value })}
-              placeholder="Action Key"
-              className="rounded border px-2 py-1.5 text-sm"
-              style={{
-                borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
-                background: 'var(--vscode-input-background)',
-                color: 'var(--vscode-input-foreground)',
-              }}
-            />
-            <input
-              value={row.title}
-              onChange={(event) => updateRow(index, { title: event.target.value })}
-              placeholder="Action Title"
-              className="rounded border px-2 py-1.5 text-sm"
-              style={{
-                borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
-                background: 'var(--vscode-input-background)',
-                color: 'var(--vscode-input-foreground)',
-              }}
-            />
-            <button
-              type="button"
-              aria-label={`Remove board action ${row.key || index + 1}`}
-              onClick={() => removeRow(index)}
-              className="inline-flex items-center justify-center rounded border p-2"
-              style={{
-                borderColor: 'var(--vscode-panel-border)',
-                color: 'var(--vscode-descriptionForeground)',
-              }}
-            >
-              <Trash2 size={14} />
-            </button>
-          </div>
-        ))}
-
-        <button
-          type="button"
-          onClick={addRow}
-          className="inline-flex items-center gap-1 rounded px-2 py-1.5 text-xs font-medium"
-          style={{
-            background: 'var(--vscode-button-background)',
-            color: 'var(--vscode-button-foreground)',
-          }}
-        >
-          <Plus size={12} />
-          Add action
-        </button>
       </div>
     </div>
   )
@@ -755,11 +439,14 @@ function getCapabilityEntry(
 interface PluginListEntry {
   key: string
   label: string
-  capability: PluginCapabilityNamespace
-  providerId: string
   discoverySource: PluginSettingsDiscoverySource
-  isSelected: boolean
-  optionsSchema?: PluginSettingsOptionsSchemaMetadata
+  capabilities: Array<{
+    capability: PluginCapabilityNamespace
+    providerId: string
+    isSelected: boolean
+    optionsSchema?: PluginSettingsOptionsSchemaMetadata
+  }>
+  hasSelectedCapability: boolean
 }
 
 interface PluginCapabilityDisplayEntry {
@@ -774,18 +461,9 @@ function isPluginSchemaNodeUiEditable(node: unknown): boolean {
 
   const nodeType = typeof node.type === 'string' ? node.type : null
   const properties = isRecord(node.properties) ? Object.values(node.properties) : []
-  const additionalProperties = node.additionalProperties
 
-  if (nodeType === 'object' || properties.length > 0 || isRecord(additionalProperties)) {
-    if (properties.some((property) => isPluginSchemaNodeUiEditable(property))) {
-      return true
-    }
-
-    if (isRecord(additionalProperties)) {
-      return isPluginSchemaNodeUiEditable(additionalProperties)
-    }
-
-    return false
+  if (nodeType === 'object' || properties.length > 0 || isRecord(node.additionalProperties)) {
+    return properties.some((property) => isPluginSchemaNodeUiEditable(property))
   }
 
   if (nodeType === 'array') {
@@ -805,44 +483,65 @@ function isPluginOptionsSchemaUiEditable(optionsSchema: PluginSettingsOptionsSch
 function derivePluginList(pluginSettings: PluginSettingsPayload | null | undefined): PluginListEntry[] {
   if (!pluginSettings?.capabilities) return []
 
-  const entries: PluginListEntry[] = []
+  const map = new Map<string, PluginListEntry>()
 
   for (const capEntry of pluginSettings.capabilities) {
     for (const provider of capEntry.providers) {
-      entries.push({
-        key: getPluginProviderCacheKey(capEntry.capability, provider.providerId),
-        label: provider.packageName,
+      const key = provider.packageName
+      let entry = map.get(key)
+      if (!entry) {
+        entry = {
+          key,
+          label: provider.packageName,
+          discoverySource: provider.discoverySource,
+          capabilities: [],
+          hasSelectedCapability: false,
+        }
+        map.set(key, entry)
+      }
+      entry.capabilities.push({
         capability: capEntry.capability,
         providerId: provider.providerId,
-        discoverySource: provider.discoverySource,
         isSelected: provider.isSelected,
         optionsSchema: provider.optionsSchema,
       })
+      if (provider.isSelected) {
+        entry.hasSelectedCapability = true
+      }
     }
   }
 
-  return entries.sort((a, b) => {
-    if (a.isSelected && !b.isSelected) return -1
-    if (!a.isSelected && b.isSelected) return 1
+  return Array.from(map.values()).sort((a, b) => {
     if (a.discoverySource === 'builtin' && b.discoverySource !== 'builtin') return -1
     if (a.discoverySource !== 'builtin' && b.discoverySource === 'builtin') return 1
-    const packageComparison = a.label.localeCompare(b.label)
-    if (packageComparison !== 0) return packageComparison
-    const capabilityComparison = a.capability.localeCompare(b.capability)
-    if (capabilityComparison !== 0) return capabilityComparison
-    return a.providerId.localeCompare(b.providerId)
+    return a.label.localeCompare(b.label)
   })
 }
 
 function getPluginCapabilityDisplayEntries(plugin: PluginListEntry | null): PluginCapabilityDisplayEntry[] {
   if (!plugin) return []
 
-  return [{
-    capability: plugin.capability,
-    providerId: plugin.providerId,
-    isSelected: plugin.isSelected,
-    optionsSchema: plugin.optionsSchema,
-  }]
+  const groupedCapabilities = new Map<PluginCapabilityNamespace, PluginListEntry['capabilities']>()
+
+  for (const capability of plugin.capabilities) {
+    const entries = groupedCapabilities.get(capability.capability) ?? []
+    entries.push(capability)
+    groupedCapabilities.set(capability.capability, entries)
+  }
+
+  return [...groupedCapabilities.entries()].map(([capability, entries]) => {
+    const selectedEntry = entries.find((entry) => entry.isSelected)
+    const preferredEntry = selectedEntry
+      ?? entries.find((entry) => entry.providerId === plugin.key)
+      ?? entries[0]
+
+    return {
+      capability,
+      providerId: preferredEntry.providerId,
+      isSelected: preferredEntry.isSelected,
+      optionsSchema: preferredEntry.optionsSchema,
+    }
+  })
 }
 
 function PluginSettingsBadge({
@@ -1043,14 +742,14 @@ function PluginOptionsSection({
       return preferredPluginKey
     }
 
-    return (pluginSettingsProvider
-      ? plugins.find((plugin) => plugin.key === getPluginProviderCacheKey(pluginSettingsProvider.capability, pluginSettingsProvider.providerId))?.key
-      : null)
-      ?? plugins.find((plugin) => plugin.isSelected && isPluginOptionsSchemaUiEditable(plugin.optionsSchema))?.key
-      ?? plugins.find((plugin) => plugin.isSelected)?.key
+    return plugins.find(plugin => plugin.key === pluginSettingsProvider?.packageName)?.key
+      ?? plugins.find(plugin => plugin.capabilities.some(
+        capability => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
+      ))?.key
+      ?? plugins.find(plugin => plugin.hasSelectedCapability)?.key
       ?? plugins[0]?.key
       ?? null
-  }, [plugins, preferredPluginKey, pluginSettingsProvider, isInstallVisible])
+  }, [plugins, preferredPluginKey, pluginSettingsProvider?.packageName, isInstallVisible])
 
   const handleSplitDragStart = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
@@ -1203,25 +902,15 @@ function PluginOptionsSection({
                 onMouseEnter={e => { if (activePluginKey !== plugin.key || isInstallVisible) e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)' }}
                 onMouseLeave={e => { if (activePluginKey !== plugin.key || isInstallVisible) e.currentTarget.style.background = 'transparent' }}
               >
-                <div className="min-w-0 flex-1">
-                  <div
-                    className="text-sm font-medium truncate"
-                    style={activePluginKey === plugin.key && !isInstallVisible ? undefined : { color: 'var(--vscode-foreground)' }}
-                  >
-                    {plugin.label}
-                  </div>
-                  <div
-                    className="text-[11px] truncate"
-                    style={activePluginKey === plugin.key && !isInstallVisible
-                      ? { color: 'var(--vscode-list-activeSelectionForeground)' }
-                      : { color: 'var(--vscode-descriptionForeground)' }}
-                  >
-                    {plugin.capability} · {plugin.providerId}
-                  </div>
-                </div>
+                <span
+                  className="text-sm font-medium flex-1 truncate"
+                  style={activePluginKey === plugin.key && !isInstallVisible ? undefined : { color: 'var(--vscode-foreground)' }}
+                >
+                  {plugin.label}
+                </span>
                 <div className="flex items-center gap-1 shrink-0">
                   <PluginSettingsBadge>{pluginDiscoverySourceLabels[plugin.discoverySource]}</PluginSettingsBadge>
-                  {plugin.isSelected && <PluginSettingsBadge tone="selected">Active</PluginSettingsBadge>}
+                  {plugin.hasSelectedCapability && <PluginSettingsBadge tone="selected">Active</PluginSettingsBadge>}
                 </div>
               </div>
             ))}
@@ -1299,7 +988,7 @@ function PluginOptionsSection({
                 <div className="flex items-center gap-2 mt-1">
                   <PluginSettingsBadge>{pluginDiscoverySourceLabels[activePlugin.discoverySource]}</PluginSettingsBadge>
                   <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                    {activePlugin.capability} · {activePlugin.providerId}
+                    {activePluginCapabilities.length} {activePluginCapabilities.length === 1 ? 'capability' : 'capabilities'}
                   </span>
                 </div>
               </div>
@@ -1973,15 +1662,12 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
 
 const boardSubTabLabels: Record<BoardSubTab, string> = {
   defaults: 'Defaults',
-  title: 'Title',
-  actions: 'Actions',
   labels: 'Labels',
   meta: 'Meta',
 }
 
 function SettingsPanelContent({
   settings,
-  settingsSupport,
   workspace,
   pluginSettings,
   pluginSettingsProvider,
@@ -2000,29 +1686,18 @@ function SettingsPanelContent({
   onDeleteLabel,
   onPluginOptionsTabActivated,
   onTabChange,
-  onBoardSubTabChange,
   initialTab,
-  initialBoardSubTab,
   boardMeta,
-  boardTitle,
-  boardActions,
   onSaveBoardMeta,
-  onSaveBoardTitle,
-  onSaveBoardActions,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
-  const [boardSubTab, setBoardSubTabRaw] = useState<BoardSubTab>(initialBoardSubTab ?? 'defaults')
+  const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>('defaults')
 
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab)
     onTabChange?.(tab)
   }, [onTabChange])
-
-  const setBoardSubTab = useCallback((tab: BoardSubTab) => {
-    setBoardSubTabRaw(tab)
-    onBoardSubTabChange?.(tab)
-  }, [onBoardSubTabChange])
 
   // Sync activeTab when initialTab changes from URL navigation
   useEffect(() => {
@@ -2034,13 +1709,6 @@ function SettingsPanelContent({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab])
-
-  useEffect(() => {
-    if (initialBoardSubTab && initialBoardSubTab !== boardSubTab) {
-      setBoardSubTabRaw(initialBoardSubTab)
-    }
-  }, [boardSubTab, initialBoardSubTab])
-
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   useEffect(() => {
@@ -2061,10 +1729,6 @@ function SettingsPanelContent({
     () => local.boardBackgroundMode === 'plain' ? plainBackgroundOptions : fancyBackgroundOptions,
     [local.boardBackgroundMode]
   )
-  const resolvedSettingsSupport = useMemo(() => ({
-    ...DEFAULT_SETTINGS_SUPPORT,
-    ...settingsSupport,
-  }), [settingsSupport])
 
   useEffect(() => { setLocal(settings) }, [settings])
 
@@ -2197,22 +1861,6 @@ function SettingsPanelContent({
                   checked={local.showLabels}
                   onChange={v => update({ showLabels: v })}
                 />
-                {resolvedSettingsSupport.showBuildWithAI && (
-                  <SettingsToggle
-                    label="Show Build with AI"
-                    description="Show the Build with AI action where the current host supports AI-assisted workflows"
-                    checked={local.showBuildWithAI}
-                    onChange={v => update({ showBuildWithAI: v })}
-                  />
-                )}
-                {resolvedSettingsSupport.markdownEditorMode && (
-                  <SettingsToggle
-                    label="Markdown Editor Mode"
-                    description="Open cards in the native markdown editor instead of the embedded card editor"
-                    checked={local.markdownEditorMode}
-                    onChange={v => update({ markdownEditorMode: v })}
-                  />
-                )}
                 <SettingsToggle
                   label="Show Filename"
                   description="Display the source markdown filename on cards"
@@ -2251,19 +1899,17 @@ function SettingsPanelContent({
                 />
                 {(local.panelMode ?? 'drawer') === 'drawer' && (
                   <>
-                    {resolvedSettingsSupport.drawerPosition && (
-                      <SettingsDropdown
-                        label="Drawer Position"
-                        value={local.drawerPosition ?? 'right'}
-                        options={[
-                          { value: 'right', label: 'Right' },
-                          { value: 'left', label: 'Left' },
-                          { value: 'top', label: 'Top' },
-                          { value: 'bottom', label: 'Bottom' },
-                        ]}
-                        onChange={v => update({ drawerPosition: v as 'right' | 'left' | 'top' | 'bottom' })}
-                      />
-                    )}
+                    <SettingsDropdown
+                      label="Drawer Position"
+                      value={local.drawerPosition ?? 'right'}
+                      options={[
+                        { value: 'right', label: 'Right' },
+                        { value: 'left', label: 'Left' },
+                        { value: 'top', label: 'Top' },
+                        { value: 'bottom', label: 'Bottom' },
+                      ]}
+                      onChange={v => update({ drawerPosition: v as 'right' | 'left' | 'top' | 'bottom' })}
+                    />
                     <SettingsSlider
                       label="Drawer Size"
                       description="Size of the drawer as a percentage of the viewport"
@@ -2363,7 +2009,7 @@ function SettingsPanelContent({
                 className="flex flex-col shrink-0 py-2"
                 style={{ width: 96, borderRight: '1px solid var(--vscode-panel-border)' }}
               >
-                {(['defaults', 'title', 'actions', 'labels', 'meta'] as const).map(sub => (
+                {(['defaults', 'labels', 'meta'] as const).map(sub => (
                   <button
                     key={sub}
                     type="button"
@@ -2417,21 +2063,6 @@ function SettingsPanelContent({
                       onDeleteLabel={onDeleteLabel}
                     />
                   </SettingsSection>
-                )}
-
-                {boardSubTab === 'title' && (
-                  <BoardTitleSection
-                    boardTitle={boardTitle}
-                    boardMeta={boardMeta}
-                    onSaveBoardTitle={onSaveBoardTitle}
-                  />
-                )}
-
-                {boardSubTab === 'actions' && (
-                  <BoardActionsSection
-                    boardActions={boardActions}
-                    onSaveBoardActions={onSaveBoardActions}
-                  />
                 )}
 
                 {boardSubTab === 'meta' && (

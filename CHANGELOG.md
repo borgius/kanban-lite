@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Board settings standalone routes**: Standalone browser navigation now deep-links the Board settings sub-tabs at `/settings/board/defaults`, `/settings/board/title`, `/settings/board/actions`, `/settings/board/labels`, and `/settings/board/meta`, and legacy `/settings/defaults` / `/settings/labels` links redirect to the matching nested board routes.
+
 - **Settings-panel config coverage**: The shared settings UI now persists `showBuildWithAI`, `markdownEditorMode`, and `drawerPosition`, adds board-level editors for `boards.<id>.title` and `boards.<id>.actions`, and keeps plugin-provider rows distinct by `capability + providerId` so same-package variants no longer collapse into one entry.
 
 - **Card write editor now uses CodeMirror**: The main `Edit` tab in the shared card editor now uses CodeMirror for markdown authoring, keeping the existing toolbar shortcuts while giving the standalone app and VS Code webview the same editor surface as other code-enabled inputs.

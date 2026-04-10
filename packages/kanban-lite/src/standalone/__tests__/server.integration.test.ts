@@ -666,8 +666,8 @@ describe('Standalone Server Integration', () => {
           actorHint: 'middleware-auth-context',
         })
       } finally {
-        cleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
       }
     })
 
@@ -1028,8 +1028,8 @@ describe('Standalone Server Integration', () => {
           await sleep(50)
         }
       } finally {
-        cleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
       }
     })
   })
@@ -3463,8 +3463,8 @@ describe('Standalone Server Integration', () => {
           error: CARD_STATE_IDENTITY_PUBLIC_ERROR,
         })
       } finally {
-        cleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
       }
     })
 
@@ -3529,8 +3529,8 @@ describe('Standalone Server Integration', () => {
         })
         unavailableSpy.mockRestore()
       } finally {
-        authCleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        authCleanup()
       }
     })
 
@@ -3624,8 +3624,8 @@ describe('Standalone Server Integration', () => {
           unread: true,
         })
       } finally {
-        cleanup()
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        cleanup()
       }
     })
 

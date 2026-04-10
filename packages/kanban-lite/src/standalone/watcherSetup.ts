@@ -23,6 +23,11 @@ function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&')
 }
 
+function isIgnorableWatcherTeardownError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
 export function globToRegExp(glob: string): RegExp {
   const normalized = glob.replace(/\\/g, '/')
   let pattern = '^'
@@ -53,20 +58,33 @@ export function globToRegExp(glob: string): RegExp {
   return new RegExp(`${pattern}$`)
 }
 
-function handleFileChange(ctx: StandaloneContext, debounceRef: { timer: ReturnType<typeof setTimeout> | undefined }, changedPath?: string): void {
+function handleFileChange(
+  ctx: StandaloneContext,
+  debounceRef: { timer: ReturnType<typeof setTimeout> | undefined },
+  lifecycleRef: { closed: boolean },
+  changedPath?: string,
+): void {
+  if (lifecycleRef.closed) return
   if (ctx.migrating) return
   if (Date.now() < ctx.suppressWatcherEventsUntil) return
   if (debounceRef.timer) clearTimeout(debounceRef.timer)
   debounceRef.timer = setTimeout(async () => {
+    if (lifecycleRef.closed) return
     if (ctx.migrating) return
     if (Date.now() < ctx.suppressWatcherEventsUntil) return
     ctx.migrating = true
     try {
       await loadCards(ctx)
+      if (lifecycleRef.closed) return
       broadcast(ctx, buildInitMessage(ctx))
+    } catch (error) {
+      if (lifecycleRef.closed && isIgnorableWatcherTeardownError(error)) return
+      console.error('Failed to refresh standalone state after watched file change:', error)
     } finally {
       ctx.migrating = false
     }
+
+    if (lifecycleRef.closed) return
 
     if (changedPath) {
       const editingCard = ctx.cards.find((card) => getClientsEditingCard(ctx, card.id).length > 0 && ctx.sdk.getLocalCardPath(card) === changedPath)
@@ -82,6 +100,15 @@ function handleFileChange(ctx: StandaloneContext, debounceRef: { timer: ReturnTy
 
 export function setupWatcher(ctx: StandaloneContext, server: http.Server): void {
   const debounceRef: { timer: ReturnType<typeof setTimeout> | undefined } = { timer: undefined }
+  const lifecycleRef = { closed: false }
+
+  server.on('close', () => {
+    lifecycleRef.closed = true
+    if (debounceRef.timer) {
+      clearTimeout(debounceRef.timer)
+      debounceRef.timer = undefined
+    }
+  })
 
   const watchGlob = ctx.sdk.getStorageStatus().watchGlob
   if (watchGlob) {
@@ -97,9 +124,9 @@ export function setupWatcher(ctx: StandaloneContext, server: http.Server): void 
     })
 
     watcher.on('ready', () => { watcherReady = true })
-    watcher.on('change', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(ctx, debounceRef, p))
-    watcher.on('add', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(ctx, debounceRef, p))
-    watcher.on('unlink', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(ctx, debounceRef, p))
+    watcher.on('change', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(ctx, debounceRef, lifecycleRef, p))
+    watcher.on('add', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(ctx, debounceRef, lifecycleRef, p))
+    watcher.on('unlink', (p) => watcherReady && shouldHandleWatchPath(p) && handleFileChange(ctx, debounceRef, lifecycleRef, p))
 
     server.on('close', () => {
       watcher.close()
@@ -118,6 +145,6 @@ export function setupWatcher(ctx: StandaloneContext, server: http.Server): void 
     ignoreInitial: true,
     awaitWriteFinish: { stabilityThreshold: 100 }
   })
-  configWatcher.on('change', () => handleFileChange(ctx, debounceRef))
+  configWatcher.on('change', () => handleFileChange(ctx, debounceRef, lifecycleRef))
   server.on('close', () => configWatcher.close())
 }

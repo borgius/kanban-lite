@@ -311,6 +311,79 @@ export class KanbanPanel {
           case 'removeAttachment':
             await this._removeAttachment(message.cardId, message.attachment)
             break
+          case 'uploadVoiceCommentAttachment': {
+            const uploadSdk = this._getSDK()
+            if (!uploadSdk) break
+
+            try {
+              const targetBoardId = message.boardId ?? this._currentBoardId
+              const safeFilename = path.basename(message.filename) || 'voice-comment.webm'
+              const attachmentData = Buffer.from(message.dataBase64, 'base64')
+
+              this._migrating = true
+              try {
+                const updated = await this._runWithAuth(uploadSdk, () => uploadSdk.addAttachmentData(
+                  message.cardId,
+                  safeFilename,
+                  attachmentData,
+                  targetBoardId,
+                ))
+                const idx = this._cards.findIndex(f => f.id === message.cardId)
+                if (idx !== -1) this._cards[idx] = updated
+
+                this._sendCardsToWebview()
+                if (this._currentEditingCardId === message.cardId) {
+                  await this._sendCardContent(message.cardId)
+                }
+              } finally {
+                this._migrating = false
+              }
+
+              this._panel.webview.postMessage({
+                type: 'voiceCommentAttachmentResult',
+                callbackKey: message.callbackKey,
+                filename: safeFilename,
+              })
+            } catch (err) {
+              this._panel.webview.postMessage({
+                type: 'voiceCommentAttachmentResult',
+                callbackKey: message.callbackKey,
+                error: getErrorMessage(err),
+              })
+            }
+            break
+          }
+          case 'resolveVoiceCommentPlayback': {
+            const playbackSdk = this._getSDK()
+            if (!playbackSdk) break
+
+            try {
+              const targetBoardId = message.boardId ?? this._currentBoardId
+              const attachment = await this._runWithAuth(playbackSdk, () => playbackSdk.getAttachmentData(
+                message.cardId,
+                message.attachment,
+                targetBoardId,
+              ))
+
+              if (!attachment) {
+                throw new Error(`Attachment not found: ${message.attachment}`)
+              }
+
+              this._panel.webview.postMessage({
+                type: 'voiceCommentPlaybackResult',
+                callbackKey: message.callbackKey,
+                dataBase64: Buffer.from(attachment.data).toString('base64'),
+                ...(attachment.contentType ? { contentType: attachment.contentType } : {}),
+              })
+            } catch (err) {
+              this._panel.webview.postMessage({
+                type: 'voiceCommentPlaybackResult',
+                callbackKey: message.callbackKey,
+                error: getErrorMessage(err),
+              })
+            }
+            break
+          }
           case 'addComment':
             await this._addComment(message.cardId, message.author, message.content)
             break
@@ -688,7 +761,7 @@ export class KanbanPanel {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource};">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webview.cspSource}; img-src ${webview.cspSource} data: blob:; font-src ${webview.cspSource}; media-src ${webview.cspSource} data: blob:;">
   <link href="${styleUri}" rel="stylesheet">
   <title>Kanban Board</title>
 </head>

@@ -107,6 +107,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
   const removeView = useStore(s => s.removeView)
   const hiddenColumnIds = useStore(s => s.getHiddenColumnIds())
   const setColumnHidden = useStore(s => s.setColumnHidden)
+  const getFilteredCardsByStatus = useStore(s => s.getFilteredCardsByStatus)
 
   const assignees = useMemo(() => {
     const s = new Set<string>()
@@ -138,6 +139,11 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
       Object.values(columnSorts).some(s => s !== 'order')
     )
   }, [searchQuery, fuzzySearch, priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
+
+  const filteredCount = useMemo(() => {
+    if (!filtersActive) return 0
+    return columns.reduce((sum, col) => sum + getFilteredCardsByStatus(col.id).length, 0)
+  }, [filtersActive, columns, getFilteredCardsByStatus, cards, searchQuery, fuzzySearch, priorityFilter, assigneeFilter, labelFilter, dueDateFilter])
 
   const [boardSwitcherOpen, setBoardSwitcherOpen] = useState(false)
   const [creatingBoard, setCreatingBoard] = useState(false)
@@ -757,7 +763,7 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
       )}
     </div>
     {filtersActive && (
-      <div className="flex flex-wrap gap-1.5 px-4 pb-2">
+      <div className="flex flex-wrap items-center gap-1.5 px-4 pb-2">
         {parsedSearch.plainText && (
           <FilterChip label={`Search: "${parsedSearch.plainText}"`} onRemove={clearPlainTextSearch} />
         )}
@@ -783,6 +789,9 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
         {dueDateFilter !== 'all' && (
           <FilterChip label={`Due: ${dueDateOptions.find(d => d.value === dueDateFilter)?.label ?? dueDateFilter}`} onRemove={() => setDueDateFilter('all')} />
         )}
+        <span className="ml-auto text-xs text-zinc-400 dark:text-zinc-500 tabular-nums">
+          {filteredCount} {filteredCount === 1 ? 'card' : 'cards'}
+        </span>
       </div>
     )}
     </div>

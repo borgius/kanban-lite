@@ -29,6 +29,30 @@ export interface SubmitFormMessage {
   boardId?: string
 }
 
+/**
+ * Webview transport request for uploading a recorded voice comment attachment.
+ */
+export interface UploadVoiceCommentAttachmentMessage {
+  type: 'uploadVoiceCommentAttachment'
+  cardId: string
+  filename: string
+  dataBase64: string
+  contentType?: string
+  callbackKey: string
+  boardId?: string
+}
+
+/**
+ * Webview transport request for resolving a playable source for a voice comment attachment.
+ */
+export interface ResolveVoiceCommentPlaybackMessage {
+  type: 'resolveVoiceCommentPlayback'
+  cardId: string
+  attachment: string
+  callbackKey: string
+  boardId?: string
+}
+
 export interface AddChecklistItemMessage {
   type: 'addChecklistItem'
   cardId: string
@@ -115,6 +139,8 @@ export type ExtensionMessage =
   | ShowSettingsMessage
   | PluginSettingsResultMessage
   | { type: 'labelsUpdated'; labels: Record<string, LabelDefinition> }
+  | { type: 'voiceCommentAttachmentResult'; callbackKey: string; filename?: string; error?: string }
+  | { type: 'voiceCommentPlaybackResult'; callbackKey: string; url?: string; dataBase64?: string; contentType?: string; error?: string }
   | { type: 'actionResult'; callbackKey: string; error?: string }
   | { type: 'boardActionResult'; callbackKey: string; error?: string }
   | { type: 'submitFormResult'; callbackKey: string; result?: SubmitFormTransportResult; error?: string }
@@ -145,6 +171,8 @@ export type WebviewMessage =
   | { type: 'addAttachment'; cardId: string }
   | { type: 'openAttachment'; cardId: string; attachment: string }
   | { type: 'removeAttachment'; cardId: string; attachment: string }
+  | UploadVoiceCommentAttachmentMessage
+  | ResolveVoiceCommentPlaybackMessage
   | { type: 'openSettings' }
   | { type: 'toggleTheme' }
   | { type: 'loadPluginSettings' }

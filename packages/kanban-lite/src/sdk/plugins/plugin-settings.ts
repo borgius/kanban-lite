@@ -85,10 +85,15 @@ function normalizePluginSettingsOptionsSchema(value: unknown): PluginSettingsOpt
   const secrets = Array.isArray(value.secrets)
     ? value.secrets.filter(isValidPluginSettingsSecretFieldMetadata)
     : []
+  // beforeSave is a server-side function hook; preserve it but never serialize it to transports.
+  const beforeSave = typeof value.beforeSave === 'function'
+    ? (value.beforeSave as PluginSettingsOptionsSchemaMetadata['beforeSave'])
+    : undefined
   return {
     schema: structuredClone(value.schema) as PluginSettingsOptionsSchemaMetadata['schema'],
     ...(uiSchema ? { uiSchema } : {}),
     secrets,
+    ...(beforeSave ? { beforeSave } : {}),
   }
 }
 

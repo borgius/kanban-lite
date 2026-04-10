@@ -441,4 +441,81 @@ describe('standalone shim reconnect behavior', () => {
     )
     expect(MockWebSocket.instances[0]?.sent).toEqual([])
   })
+
+  it('uploads voice comment attachments through the hidden standalone endpoint', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({
+      type: 'uploadVoiceCommentAttachment',
+      cardId: '42',
+      filename: 'nested/path/voice-note.webm',
+      dataBase64: 'dm9pY2U=',
+      callbackKey: 'voice-upload-1',
+    })
+
+    await flushAsyncWork()
+
+    const fetchMock = vi.mocked(fetch)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/upload-attachment',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      cardId: '42',
+      files: [{ name: 'voice-note.webm', data: 'dm9pY2U=' }],
+    })
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'voiceCommentAttachmentResult',
+        callbackKey: 'voice-upload-1',
+        filename: 'voice-note.webm',
+      }),
+      '*',
+    )
+    expect(MockWebSocket.instances[0]?.sent).toEqual([])
+  })
+
+  it('resolves standalone voice playback to the attachment route URL', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({
+      type: 'resolveVoiceCommentPlayback',
+      cardId: '42',
+      attachment: 'voice note.webm',
+      callbackKey: 'voice-play-1',
+    })
+
+    expect(postMessageSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'voiceCommentPlaybackResult',
+        callbackKey: 'voice-play-1',
+        url: '/api/attachment?cardId=42&filename=voice%20note.webm',
+      }),
+      '*',
+    )
+    expect(MockWebSocket.instances[0]?.sent).toEqual([])
+  })
 })

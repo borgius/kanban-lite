@@ -1,12 +1,17 @@
 // src/webview/components/CommentEditor.tsx
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { markdown } from '@codemirror/lang-markdown'
-import { Bold, Italic, Quote, Code, Link, List, ListOrdered } from 'lucide-react'
+import { Bold, Italic, Quote, Code, Link, List, ListOrdered, Mic, Trash2 } from 'lucide-react'
 import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import { wrapEditorSelection, ToolbarButton, parseCommentMarkdown, type FormatAction } from '../lib/markdownTools'
+import { buildVoiceCommentContent, parseVoiceCommentContent, type VoiceCommentAttachmentRef } from '../../shared/voiceComments'
 import { useStore } from '../store'
+import { getVsCodeApi } from '../vsCodeApi'
+import { VoiceCommentPlayer } from './VoiceCommentPlayer'
+import { VoiceCommentRecorder } from './VoiceCommentRecorder'
 
 interface CommentEditorProps {
+  cardId?: string
   initialContent?: string
   onSubmit: (author: string, content: string) => void
   onCancel?: () => void
@@ -14,20 +19,26 @@ interface CommentEditorProps {
 }
 
 export function CommentEditor({
+  cardId,
   initialContent = '',
   onSubmit,
   onCancel,
   submitLabel = 'Comment',
 }: CommentEditorProps) {
+  const initialParsedContent = useMemo(() => parseVoiceCommentContent(initialContent), [initialContent])
   const currentUser = useStore((state) => state.currentUser)
   const suggestedAuthor = currentUser.trim() || 'User'
   const [author, setAuthor] = useState(suggestedAuthor)
-  const [content, setContent] = useState(initialContent)
+  const [content, setContent] = useState(initialParsedContent.note)
+  const [voiceAttachment, setVoiceAttachment] = useState<VoiceCommentAttachmentRef | null>(initialParsedContent.voiceAttachment)
+  const [draftVoiceAttachmentFilename, setDraftVoiceAttachmentFilename] = useState<string | null>(null)
+  const [isRecorderOpen, setIsRecorderOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<'write' | 'preview'>('write')
   const [editorResetKey, setEditorResetKey] = useState(0)
   const editorRef = useRef<CodeMirrorEditorHandle>(null)
   const isFirstRender = useRef(true)
   const lastSuggestedAuthorRef = useRef(suggestedAuthor)
+  const draftVoiceAttachmentFilenameRef = useRef<string | null>(null)
   const markdownExtensions = useMemo(() => [markdown()], [])
 
   useEffect(() => {
@@ -58,10 +69,75 @@ export function CommentEditor({
     }
   }, [editorResetKey])
 
+  useEffect(() => {
+    draftVoiceAttachmentFilenameRef.current = draftVoiceAttachmentFilename
+  }, [draftVoiceAttachmentFilename])
+
+  useEffect(() => {
+    return () => {
+      const draftFilename = draftVoiceAttachmentFilenameRef.current
+      if (cardId && draftFilename) {
+        getVsCodeApi().postMessage({ type: 'removeAttachment', cardId, attachment: draftFilename })
+        draftVoiceAttachmentFilenameRef.current = null
+      }
+    }
+  }, [cardId])
+
   const previewHtml = useMemo(() => {
     if (!content.trim()) return ''
     return parseCommentMarkdown(content)
   }, [content])
+
+  const hasDraftVoiceAttachment = draftVoiceAttachmentFilename !== null && draftVoiceAttachmentFilename === voiceAttachment?.filename
+
+  const clearDraftVoiceAttachment = useCallback(() => {
+    const draftFilename = draftVoiceAttachmentFilenameRef.current
+    if (!draftFilename) {
+      return
+    }
+
+    if (cardId) {
+      getVsCodeApi().postMessage({ type: 'removeAttachment', cardId, attachment: draftFilename })
+    }
+
+    draftVoiceAttachmentFilenameRef.current = null
+    setDraftVoiceAttachmentFilename(null)
+    setVoiceAttachment((currentAttachment) => currentAttachment?.filename === draftFilename ? null : currentAttachment)
+  }, [cardId])
+
+  const handleRecorderAttached = useCallback((nextVoiceAttachment: VoiceCommentAttachmentRef) => {
+    draftVoiceAttachmentFilenameRef.current = nextVoiceAttachment.filename
+    setDraftVoiceAttachmentFilename(nextVoiceAttachment.filename)
+    setVoiceAttachment(nextVoiceAttachment)
+    setIsRecorderOpen(false)
+  }, [])
+
+  const renderVoiceAttachmentSummary = useCallback(() => {
+    if (!voiceAttachment) {
+      return null
+    }
+
+    return (
+      <div className="comment-editor-voice-summary">
+        <VoiceCommentPlayer
+          cardId={cardId}
+          voiceAttachment={voiceAttachment}
+          label={hasDraftVoiceAttachment ? 'Attached voice comment' : 'Voice comment'}
+        />
+        {hasDraftVoiceAttachment && (
+          <button
+            type="button"
+            onClick={clearDraftVoiceAttachment}
+            className="comment-editor-voice-discard"
+            title="Discard attached voice draft"
+          >
+            <Trash2 size={12} />
+            <span>Discard draft audio</span>
+          </button>
+        )}
+      </div>
+    )
+  }, [cardId, clearDraftVoiceAttachment, hasDraftVoiceAttachment, voiceAttachment])
 
   const handleFormat = useCallback((action: FormatAction) => {
     const editorView = editorRef.current?.getView()
@@ -72,13 +148,27 @@ export function CommentEditor({
   const handleSubmit = () => {
     const trimmedAuthor = author.trim()
     const trimmedContent = content.trim()
-    if (!trimmedAuthor || !trimmedContent) return
-    onSubmit(trimmedAuthor, trimmedContent)
+    if (!trimmedAuthor || (!trimmedContent && !voiceAttachment)) return
+
+    const nextContent = voiceAttachment
+      ? buildVoiceCommentContent({ voiceAttachment, note: content })
+      : trimmedContent
+
+    draftVoiceAttachmentFilenameRef.current = null
+    setDraftVoiceAttachmentFilename(null)
+    onSubmit(trimmedAuthor, nextContent)
     if (!initialContent) {
       setContent('')
+      setVoiceAttachment(null)
+      setIsRecorderOpen(false)
       setActiveTab('write')
       setEditorResetKey(value => value + 1)
     }
+  }
+
+  const handleCancel = () => {
+    clearDraftVoiceAttachment()
+    onCancel?.()
   }
 
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
@@ -126,7 +216,8 @@ export function CommentEditor({
     }
   }
 
-  const canSubmit = author.trim().length > 0 && content.trim().length > 0
+  const canSubmit = author.trim().length > 0 && (content.trim().length > 0 || voiceAttachment !== null)
+  const canOpenRecorder = Boolean(cardId) && voiceAttachment === null
 
   return (
     <div className="comment-editor-shell">
@@ -166,7 +257,26 @@ export function CommentEditor({
               <ToolbarButton icon={<Link size={12} />} title="Link (Cmd+K)" onClick={() => handleFormat('link')} separator />
               <ToolbarButton icon={<List size={12} />} title="Unordered list" onClick={() => handleFormat('ul')} separator />
               <ToolbarButton icon={<ListOrdered size={12} />} title="Ordered list" onClick={() => handleFormat('ol')} />
+              <div
+                className="w-px h-4 mx-1"
+                style={{ background: 'var(--vscode-panel-border)' }}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (canOpenRecorder) {
+                    setIsRecorderOpen((current) => !current)
+                  }
+                }}
+                title={canOpenRecorder ? 'Record voice comment' : 'Voice comment already attached'}
+                disabled={!canOpenRecorder}
+                className={`comment-editor-voice-toolbar-button${isRecorderOpen ? ' is-active' : ''}`}
+              >
+                <Mic size={12} />
+              </button>
             </div>
+
+            {voiceAttachment && renderVoiceAttachmentSummary()}
 
             <CodeMirrorEditor
               key={editorResetKey}
@@ -190,12 +300,17 @@ export function CommentEditor({
             />
           </>
         ) : (
-          previewHtml ? (
-            <div
-              className="comment-editor-preview text-xs comment-markdown"
-              style={{ color: 'var(--vscode-foreground)' }}
-              dangerouslySetInnerHTML={{ __html: previewHtml }}
-            />
+          previewHtml || voiceAttachment ? (
+            <div className="comment-editor-preview-stack">
+              {voiceAttachment && renderVoiceAttachmentSummary()}
+              {previewHtml && (
+                <div
+                  className="comment-editor-preview text-xs comment-markdown"
+                  style={{ color: 'var(--vscode-foreground)' }}
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              )}
+            </div>
           ) : (
             <div
               className="comment-editor-empty text-xs"
@@ -207,11 +322,19 @@ export function CommentEditor({
         )}
       </div>
 
+      {isRecorderOpen && cardId && !voiceAttachment && (
+        <VoiceCommentRecorder
+          cardId={cardId}
+          onAttached={handleRecorderAttached}
+          onClose={() => setIsRecorderOpen(false)}
+        />
+      )}
+
       <div className="comment-editor-actions">
         {onCancel && (
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="px-2.5 py-1 text-xs rounded transition-colors"
             style={{ color: 'var(--vscode-descriptionForeground)' }}
             onMouseEnter={e => e.currentTarget.style.background = 'var(--vscode-list-hoverBackground)'}

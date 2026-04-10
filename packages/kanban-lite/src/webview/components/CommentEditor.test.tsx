@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { buildVoiceCommentContent } from '../../shared/voiceComments'
 
 const commentEditorStore = vi.hoisted(() => ({
   currentUser: 'User',
@@ -40,5 +41,33 @@ describe('CommentEditor', () => {
     )
 
     expect(markup).toContain('value="User"')
+  })
+
+  it('shows the recorder affordance when a card id is available', () => {
+    const markup = renderToStaticMarkup(
+      <CommentEditor cardId="card-1" onSubmit={() => {}} />,
+    )
+
+    expect(markup).toContain('title="Record voice comment"')
+  })
+
+  it('renders an attached voice summary without exposing the raw marker', () => {
+    const markup = renderToStaticMarkup(
+      <CommentEditor
+        cardId="card-1"
+        initialContent={buildVoiceCommentContent({
+          voiceAttachment: {
+            filename: 'voice-note.webm',
+            mimeType: 'audio/webm',
+            durationMs: 2400,
+          },
+          note: 'Need a follow-up visit.',
+        })}
+        onSubmit={() => {}}
+      />,
+    )
+
+    expect(markup).toContain('Voice comment')
+    expect(markup).not.toContain('attachment:///voice-note.webm')
   })
 })

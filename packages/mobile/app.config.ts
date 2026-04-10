@@ -64,7 +64,17 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     userInterfaceStyle: 'automatic',
     plugins: [
       'expo-router',
+      'expo-asset',
       'expo-secure-store',
+      [
+        'expo-audio',
+        {
+          microphonePermission: 'Allow $(PRODUCT_NAME) to record voice comments for task updates.',
+          recordAudioAndroid: true,
+          enableBackgroundPlayback: false,
+          enableBackgroundRecording: false,
+        },
+      ],
       [
         'expo-camera',
         {

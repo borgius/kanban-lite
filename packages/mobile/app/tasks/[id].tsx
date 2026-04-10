@@ -23,6 +23,19 @@ import {
   readAttachmentDraftAsBase64,
 } from '../../src/features/attachments/durable-drafts'
 import {
+  type RecordedVoiceCommentClip,
+  VoiceCommentRecorderSheet,
+} from '../../src/features/comments/VoiceCommentRecorderSheet'
+import {
+  type VoiceCommentPlaybackAuth,
+  VoiceCommentPlayer,
+} from '../../src/features/comments/VoiceCommentPlayer'
+import {
+  buildVoiceCommentContent,
+  parseVoiceCommentContent,
+  type VoiceCommentAttachmentRef,
+} from '../../src/features/comments/voice-comments'
+import {
   createExpoSessionStorage,
   readStoredSession,
   useSessionController,
@@ -85,6 +98,14 @@ interface InlineBannerState {
   message: string
   title: string
   tone: 'error' | 'notice'
+}
+
+interface PendingVoiceCommentDraft {
+  durationMs?: number
+  fileName: string
+  mimeType: string
+  sizeBytes: number
+  uri: string
 }
 
 type StoredSessionRecord = NonNullable<Awaited<ReturnType<typeof readStoredSession>>>
@@ -451,6 +472,40 @@ function removeCommentFromTask(task: MobileTaskDetail, commentId: string): Mobil
   }
 }
 
+function addAttachmentToTask(task: MobileTaskDetail, filename: string): MobileTaskDetail {
+  if (task.attachments.includes(filename)) {
+    return task
+  }
+
+  return {
+    ...task,
+    attachments: [...task.attachments, filename],
+  }
+}
+
+function removeCommentAndLinkedVoiceAttachmentFromTask(task: MobileTaskDetail, commentId: string): MobileTaskDetail {
+  const deletedComment = task.comments.find((comment) => comment.id === commentId) ?? null
+  const voiceAttachment = deletedComment ? parseVoiceCommentContent(deletedComment.content).voiceAttachment : null
+
+  if (!voiceAttachment) {
+    return removeCommentFromTask(task, commentId)
+  }
+
+  const remainingComments = task.comments.filter((comment) => comment.id !== commentId)
+
+  const linkedAttachmentStillReferenced = remainingComments.some((comment) => (
+    parseVoiceCommentContent(comment.content).voiceAttachment?.filename === voiceAttachment.filename
+  ))
+
+  return {
+    ...task,
+    attachments: linkedAttachmentStillReferenced
+      ? task.attachments
+      : task.attachments.filter((attachment) => attachment !== voiceAttachment.filename),
+    comments: remainingComments,
+  }
+}
+
 interface FormSheetDefinition {
   canSubmit: boolean
   description?: string
@@ -678,7 +733,7 @@ function FormValidationCard({
   }
 
   return (
-    <View style={[styles.rowCard, { backgroundColor: colors.background, borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>Fix {issues.length} validation issue{issues.length === 1 ? '' : 's'} before submitting.</Text>
       {issues.map((issue) => (
         <Text key={issue.fieldKey} style={[styles.noteText, { color: colors.text }]}>• {issue.message}</Text>
@@ -752,9 +807,9 @@ function ResolvedFormSheetBody({
   const primaryLabel = hasLiveConnection ? 'Submit form' : 'Save draft'
 
   return (
-    <View style={styles.formSheetBackdrop}> 
+    <View style={styles.formSheetBackdrop}>
       <Pressable onPress={onClose} style={StyleSheet.absoluteFill} testID={`form-sheet-close:${form.id}`} />
-      <View style={[styles.formSheet, { backgroundColor: colors.card, borderColor: colors.border }]} testID={`form-sheet:${form.id}`}> 
+      <View style={[styles.formSheet, { backgroundColor: colors.card, borderColor: colors.border }]} testID={`form-sheet:${form.id}`}>
         <ScrollView contentContainerStyle={styles.formSheetContent}>
           <Text style={[styles.eyebrow, { color: colors.primary }]}>Resolved mobile form</Text>
           <Text style={[styles.title, { color: colors.text }]}>{form.label}</Text>
@@ -762,7 +817,7 @@ function ResolvedFormSheetBody({
             <Text style={[styles.bodyText, { color: colors.text }]}>{form.description}</Text>
           ) : null}
           {errorMessage ? (
-            <View style={[styles.rowCard, { backgroundColor: colors.background, borderColor: colors.border }]}> 
+            <View style={[styles.rowCard, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <Text style={[styles.rowTitle, { color: colors.text }]}>{errorMessage}</Text>
             </View>
           ) : null}
@@ -772,7 +827,7 @@ function ResolvedFormSheetBody({
           ) : null}
 
           {fields.length === 0 ? (
-            <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+            <View style={[styles.rowCard, { borderColor: colors.border }]}>
               <Text style={[styles.bodyText, { color: colors.text }]}>This form has no editable root-level fields in the current mobile slice.</Text>
             </View>
           ) : fields.map((field) => {
@@ -780,7 +835,7 @@ function ResolvedFormSheetBody({
             const issue = issues.find((candidate) => candidate.fieldKey === field.key)
 
             return (
-              <View key={field.key} style={[styles.rowCard, { borderColor: colors.border }]}> 
+              <View key={field.key} style={[styles.rowCard, { borderColor: colors.border }]}>
                 <Text style={[styles.rowTitle, { color: colors.text }]}>
                   {field.label}
                   {field.required ? ' *' : ''}
@@ -871,7 +926,7 @@ function ResolvedFormSheetBody({
           })}
         </ScrollView>
 
-        <View style={[styles.formSheetFooter, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+        <View style={[styles.formSheetFooter, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <ActionButton colors={colors} label="Close" onPress={onClose} />
           {form.canSubmit ? (
             <ActionButton
@@ -965,20 +1020,44 @@ function CommentRow({
   item,
   onDelete,
   onEdit,
+  playbackAuth,
   pendingUpdate,
+  taskId,
 }: {
   colors: ShellColors
   deleteDisabled: boolean
   item: TaskDetailCommentShellItem
   onDelete: (item: TaskDetailCommentShellItem) => void
   onEdit: (item: TaskDetailCommentShellItem) => void
+  playbackAuth: VoiceCommentPlaybackAuth | null
   pendingUpdate: boolean
+  taskId: string | null
 }) {
+  const parsedContent = parseVoiceCommentContent(item.content)
+  const note = parsedContent.note.trim()
+
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>{item.author}</Text>
       <Text style={[styles.rowMeta, { color: colors.text }]}>{item.created}</Text>
-      <Text style={[styles.bodyText, { color: colors.text }]}>{item.content}</Text>
+      {parsedContent.voiceAttachment && taskId && playbackAuth ? (
+        <VoiceCommentPlayer
+          colors={colors}
+          durationMs={parsedContent.voiceAttachment.durationMs}
+          fileName={parsedContent.voiceAttachment.filename}
+          playbackAuth={playbackAuth}
+          taskId={taskId}
+        />
+      ) : parsedContent.voiceAttachment ? (
+        <Text style={[styles.noteText, { color: colors.text }]}>Voice comment attached.</Text>
+      ) : null}
+      {note.length > 0 ? (
+        <Text style={[styles.bodyText, { color: colors.text }]}>{note}</Text>
+      ) : parsedContent.voiceAttachment ? (
+        <Text style={[styles.noteText, { color: colors.text }]}>Voice comment only.</Text>
+      ) : (
+        <Text style={[styles.bodyText, { color: colors.text }]}>{item.content}</Text>
+      )}
       {pendingUpdate ? (
         <Text style={[styles.noteText, { color: colors.text }]}>Local edit pending below.</Text>
       ) : null}
@@ -1008,22 +1087,46 @@ function CommentDraftRow({
   draft,
   onDiscard,
   onSend,
+  playbackAuth,
   sendDisabled,
+  taskId,
 }: {
   colors: ShellColors
   discardDisabled: boolean
   draft: CommentDraftRecord
   onDiscard: (draftId: string) => void
   onSend: (draft: CommentDraftRecord) => void
+  playbackAuth: VoiceCommentPlaybackAuth | null
   sendDisabled: boolean
+  taskId: string | null
 }) {
+  const parsedContent = parseVoiceCommentContent(draft.content)
+  const note = parsedContent.note.trim()
+
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>
         {draft.operation === 'update' ? 'Edit pending' : 'Pending comment'}
       </Text>
       <Text style={[styles.rowMeta, { color: colors.text }]}>{draft.author}</Text>
-      <Text style={[styles.bodyText, { color: colors.text }]}>{draft.content}</Text>
+      {parsedContent.voiceAttachment && taskId && playbackAuth ? (
+        <VoiceCommentPlayer
+          colors={colors}
+          durationMs={parsedContent.voiceAttachment.durationMs}
+          fileName={parsedContent.voiceAttachment.filename}
+          playbackAuth={playbackAuth}
+          taskId={taskId}
+        />
+      ) : parsedContent.voiceAttachment ? (
+        <Text style={[styles.noteText, { color: colors.text }]}>Voice comment attached.</Text>
+      ) : null}
+      {note.length > 0 ? (
+        <Text style={[styles.bodyText, { color: colors.text }]}>{note}</Text>
+      ) : parsedContent.voiceAttachment ? (
+        <Text style={[styles.noteText, { color: colors.text }]}>Voice comment only.</Text>
+      ) : (
+        <Text style={[styles.bodyText, { color: colors.text }]}>{draft.content}</Text>
+      )}
       <Text style={[styles.noteText, { color: colors.text }]}>{describeCommentDraftNote(draft)}</Text>
       <View style={styles.inlineActions}>
         <ActionButton
@@ -1049,15 +1152,33 @@ function AttachmentRow({
   removeDisabled,
   item,
   onRemove,
+  playbackAuth,
+  taskId,
+  voiceAttachment,
 }: {
   colors: ShellColors
   removeDisabled: boolean
   item: TaskDetailAttachmentShellItem
   onRemove: (item: TaskDetailAttachmentShellItem) => void
+  playbackAuth: VoiceCommentPlaybackAuth | null
+  taskId: string | null
+  voiceAttachment: VoiceCommentAttachmentRef | null
 }) {
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>{item.name}</Text>
+      {voiceAttachment && taskId && playbackAuth ? (
+        <VoiceCommentPlayer
+          colors={colors}
+          durationMs={voiceAttachment.durationMs}
+          fileName={voiceAttachment.filename}
+          playbackAuth={playbackAuth}
+          taskId={taskId}
+        />
+      ) : null}
+      {voiceAttachment ? (
+        <Text style={[styles.noteText, { color: colors.text }]}>Linked voice comment attachment.</Text>
+      ) : null}
       {item.canRemove ? (
         <View style={styles.inlineActions}>
           <ActionButton
@@ -1093,7 +1214,7 @@ function AttachmentDraftRow({
   const canSend = draft.lastError?.code !== 'missing_local_file'
 
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>{draft.fileName}</Text>
       <Text style={[styles.rowMeta, { color: colors.text }]}>Pending attachment</Text>
       <Text style={[styles.noteText, { color: colors.text }]}>{describeAttachmentDraftNote(draft)}</Text>
@@ -1130,7 +1251,7 @@ function FormRow({
   pendingDraft: boolean
 }) {
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>{item.label}</Text>
       {item.description ? (
         <Text style={[styles.bodyText, { color: colors.text }]}>{item.description}</Text>
@@ -1161,7 +1282,7 @@ function FormRow({
           />
         </View>
       ) : null}
-      <Text style={[styles.noteText, { color: colors.text }]}> 
+      <Text style={[styles.noteText, { color: colors.text }]}>
         {item.canSubmit
           ? pendingDraft
             ? 'A local draft exists for this form. Review it before sending.'
@@ -1190,7 +1311,7 @@ function FormDraftRow({
   sendVisible: boolean
 }) {
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]} testID={`task-form-draft:${draft.formId}`}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]} testID={`task-form-draft:${draft.formId}`}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>Pending form draft</Text>
       <Text style={[styles.rowMeta, { color: colors.text }]}>{draft.formId}</Text>
       {summaryEntries(draft.data).length > 0 ? (
@@ -1298,7 +1419,7 @@ function ChecklistRow({
   const disableMutations = pendingDraft !== null || toggleBusy
 
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>
         {item.checked ? '☑' : '☐'} {item.text}
       </Text>
@@ -1350,7 +1471,7 @@ function ActionRow({
   onPress: (item: TaskDetailActionShellItem) => void
 }) {
   return (
-    <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+    <View style={[styles.rowCard, { borderColor: colors.border }]}>
       <Text style={[styles.rowTitle, { color: colors.text }]}>{item.label}</Text>
       <View style={styles.inlineActions}>
         <ActionButton
@@ -1388,7 +1509,7 @@ function StickyActionDock({
   }
 
   return (
-    <View style={[styles.actionDock, { backgroundColor: colors.background, borderColor: colors.border }]}> 
+    <View style={[styles.actionDock, { backgroundColor: colors.background, borderColor: colors.border }]}>
       {primaryAction ? (
         <Pressable
           disabled={!onPrimaryActionPress || primaryActionDisabled}
@@ -1412,7 +1533,7 @@ function StickyActionDock({
       {secondaryActions.length > 0 ? (
         <View style={styles.actionDockSecondaryBlock}>
           <Text style={[styles.actionDockSecondaryTitle, { color: colors.text }]}>Other available actions</Text>
-          <Text style={[styles.actionDockSecondaryText, { color: colors.text }]}> 
+          <Text style={[styles.actionDockSecondaryText, { color: colors.text }]}>
             {secondaryActions.map((action) => action.label).join(' • ')}
           </Text>
         </View>
@@ -1435,7 +1556,7 @@ function NeutralShell({
       edges={['top', 'left', 'right', 'bottom']}
       style={[styles.screen, { backgroundColor: colors.background }]}
     >
-      <View style={[styles.neutralShell, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+      <View style={[styles.neutralShell, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <ActivityIndicator color={colors.primary} size="large" />
         <Text style={[styles.neutralTitle, { color: colors.text }]}>{title}</Text>
         <Text style={[styles.neutralBody, { color: colors.text }]}>{body}</Text>
@@ -1465,15 +1586,20 @@ export default function TaskDetailScreen() {
   const [checklistComposerValue, setChecklistComposerValue] = useState('')
   const [checklistDrafts, setChecklistDrafts] = useState<ChecklistDraftRecord[]>([])
   const [commentComposerValue, setCommentComposerValue] = useState('')
+  const [commentVoiceDraft, setCommentVoiceDraft] = useState<PendingVoiceCommentDraft | null>(null)
   const [commentDrafts, setCommentDrafts] = useState<CommentDraftRecord[]>([])
   const [editingChecklistIndex, setEditingChecklistIndex] = useState<number | null>(null)
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [editingCommentValue, setEditingCommentValue] = useState('')
+  const [editingCommentVoiceAttachment, setEditingCommentVoiceAttachment] = useState<VoiceCommentAttachmentRef | null>(null)
   const [formDrafts, setFormDrafts] = useState<FormDraftRecord[]>([])
   const [activeFormId, setActiveFormId] = useState<string | null>(null)
   const [formSheetErrorMessage, setFormSheetErrorMessage] = useState<string | null>(null)
   const [inlineBanner, setInlineBanner] = useState<InlineBannerState | null>(null)
   const [busyActionKey, setBusyActionKey] = useState<string | null>(null)
+  const [playbackAuth, setPlaybackAuth] = useState<VoiceCommentPlaybackAuth | null>(null)
+  const [voiceRecorderVisible, setVoiceRecorderVisible] = useState(false)
+  const commentVoiceDraftRef = useRef<PendingVoiceCommentDraft | null>(null)
   const loadIdRef = useRef(0)
 
   const applyDraftEnvelope = useCallback((envelope: PersistedEnvelopeV1 | null) => {
@@ -1489,10 +1615,42 @@ export default function TaskDetailScreen() {
     setEditingChecklistIndex(null)
   }, [])
 
+  const discardPendingVoiceDraft = useCallback(async () => {
+    const activeDraft = commentVoiceDraftRef.current
+    commentVoiceDraftRef.current = null
+    setCommentVoiceDraft(null)
+    if (!activeDraft) {
+      return
+    }
+
+    try {
+      await deleteDurableAttachmentDraft(activeDraft.uri)
+    } catch {
+      // Best-effort cleanup for local voice clips.
+    }
+  }, [])
+
   const clearCommentEditor = useCallback(() => {
     setCommentComposerValue('')
     setEditingCommentId(null)
     setEditingCommentValue('')
+    setEditingCommentVoiceAttachment(null)
+    setVoiceRecorderVisible(false)
+    void discardPendingVoiceDraft()
+  }, [discardPendingVoiceDraft])
+
+  useEffect(() => {
+    commentVoiceDraftRef.current = commentVoiceDraft
+  }, [commentVoiceDraft])
+
+  useEffect(() => {
+    return () => {
+      const activeDraft = commentVoiceDraftRef.current
+      commentVoiceDraftRef.current = null
+      if (activeDraft) {
+        void deleteDurableAttachmentDraft(activeDraft.uri)
+      }
+    }
   }, [])
 
   const hydrateCache = useCallback(
@@ -1534,6 +1692,49 @@ export default function TaskDetailScreen() {
     }
   }, [sessionStorage, state.sessionStatus, taskId])
 
+  useEffect(() => {
+    let cancelled = false
+
+    if (!state.sessionStatus) {
+      setPlaybackAuth(null)
+      return () => {
+        cancelled = true
+      }
+    }
+
+    void (async () => {
+      try {
+        const storedSession = await readStoredSession(sessionStorage)
+        if (cancelled) {
+          return
+        }
+
+        if (
+          !storedSession
+          || storedSession.workspaceOrigin !== state.sessionStatus.workspaceOrigin
+          || storedSession.workspaceId !== state.sessionStatus.workspaceId
+          || storedSession.subject !== state.sessionStatus.subject
+        ) {
+          setPlaybackAuth(null)
+          return
+        }
+
+        setPlaybackAuth({
+          token: storedSession.session.token,
+          workspaceOrigin: storedSession.workspaceOrigin,
+        })
+      } catch {
+        if (!cancelled) {
+          setPlaybackAuth(null)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionStorage, state.sessionStatus])
+
   const syncTaskDrafts = useCallback(async (namespace: CacheNamespace) => {
     const hydrated = await hydrateCache(namespace)
 
@@ -1556,15 +1757,19 @@ export default function TaskDetailScreen() {
       ? hydrated.envelope.snapshots.taskDetails ?? {}
       : {}
 
-    await cacheStore.replaceSnapshots(namespace, {
-      taskDetails: {
-        ...existingTaskDetails,
-        [task.id]: {
-          task,
-          workspaceId: namespace.workspaceId,
+    try {
+      await cacheStore.replaceSnapshots(namespace, {
+        taskDetails: {
+          ...existingTaskDetails,
+          [task.id]: {
+            task,
+            workspaceId: namespace.workspaceId,
+          },
         },
-      },
-    })
+      })
+    } catch {
+      // Live task state should remain usable even if local snapshot persistence fails.
+    }
 
     setLoadState({
       errorMessage: null,
@@ -1664,15 +1869,19 @@ export default function TaskDetailScreen() {
         ? hydrated.envelope.snapshots.taskDetails ?? {}
         : {}
 
-      await cacheStore.replaceSnapshots(namespace, {
-        taskDetails: {
-          ...existingTaskDetails,
-          [taskId]: {
-            task: liveTask,
-            workspaceId: namespace.workspaceId,
+      try {
+        await cacheStore.replaceSnapshots(namespace, {
+          taskDetails: {
+            ...existingTaskDetails,
+            [taskId]: {
+              task: liveTask,
+              workspaceId: namespace.workspaceId,
+            },
           },
-        },
-      })
+        })
+      } catch {
+        // Keep rendering the live task even when cache snapshot persistence fails.
+      }
 
       if (!isCurrent()) {
         return
@@ -2543,14 +2752,107 @@ export default function TaskDetailScreen() {
     taskId,
   ])
 
+  const handleOpenVoiceRecorder = useCallback(() => {
+    if (!hasLiveConnection) {
+      setInlineBanner({
+        title: 'Connection required',
+        message: 'Voice comments need a live connection so the audio clip and comment stay in sync.',
+        tone: 'error',
+      })
+      return
+    }
+
+    setInlineBanner(null)
+    setVoiceRecorderVisible(true)
+  }, [hasLiveConnection])
+
+  const handleAttachVoiceComment = useCallback(async (clip: RecordedVoiceCommentClip) => {
+    if (!taskId) {
+      return
+    }
+
+    setBusyActionKey('comment:voice:attach')
+    setInlineBanner(null)
+
+    try {
+      const context = await readTaskContext()
+      const previousDraft = commentVoiceDraftRef.current
+      const durableDraft = await prepareDurableAttachmentDraft({
+        namespace: context.namespace,
+        taskId,
+        source: {
+          fileName: clip.fileName,
+          mimeType: clip.mimeType,
+          uri: clip.uri,
+        },
+        existingDrafts: [],
+      })
+
+      setCommentVoiceDraft({
+        durationMs: clip.durationMs,
+        fileName: durableDraft.fileName,
+        mimeType: durableDraft.mimeType,
+        sizeBytes: durableDraft.sizeBytes,
+        uri: durableDraft.uri,
+      })
+      setVoiceRecorderVisible(false)
+
+      if (previousDraft) {
+        try {
+          await deleteDurableAttachmentDraft(previousDraft.uri)
+        } catch {
+          // Best-effort cleanup for the replaced local recording.
+        }
+      }
+    } catch (error) {
+      if (error instanceof AttachmentDraftError) {
+        setInlineBanner({
+          title: 'Voice comment not saved',
+          message: error.message,
+          tone: 'error',
+        })
+        return
+      }
+
+      if (await handleProtectedMutationFailure(error)) {
+        return
+      }
+
+      setInlineBanner({
+        title: 'Voice comment not saved',
+        message: resolveMutationErrorMessage(error, 'Unable to keep this recording on the device.'),
+        tone: 'error',
+      })
+    } finally {
+      setBusyActionKey(null)
+    }
+  }, [handleProtectedMutationFailure, readTaskContext, taskId])
+
   const handleSubmitComment = useCallback(async () => {
     const isEditing = editingCommentId !== null
-    const content = (isEditing ? editingCommentValue : commentComposerValue).trim()
-    if (!taskId || content.length === 0) {
+    const note = (isEditing ? editingCommentValue : commentComposerValue).trim()
+    const voiceAttachment = isEditing
+      ? editingCommentVoiceAttachment
+      : commentVoiceDraft
+        ? {
+            filename: commentVoiceDraft.fileName,
+            mimeType: commentVoiceDraft.mimeType,
+            durationMs: commentVoiceDraft.durationMs,
+          }
+        : null
+    const content = voiceAttachment
+      ? buildVoiceCommentContent({
+          voiceAttachment,
+          note,
+        })
+      : note
+
+    if (!taskId || (note.length === 0 && !voiceAttachment)) {
       return
     }
 
     const actionKey = isEditing ? `comment:update:${editingCommentId}` : 'comment:create'
+    const createNeedsLiveVoiceUpload = !isEditing && commentVoiceDraft !== null
     setBusyActionKey(actionKey)
     setInlineBanner(null)
 
@@ -2563,6 +2865,15 @@ export default function TaskDetailScreen() {
       const draftAuthor = existingComment?.author ?? context.storedSession.subject
 
       if (!hasLiveConnection) {
+        if (createNeedsLiveVoiceUpload) {
+          setInlineBanner({
+            title: 'Connection required',
+            message: 'Reconnect to send this voice comment. The recording is still on this device.',
+            tone: 'error',
+          })
+          return
+        }
+
         await saveCommentDraft({
           author: draftAuthor,
           commentId: editingCommentId,
@@ -2573,7 +2884,34 @@ export default function TaskDetailScreen() {
         return
       }
 
+      let uploadedVoiceFilename: string | null = null
+
       try {
+        if (createNeedsLiveVoiceUpload && commentVoiceDraft) {
+          let base64Data: string
+          try {
+            base64Data = await readAttachmentDraftAsBase64(commentVoiceDraft.uri)
+          } catch {
+            await discardPendingVoiceDraft()
+            setInlineBanner({
+              title: 'Voice recording missing',
+              message: 'The saved recording copy is missing. Record the voice comment again.',
+              tone: 'error',
+            })
+            return
+          }
+
+          await context.client.uploadAttachments(taskId, {
+            files: [
+              {
+                name: commentVoiceDraft.fileName,
+                data: base64Data,
+              },
+            ],
+          })
+          uploadedVoiceFilename = commentVoiceDraft.fileName
+        }
+
         const savedComment = isEditing && editingCommentId
           ? await context.client.updateComment(taskId, editingCommentId, { content })
           : await context.client.createComment(taskId, {
@@ -2592,20 +2930,35 @@ export default function TaskDetailScreen() {
         clearCommentEditor()
 
         if (loadState.task) {
+          const nextTask = applyCommentMutationToTask(
+            loadState.task,
+            savedComment,
+            isEditing ? 'update' : 'create',
+          )
+
           await persistTaskSnapshot(
             context.namespace,
-            applyCommentMutationToTask(loadState.task, savedComment, isEditing ? 'update' : 'create'),
+            uploadedVoiceFilename ? addAttachmentToTask(nextTask, uploadedVoiceFilename) : nextTask,
             'live',
           )
         } else {
           await refreshTaskFromServer(context)
         }
       } catch (error) {
+        let cleanupWarning: string | null = null
+        if (uploadedVoiceFilename) {
+          try {
+            await context.client.removeAttachment(taskId, uploadedVoiceFilename)
+          } catch {
+            cleanupWarning = 'The uploaded audio clip may still be attached and might need manual removal.'
+          }
+        }
+
         if (await handleProtectedMutationFailure(error)) {
           return
         }
 
-        if (shouldStoreAsLocalDraft(error)) {
+        if (!createNeedsLiveVoiceUpload && shouldStoreAsLocalDraft(error)) {
           await saveCommentDraft({
             author: draftAuthor,
             commentId: editingCommentId,
@@ -2616,9 +2969,17 @@ export default function TaskDetailScreen() {
           return
         }
 
+        const messageParts = [resolveMutationErrorMessage(error, 'Unable to save this comment.')]
+        if (createNeedsLiveVoiceUpload) {
+          messageParts.push('The recording is still on this device so you can retry.')
+        }
+        if (cleanupWarning) {
+          messageParts.push(cleanupWarning)
+        }
+
         setInlineBanner({
           title: 'Comment not saved',
-          message: resolveMutationErrorMessage(error, 'Unable to save this comment.'),
+          message: messageParts.join(' '),
           tone: 'error',
         })
       }
@@ -2635,9 +2996,12 @@ export default function TaskDetailScreen() {
     cacheStore,
     clearCommentEditor,
     commentComposerValue,
+    commentVoiceDraft,
     commentDraftsByCommentId,
+    discardPendingVoiceDraft,
     editingCommentId,
     editingCommentValue,
+    editingCommentVoiceAttachment,
     handleProtectedMutationFailure,
     hasLiveConnection,
     loadState.task,
@@ -2651,11 +3015,15 @@ export default function TaskDetailScreen() {
 
   const handleStartEditComment = useCallback((item: TaskDetailCommentShellItem) => {
     const existingDraft = commentDraftsByCommentId.get(item.id)
+    const parsedContent = parseVoiceCommentContent(existingDraft?.content ?? item.content)
+    void discardPendingVoiceDraft()
     setCommentComposerValue('')
     setEditingCommentId(item.id)
-    setEditingCommentValue(existingDraft?.content ?? item.content)
+    setEditingCommentValue(parsedContent.note)
+    setEditingCommentVoiceAttachment(parsedContent.voiceAttachment)
+    setVoiceRecorderVisible(false)
     setInlineBanner(null)
-  }, [commentDraftsByCommentId])
+  }, [commentDraftsByCommentId, discardPendingVoiceDraft])
 
   const performDeleteComment = useCallback(async (item: TaskDetailCommentShellItem) => {
     if (!taskId) {
@@ -2682,7 +3050,7 @@ export default function TaskDetailScreen() {
       if (loadState.task) {
         await persistTaskSnapshot(
           context.namespace,
-          removeCommentFromTask(loadState.task, item.id),
+          removeCommentAndLinkedVoiceAttachmentFromTask(loadState.task, item.id),
           'live',
         )
       } else {
@@ -2725,9 +3093,13 @@ export default function TaskDetailScreen() {
       return
     }
 
+    const voiceAttachment = parseVoiceCommentContent(item.content).voiceAttachment
+
     Alert.alert(
       'Delete comment?',
-      'This removes the synced comment from the task.',
+      voiceAttachment
+        ? 'This removes the synced comment and its linked voice attachment from the task.'
+        : 'This removes the synced comment from the task.',
       [
         {
           style: 'cancel',
@@ -3367,6 +3739,25 @@ export default function TaskDetailScreen() {
   const primaryActionNote = shell?.primaryAction?.kind === 'card-action' && !hasLiveConnection
     ? 'Needs a live connection.'
     : null
+  const linkedVoiceAttachmentsByName = new Map<string, VoiceCommentAttachmentRef>()
+  for (const comment of shell?.comments.items ?? []) {
+    const voiceAttachment = parseVoiceCommentContent(comment.content).voiceAttachment
+    if (voiceAttachment) {
+      linkedVoiceAttachmentsByName.set(voiceAttachment.filename, voiceAttachment)
+    }
+  }
+  const createCommentHasVoice = commentVoiceDraft !== null
+  const createCommentNote = commentComposerValue.trim()
+  const createCommentSubmitDisabled = (
+    (createCommentNote.length === 0 && !createCommentHasVoice)
+    || busyActionKey === 'comment:create'
+    || (createCommentHasVoice && !hasLiveConnection)
+  )
+  const editCommentNote = editingCommentValue.trim()
+  const editCommentSubmitDisabled = (
+    (editCommentNote.length === 0 && !editingCommentVoiceAttachment)
+    || (editingCommentId !== null && busyActionKey === `comment:update:${editingCommentId}`)
+  )
 
   if (!taskId) {
     return (
@@ -3496,12 +3887,12 @@ export default function TaskDetailScreen() {
         </View>
 
         {loadState.source === 'cache' && loadState.errorMessage ? (
-          <View style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+          <View style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.bannerTitle, { color: colors.primary }]}>Showing validated cache</Text>
             <Text style={[styles.bodyText, { color: colors.text }]}>{loadState.errorMessage}</Text>
           </View>
         ) : activeBanner ? (
-          <View style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.border }]}> 
+          <View style={[styles.banner, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.bannerTitle, { color: activeBanner.tone === 'notice' ? colors.primary : colors.text }]}>
               {activeBanner.title}
             </Text>
@@ -3512,7 +3903,7 @@ export default function TaskDetailScreen() {
         {shell.comments.visible ? (
           <SurfaceSection colors={shellColors} title="Comments">
             {editingCommentId ? (
-              <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+              <View style={[styles.rowCard, { borderColor: colors.border }]}>
                 <Text style={[styles.rowTitle, { color: colors.text }]}>Edit comment</Text>
                 <TextInput
                   multiline
@@ -3527,17 +3918,35 @@ export default function TaskDetailScreen() {
                       color: colors.text,
                     },
                   ]}
+                  testID="task-comment-edit-input"
                   textAlignVertical="top"
                   value={editingCommentValue}
                 />
+                {editingCommentVoiceAttachment ? (
+                  <View style={styles.voiceCommentStack}>
+                    {taskId && playbackAuth ? (
+                      <VoiceCommentPlayer
+                        colors={shellColors}
+                        durationMs={editingCommentVoiceAttachment.durationMs}
+                        fileName={editingCommentVoiceAttachment.filename}
+                        playbackAuth={playbackAuth}
+                        taskId={taskId}
+                      />
+                    ) : (
+                      <Text style={[styles.noteText, { color: colors.text }]}>Voice comment attached.</Text>
+                    )}
+                    <Text style={[styles.noteText, { color: colors.text }]}>The audio clip stays attached. Delete and re-add the comment to replace the recording.</Text>
+                  </View>
+                ) : null}
                 <View style={styles.inlineActions}>
                   <ActionButton
                     colors={shellColors}
-                    disabled={editingCommentValue.trim().length === 0 || busyActionKey === `comment:update:${editingCommentId}`}
+                    disabled={editCommentSubmitDisabled}
                     label={hasLiveConnection ? 'Save edit' : 'Save draft'}
                     onPress={() => {
                       void handleSubmitComment()
                     }}
+                    testID="task-comment-edit-submit"
                     tone="primary"
                   />
                   <ActionButton colors={shellColors} label="Cancel" onPress={clearCommentEditor} />
@@ -3547,7 +3956,7 @@ export default function TaskDetailScreen() {
                 ) : null}
               </View>
             ) : shell.comments.canCreate ? (
-              <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+              <View style={[styles.rowCard, { borderColor: colors.border }]}>
                 <Text style={[styles.rowTitle, { color: colors.text }]}>Add comment</Text>
                 <TextInput
                   multiline
@@ -3562,22 +3971,53 @@ export default function TaskDetailScreen() {
                       color: colors.text,
                     },
                   ]}
+                  testID="task-comment-input"
                   textAlignVertical="top"
                   value={commentComposerValue}
                 />
+                {commentVoiceDraft ? (
+                  <View style={styles.voiceCommentStack}>
+                    <VoiceCommentPlayer
+                      colors={shellColors}
+                      durationMs={commentVoiceDraft.durationMs}
+                      localUri={commentVoiceDraft.uri}
+                    />
+                    <Text style={[styles.noteText, { color: colors.text }]}>Voice comment ready. The clip stays local until you send this comment.</Text>
+                  </View>
+                ) : null}
                 <View style={styles.inlineActions}>
                   <ActionButton
                     colors={shellColors}
-                    disabled={commentComposerValue.trim().length === 0 || busyActionKey === 'comment:create'}
+                    disabled={createCommentSubmitDisabled}
                     label={hasLiveConnection ? 'Send comment' : 'Save draft'}
                     onPress={() => {
                       void handleSubmitComment()
                     }}
+                    testID="task-comment-submit"
                     tone="primary"
                   />
+                  <ActionButton
+                    colors={shellColors}
+                    disabled={busyActionKey === 'comment:voice:attach' || !hasLiveConnection}
+                    label={commentVoiceDraft ? 'Replace voice' : 'Record voice'}
+                    onPress={handleOpenVoiceRecorder}
+                    testID="task-comment-voice-open"
+                  />
+                  {commentVoiceDraft ? (
+                    <ActionButton
+                      colors={shellColors}
+                      label="Remove voice"
+                      onPress={() => {
+                        void discardPendingVoiceDraft()
+                      }}
+                      testID="task-comment-voice-remove"
+                    />
+                  ) : null}
                 </View>
                 {!hasLiveConnection ? (
                   <Text style={[styles.noteText, { color: colors.text }]}>Saved on this device. Review before sending.</Text>
+                ) : commentVoiceDraft ? (
+                  <Text style={[styles.noteText, { color: colors.text }]}>Voice comments upload when you send the comment.</Text>
                 ) : null}
               </View>
             ) : null}
@@ -3597,7 +4037,9 @@ export default function TaskDetailScreen() {
                 onSend={(commentDraft) => {
                   void handleResendCommentDraft(commentDraft)
                 }}
+                playbackAuth={playbackAuth}
                 sendDisabled={!hasLiveConnection || busyActionKey === `comment:send:${draft.draftId}`}
+                taskId={taskId}
               />
             ))}
 
@@ -3612,7 +4054,9 @@ export default function TaskDetailScreen() {
                   item={comment}
                   onDelete={handleDeleteComment}
                   onEdit={handleStartEditComment}
+                  playbackAuth={playbackAuth}
                   pendingUpdate={commentDraftsByCommentId.has(comment.id)}
+                  taskId={taskId}
                 />
               ))
             )}
@@ -3622,7 +4066,7 @@ export default function TaskDetailScreen() {
         {shell.attachments.visible ? (
           <SurfaceSection colors={shellColors} title="Attachments">
             {shell.attachments.canAdd ? (
-              <View style={[styles.rowCard, { borderColor: colors.border }]}> 
+              <View style={[styles.rowCard, { borderColor: colors.border }]}>
                 <Text style={[styles.rowTitle, { color: colors.text }]}>Add attachment</Text>
                 <Text style={[styles.noteText, { color: colors.text }]}>Capture or pick a file, then review before sending.</Text>
                 <View style={styles.inlineActions}>
@@ -3683,7 +4127,10 @@ export default function TaskDetailScreen() {
                   colors={shellColors}
                   item={attachment}
                   onRemove={handleRemoveAttachment}
+                  playbackAuth={playbackAuth}
                   removeDisabled={!hasLiveConnection || busyActionKey === `attachment:remove:${attachment.name}`}
+                  taskId={taskId}
+                  voiceAttachment={linkedVoiceAttachmentsByName.get(attachment.name) ?? null}
                 />
               ))
             )}
@@ -3725,8 +4172,8 @@ export default function TaskDetailScreen() {
         {shell.checklist.visible ? (
           <SurfaceSection colors={shellColors} title="Checklist">
             {(shell.checklist.canAdd || editingChecklistIndex !== null) ? (
-              <View style={[styles.rowCard, { borderColor: colors.border }]}> 
-                <Text style={[styles.rowTitle, { color: colors.text }]}> 
+              <View style={[styles.rowCard, { borderColor: colors.border }]}>
+                <Text style={[styles.rowTitle, { color: colors.text }]}>
                   {editingChecklistIndex === null ? 'Add checklist item' : 'Edit checklist item'}
                 </Text>
                 <TextInput
@@ -3869,6 +4316,17 @@ export default function TaskDetailScreen() {
             })
           }}
           submitting={busyActionKey === `form:submit:${activeForm.id}`}
+        />
+      ) : null}
+      {voiceRecorderVisible ? (
+        <VoiceCommentRecorderSheet
+          colors={shellColors}
+          onAttach={(clip) => {
+            void handleAttachVoiceComment(clip)
+          }}
+          onClose={() => {
+            setVoiceRecorderVisible(false)
+          }}
         />
       ) : null}
     </SafeAreaView>
@@ -4077,5 +4535,8 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '800',
     lineHeight: 36,
+  },
+  voiceCommentStack: {
+    gap: 10,
   },
 })

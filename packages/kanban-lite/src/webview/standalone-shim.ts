@@ -34,6 +34,11 @@ function getDisconnectedSubmitErrorMessage(): string {
   return 'Cannot submit while disconnected from the standalone backend. Wait for reconnection and try again.'
 }
 
+function getStandaloneSafeFilename(filename: string): string {
+  const parts = filename.trim().split(/[/\\]+/).filter(Boolean)
+  return parts.at(-1) || 'voice-comment.webm'
+}
+
 function emitConnectionStatus(status: Omit<ConnectionStatusMessage, 'type'>) {
   const message: ExtensionMessage = { type: 'connectionStatus', ...status }
   window.postMessage(message, '*')
@@ -379,6 +384,56 @@ function handleOpenAttachment(cardId: string, attachment: string) {
   window.open(url, '_blank')
 }
 
+async function handleUploadVoiceCommentAttachment(cardId: string, filename: string, dataBase64: string, callbackKey: string) {
+  const safeFilename = getStandaloneSafeFilename(filename)
+
+  try {
+    const response = await fetch('/api/upload-attachment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        cardId,
+        files: [{ name: safeFilename, data: dataBase64 }],
+      }),
+    })
+
+    const payload = await response.json() as { ok?: boolean; error?: string }
+    if (!response.ok || payload.ok !== true) {
+      throw new Error(payload.error ?? `Failed to upload attachment (${response.status})`)
+    }
+
+    window.postMessage({
+      type: 'voiceCommentAttachmentResult',
+      callbackKey,
+      filename: safeFilename,
+    } satisfies ExtensionMessage, '*')
+  } catch (error) {
+    window.postMessage({
+      type: 'voiceCommentAttachmentResult',
+      callbackKey,
+      error: error instanceof Error ? error.message : String(error),
+    } satisfies ExtensionMessage, '*')
+  }
+}
+
+function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, callbackKey: string) {
+  if (!cardId || !attachment) {
+    window.postMessage({
+      type: 'voiceCommentPlaybackResult',
+      callbackKey,
+      error: 'Missing cardId or attachment',
+    } satisfies ExtensionMessage, '*')
+    return
+  }
+
+  const url = `/api/attachment?cardId=${encodeURIComponent(cardId)}&filename=${encodeURIComponent(attachment)}`
+  window.postMessage({
+    type: 'voiceCommentPlaybackResult',
+    callbackKey,
+    url,
+  } satisfies ExtensionMessage, '*')
+}
+
 // Provide the same API shape as acquireVsCodeApi()
 ;(window as unknown as Record<string, unknown>).acquireVsCodeApi = () => ({
   postMessage(message: unknown) {
@@ -422,6 +477,23 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     }
     if (msg.type === 'openAttachment') {
       handleOpenAttachment(msg.cardId as string, msg.attachment as string)
+      return
+    }
+    if (msg.type === 'uploadVoiceCommentAttachment') {
+      void handleUploadVoiceCommentAttachment(
+        msg.cardId as string,
+        msg.filename as string,
+        msg.dataBase64 as string,
+        msg.callbackKey as string,
+      )
+      return
+    }
+    if (msg.type === 'resolveVoiceCommentPlayback') {
+      handleResolveVoiceCommentPlayback(
+        msg.cardId as string,
+        msg.attachment as string,
+        msg.callbackKey as string,
+      )
       return
     }
     if (msg.type === 'toggleTheme') {

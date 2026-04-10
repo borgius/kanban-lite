@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, Undo2, FileUp, PanelRight, PanelLeft, PanelTop, PanelBottom } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, HelpCircle, Undo2, FileUp, PanelRight, PanelLeft, PanelTop, PanelBottom } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry, SubmitFormTransportResult } from '../../shared/types'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
@@ -8,6 +8,7 @@ import { useStore } from '../store'
 import { NEXT_POSITION, type DrawerPosition } from '../drawerPositionHelpers'
 import { getVsCodeApi } from '../vsCodeApi'
 import { isReservedChecklistLabel } from '../../sdk/modules/checklist'
+import { matchesCardSearch } from '../../sdk/metaUtils'
 import { MarkdownEditor } from './MarkdownEditor'
 
 type AIAgent = 'claude' | 'codex' | 'opencode'
@@ -337,6 +338,52 @@ function MetadataFilterButton({ path, value }: { path: string; value: string }) 
   )
 }
 
+function MetadataPreviewCountButton({ path, value }: { path: string; value: string }) {
+  const [open, setOpen] = useState(false)
+  const cards = useStore(s => s.cards)
+  const count = useMemo(
+    () => cards.filter(c => matchesCardSearch(c, undefined, { [path]: value })).length,
+    [cards, path, value]
+  )
+
+  if (open) {
+    return (
+      <span className="inline-flex items-center gap-0.5 shrink-0">
+        <span
+          className="text-[10px] tabular-nums font-medium px-1 py-0 rounded"
+          style={{ color: 'var(--vscode-descriptionForeground)', background: 'var(--vscode-badge-background, rgba(90,90,90,0.15))' }}
+          title={`${count} ${count === 1 ? 'card matches' : 'cards match'} ${path} = ${value}`}
+        >
+          {count}
+        </span>
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(false) }}
+          className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          style={{ color: 'var(--vscode-descriptionForeground)' }}
+          title="Dismiss preview"
+          aria-label="Dismiss match count preview"
+        >
+          <X size={10} />
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true) }}
+      className="shrink-0 rounded p-0.5 opacity-60 transition-opacity hover:opacity-100 focus:opacity-100 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      style={{ color: 'var(--vscode-descriptionForeground)' }}
+      title={`Preview: how many cards match ${path} = ${value}`}
+      aria-label={`Preview card count for metadata ${path} = ${value}`}
+    >
+      <HelpCircle size={11} />
+    </button>
+  )
+}
+
 interface AIDropdownProps {
   onSelect: (agent: AIAgent, permissionMode: PermissionMode) => void
 }
@@ -649,6 +696,7 @@ function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { da
               <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
               <CopyableValue value={`[${value.join(', ')}]`} />
               <MetadataFilterButton path={path} value={normalizedValue} />
+              <MetadataPreviewCountButton path={path} value={normalizedValue} />
             </div>
           ) : (
             <div className="flex items-baseline gap-1 flex-wrap">
@@ -661,6 +709,7 @@ function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { da
                 <CopyableValue value={String(value)} />
               )}
               <MetadataFilterButton path={path} value={normalizedValue} />
+              <MetadataPreviewCountButton path={path} value={normalizedValue} />
             </div>
           )}
         </div>
@@ -1080,6 +1129,7 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                   <span className="card-metadata-highlight__value" style={{ color: 'var(--vscode-foreground)' }}>{strVal}</span>
                 )}
                 <MetadataFilterButton path={key} value={normalizeMetadataFilterValue(rawVal)} />
+                <MetadataPreviewCountButton path={key} value={normalizeMetadataFilterValue(rawVal)} />
               </div>
             </PropertyRow>
           )

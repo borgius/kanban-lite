@@ -17,6 +17,7 @@ import type {
   KanbanCliPlugin,
   KanbanSDK,
   KanbanConfig,
+  PluginSettingsBeforeSaveContext,
   PluginSettingsOptionsSchemaMetadata,
   PluginSettingsRedactionPolicy,
   ProviderRef,
@@ -265,6 +266,64 @@ export function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMe
       { path: 'apiToken', redaction: AUTH_PLUGIN_SECRET_REDACTION },
       { path: 'users.*.password', redaction: AUTH_PLUGIN_SECRET_REDACTION },
     ],
+    beforeSave: validateAuthIdentityBeforeSave,
+  }
+}
+
+/**
+ * Validates auth.identity options before they are persisted when the provider
+ * is being activated (transitioning from disabled to enabled).
+ *
+ * Rules enforced on activation:
+ *   1. An API token must be configured (either in options or via env var).
+ *   2. At least one user must have a role that grants `plugin-settings.update`
+ *      (i.e. the `admin` role), so a future session can manage plugin settings
+ *      after auth is enforced.
+ *
+ * The current session is not affected — existing sessions remain valid — but
+ * new browser sessions will require credentials.
+ */
+async function validateAuthIdentityBeforeSave(
+  options: Record<string, unknown>,
+  context: PluginSettingsBeforeSaveContext,
+): Promise<void> {
+  // Only enforce on activation. Updating options for an already-active auth
+  // provider does not re-trigger the lockout check; the running session stays
+  // valid regardless.
+  if (!context.isActivating) return
+
+  const maskedValue = AUTH_PLUGIN_SECRET_REDACTION.maskedValue
+
+  // 1. API token must be present (options field or env fallback).
+  const optionToken = options.apiToken
+  const hasApiTokenInOptions =
+    typeof optionToken === 'string' && optionToken.length > 0 && optionToken !== maskedValue
+  const hasApiTokenInEnv = API_TOKEN_ENV_KEYS.some(
+    (key) => typeof process.env[key] === 'string' && (process.env[key] as string).length > 0,
+  )
+  if (!hasApiTokenInOptions && !hasApiTokenInEnv) {
+    throw new Error(
+      'Auth plugin requires an API Token before enabling. ' +
+      'Add an apiToken to the options (or set the KANBAN_LITE_TOKEN environment variable) ' +
+      'so new sessions can authenticate.',
+    )
+  }
+
+  // 2. At least one local user must have a role that includes plugin-settings.update.
+  const users = Array.isArray(options.users) ? (options.users as Array<Record<string, unknown>>) : []
+  const hasAdminUser = users.some((u) => {
+    if (!u || typeof u !== 'object') return false
+    const role = u['role']
+    return (
+      typeof role === 'string' &&
+      RBAC_ROLE_MATRIX[role as RbacRole]?.has('plugin-settings.update') === true
+    )
+  })
+  if (!hasAdminUser) {
+    throw new Error(
+      'Auth plugin requires at least one user with admin role (which grants plugin-settings.update permission) ' +
+      'before enabling, to ensure a future session can manage plugin settings.',
+    )
   }
 }
 

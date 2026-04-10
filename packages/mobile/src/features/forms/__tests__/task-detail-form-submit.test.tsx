@@ -4,6 +4,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SESSION_STORAGE_KEY } from '../../auth/session-store'
+import { buildVoiceCommentContent } from '../../comments/voice-comments'
 import { toExpoSecureStoreKey } from '../../../lib/expo-secure-store'
 import type { MobileApiClient, MobileTaskDetail } from '../../../lib/api/client'
 
@@ -19,15 +20,22 @@ const harness = vi.hoisted(() => ({
   },
   client: {
     getTask: vi.fn(),
+    createComment: vi.fn(),
+    deleteComment: vi.fn(),
     getChecklist: vi.fn(),
     addChecklistItem: vi.fn(),
     editChecklistItem: vi.fn(),
     deleteChecklistItem: vi.fn(),
     checkChecklistItem: vi.fn(),
     uncheckChecklistItem: vi.fn(),
+    readTask: vi.fn(),
+    removeAttachment: vi.fn(),
     submitForm: vi.fn(),
     triggerAction: vi.fn(),
+    updateComment: vi.fn(),
+    uploadAttachments: vi.fn(),
   },
+  cacheStorage: new Map<string, string>(),
   controller: {
     initialize: vi.fn().mockResolvedValue(undefined),
     logout: vi.fn().mockResolvedValue(undefined),
@@ -88,6 +96,10 @@ vi.mock('react-native', async () => {
       alert: vi.fn(),
     },
     Modal: createHost('Modal'),
+    Platform: {
+      OS: 'ios',
+      select: <T,>(options: { default?: T; ios?: T }) => options.ios ?? options.default,
+    },
     Pressable: createHost('Pressable'),
     RefreshControl: createHost('RefreshControl'),
     ScrollView: createHost('ScrollView'),
@@ -107,6 +119,45 @@ vi.mock('expo-document-picker', () => ({
 vi.mock('expo-image-picker', () => ({
   requestCameraPermissionsAsync: vi.fn().mockResolvedValue({ granted: false }),
   launchCameraAsync: vi.fn().mockResolvedValue({ canceled: true }),
+}))
+
+vi.mock('expo-audio', () => ({
+  RecordingPresets: {
+    HIGH_QUALITY: {
+      web: {
+        mimeType: 'audio/webm',
+      },
+    },
+  },
+  requestRecordingPermissionsAsync: vi.fn().mockResolvedValue({
+    canAskAgain: true,
+    granted: true,
+  }),
+  setAudioModeAsync: vi.fn().mockResolvedValue(undefined),
+  useAudioPlayer: () => ({
+    pause: vi.fn(),
+    play: vi.fn(),
+    replace: vi.fn(),
+    seekTo: vi.fn().mockResolvedValue(undefined),
+  }),
+  useAudioPlayerStatus: () => ({
+    currentTime: 0,
+    didJustFinish: false,
+    duration: 0,
+    playing: false,
+  }),
+  useAudioRecorder: () => ({
+    pause: vi.fn(),
+    prepareToRecordAsync: vi.fn().mockResolvedValue(undefined),
+    record: vi.fn(),
+    stop: vi.fn().mockResolvedValue(undefined),
+    uri: null,
+  }),
+  useAudioRecorderState: () => ({
+    durationMillis: 0,
+    isRecording: false,
+    metering: undefined,
+  }),
 }))
 
 vi.mock('../../attachments/durable-drafts', () => ({
@@ -150,6 +201,23 @@ vi.mock('../../auth/session-store', async () => {
 
   return {
     ...actual,
+    createExpoSessionStorage: vi.fn(() => ({
+      getItem: vi.fn().mockResolvedValue(null),
+      removeItem: vi.fn().mockResolvedValue(undefined),
+      setItem: vi.fn().mockResolvedValue(undefined),
+    })),
+    readStoredSession: vi.fn().mockImplementation(async () => ({
+      expiresAt: null,
+      roles: ['user'],
+      session: {
+        kind: 'local-mobile-session-v1',
+        token: 'opaque-worker-token',
+      },
+      subject: 'worker',
+      version: 1,
+      workspaceId: 'workspace_123',
+      workspaceOrigin: 'https://field.example.com',
+    })),
     useSessionController: () => ({
       controller: harness.controller,
       state: harness.sessionState,
@@ -163,6 +231,23 @@ vi.mock('../../../lib/api/client', async () => {
   return {
     ...actual,
     createMobileApiClient: () => harness.client as unknown as MobileApiClient,
+  }
+})
+
+vi.mock('../../sync/cache-store', async () => {
+  const actual = await vi.importActual<typeof import('../../sync/cache-store')>('../../sync/cache-store')
+
+  return {
+    ...actual,
+    createExpoCacheStorage: vi.fn(() => ({
+      getItem: vi.fn(async (key: string) => harness.cacheStorage.get(key) ?? null),
+      removeItem: vi.fn(async (key: string) => {
+        harness.cacheStorage.delete(key)
+      }),
+      setItem: vi.fn(async (key: string, value: string) => {
+        harness.cacheStorage.set(key, value)
+      }),
+    })),
   }
 })
 
@@ -347,11 +432,13 @@ async function renderScreen(): Promise<ReactTestRenderer> {
 }
 
 async function flushScreen(): Promise<void> {
-  await act(async () => {
-    vi.runAllTimers()
-    await Promise.resolve()
-    await Promise.resolve()
-  })
+  for (let index = 0; index < 4; index += 1) {
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+  }
 }
 
 function findProps(renderer: ReactTestRenderer, testID: string): Record<string, unknown> {
@@ -367,6 +454,21 @@ function findPropsByTestIdPrefix(renderer: ReactTestRenderer, testIDPrefix: stri
     typeof node.props.testID === 'string'
     && node.props.testID.startsWith(testIDPrefix)
   )).props as Record<string, unknown>
+}
+
+function collectTextChildren(renderer: ReactTestRenderer): string[] {
+  return renderer.root.findAllByType('Text').flatMap((node) => {
+    const children = node.props.children
+    if (typeof children === 'string') {
+      return [children]
+    }
+
+    if (Array.isArray(children)) {
+      return children.filter((child): child is string => typeof child === 'string')
+    }
+
+    return []
+  })
 }
 
 async function press(renderer: ReactTestRenderer, testID: string): Promise<void> {
@@ -440,15 +542,21 @@ describe('mobile task detail resolved-form submit path', () => {
 
   beforeEach(async () => {
     vi.useFakeTimers()
+    harness.cacheStorage.clear()
     harness.client.getTask.mockReset()
+    harness.client.createComment.mockReset()
+    harness.client.deleteComment.mockReset()
     harness.client.getChecklist.mockReset()
     harness.client.addChecklistItem.mockReset()
     harness.client.editChecklistItem.mockReset()
     harness.client.deleteChecklistItem.mockReset()
     harness.client.checkChecklistItem.mockReset()
     harness.client.uncheckChecklistItem.mockReset()
+    harness.client.removeAttachment.mockReset()
     harness.client.submitForm.mockReset()
     harness.client.triggerAction.mockReset()
+    harness.client.updateComment.mockReset()
+    harness.client.uploadAttachments.mockReset()
     harness.controller.initialize.mockClear()
     harness.controller.logout.mockClear()
     harness.replace.mockReset()
@@ -897,5 +1005,122 @@ describe('mobile task detail resolved-form submit path', () => {
     expect(findProps(renderer, 'task-detail-dock-primary').disabled).toBe(true)
     expect(findProps(renderer, 'task-card-action:dispatch').disabled).toBe(true)
     expect(harness.client.triggerAction).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows the voice-comment composer affordance when comment creation is allowed', async () => {
+    harness.client.getTask.mockResolvedValue(createTaskDetail({
+      permissions: {
+        ...createTaskDetail().permissions,
+        attachment: {
+          add: false,
+          remove: false,
+          byName: {},
+        },
+        cardAction: {
+          trigger: false,
+          byKey: {},
+        },
+        checklist: {
+          show: false,
+          add: false,
+          edit: false,
+          delete: false,
+          check: false,
+          uncheck: false,
+        },
+        comment: {
+          create: true,
+          update: true,
+          delete: true,
+          byId: {},
+        },
+        form: {
+          submit: false,
+          byId: {},
+        },
+      },
+      resolvedForms: [],
+      tasks: [],
+    }))
+
+    renderer = await renderScreen()
+
+    expect(findProps(renderer, 'task-comment-voice-open')).toBeDefined()
+    expect(findProps(renderer, 'task-comment-submit').disabled).toBe(true)
+
+    await changeText(renderer, 'task-comment-input', 'Need a spoken handoff.')
+
+    expect(findProps(renderer, 'task-comment-submit').disabled).toBe(false)
+  })
+
+  it('renders stored voice comments without leaking the raw attachment marker', async () => {
+    const voiceFileName = 'voice-comment-20260403-101010-clip.m4a'
+
+    harness.client.getTask.mockResolvedValue(createTaskDetail({
+      attachments: [voiceFileName],
+      comments: [
+        {
+          id: 'comment-voice',
+          author: 'worker',
+          created: '2026-04-02T08:30:00.000Z',
+          content: buildVoiceCommentContent({
+            voiceAttachment: {
+              filename: voiceFileName,
+              mimeType: 'audio/mp4',
+              durationMs: 12000,
+            },
+            note: 'Panel hum is stable.',
+          }),
+        },
+      ],
+      permissions: {
+        ...createTaskDetail().permissions,
+        attachment: {
+          add: false,
+          remove: true,
+          byName: {
+            [voiceFileName]: {
+              remove: true,
+            },
+          },
+        },
+        cardAction: {
+          trigger: false,
+          byKey: {},
+        },
+        checklist: {
+          show: false,
+          add: false,
+          edit: false,
+          delete: false,
+          check: false,
+          uncheck: false,
+        },
+        comment: {
+          create: true,
+          update: true,
+          delete: true,
+          byId: {
+            'comment-voice': {
+              update: true,
+              delete: true,
+            },
+          },
+        },
+        form: {
+          submit: false,
+          byId: {},
+        },
+      },
+      resolvedForms: [],
+      tasks: [],
+    }))
+
+    renderer = await renderScreen()
+
+    const textContent = collectTextChildren(renderer)
+    expect(textContent).toContain('Voice comment')
+    expect(textContent).toContain('Panel hum is stable.')
+    expect(textContent.some((value) => value.includes('attachment:///'))).toBe(false)
   })
 })

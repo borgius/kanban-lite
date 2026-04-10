@@ -1,4 +1,5 @@
 import type { Card, Comment } from '../../shared/types'
+import { parseVoiceCommentContent } from '../../shared/voiceComments'
 import type { SDKContext } from './context'
 import { appendActivityLog } from './logs'
 
@@ -199,7 +200,20 @@ export async function deleteComment(
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const comment = (card.comments || []).find(c => c.id === commentId)
+  const linkedVoiceAttachment = comment
+    ? parseVoiceCommentContent(comment.content).voiceAttachment?.filename
+    : undefined
+
   card.comments = (card.comments || []).filter(c => c.id !== commentId)
+  if (linkedVoiceAttachment) {
+    const stillReferenced = card.comments.some((existingComment) => (
+      parseVoiceCommentContent(existingComment.content).voiceAttachment?.filename === linkedVoiceAttachment
+    ))
+
+    if (!stillReferenced) {
+      card.attachments = card.attachments.filter((attachment) => attachment !== linkedVoiceAttachment)
+    }
+  }
   card.modified = new Date().toISOString()
   await ctx._storage.writeCard(card)
   if (comment) {

@@ -77,6 +77,22 @@ export interface PluginSettingsSecretFieldMetadata {
 }
 
 /**
+ * Context passed to a plugin provider's `beforeSave` hook.
+ *
+ * `isActivating` is `true` when the provider is transitioning from inactive to
+ * selected (i.e. the user is enabling the plugin for the first time or
+ * re-enabling it after it was disabled). It is `false` when options are being
+ * updated for a provider that is already the active selection.
+ */
+export interface PluginSettingsBeforeSaveContext {
+  capability: PluginCapabilityNamespace
+  providerId: string
+  sdk: KanbanSDK
+  /** True when this save activates the provider (was previously not selected). */
+  isActivating: boolean
+}
+
+/**
  * Provider options schema metadata used by plugin authors and shared transports.
  *
  * Authoring-time `schema` / `uiSchema` values may include nested sync/async
@@ -88,6 +104,12 @@ export interface PluginSettingsOptionsSchemaMetadata {
   schema: PluginSettingsJsonSchema
   uiSchema?: PluginSettingsUiSchemaElement
   secrets: PluginSettingsSecretFieldMetadata[]
+  /**
+   * Optional async hook invoked server-side before options are persisted.
+   * Throw an `Error` to abort the save; the message is surfaced to the user.
+   * Not serialized to UI transports — server-side only.
+   */
+  beforeSave?: (options: Record<string, unknown>, context: PluginSettingsBeforeSaveContext) => void | Promise<void>
 }
 
 /** Selected-provider state for a capability. Enablement is represented only by provider selection. */

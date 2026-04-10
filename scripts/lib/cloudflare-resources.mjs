@@ -55,12 +55,23 @@ export function findD1DatabaseByName(name) {
  */
 export function createD1Database(name) {
   nodeConsole.log(`  Creating D1 database: ${name}`)
-  const result = spawnSync('npx', ['wrangler', 'd1', 'create', name], {
-    stdio: 'inherit',
-    encoding: 'utf8',
-  })
+  const result = spawnCapture('npx', ['wrangler', 'd1', 'create', name])
+  // Echo captured output so the user still sees wrangler messages
+  if (result.stdout) process.stdout.write(result.stdout)
+  if (result.stderr) process.stderr.write(result.stderr)
   const status = result.status ?? 1
-  if (status !== 0) throw new Error(`Failed to create D1 database: ${name}`)
+  if (status !== 0) {
+    // Treat "already exists" as idempotent — look up and return the existing database
+    const combined = (result.stdout + result.stderr).toLowerCase()
+    if (combined.includes('already exists')) {
+      const existing = findD1DatabaseByName(name)
+      if (existing) {
+        nodeConsole.log(`  Using existing D1 database: ${name} (${existing.uuid})`)
+        return { id: existing.uuid, name: existing.name ?? name }
+      }
+    }
+    throw new Error(`Failed to create D1 database: ${name}`)
+  }
   const created = findD1DatabaseByName(name)
   if (!created?.uuid) throw new Error(`Created D1 database was not visible in wrangler d1 list output: ${name}`)
   return { id: created.uuid, name: created.name ?? name }

@@ -18,6 +18,7 @@ import {
 } from '../types'
 import type { StorageEngine } from '../plugins/types'
 import type { Card, CardTask } from '../../shared/types'
+import { buildVoiceCommentContent } from '../../shared/voiceComments'
 import { buildChecklistReadModel } from '../modules/checklist'
 
 function createTempDir(): string {
@@ -2476,6 +2477,52 @@ module.exports = { CallbackListenerPlugin }
       expect(updated.comments).toHaveLength(1)
       expect(updated.comments[0].id).toBe('c2')
       expect(updated.comments[0].author).toBe('bob')
+    })
+
+    it('should remove a linked voice attachment when deleting a voice comment', async () => {
+      const card = await sdk.createCard({ content: '# Delete Voice Comment' })
+
+      await sdk.addAttachmentData(card.id, 'voice-note.webm', Buffer.from('voice bytes'))
+      await sdk.addAttachmentData(card.id, 'photo.png', Buffer.from('photo bytes'))
+      await sdk.addComment(card.id, 'alice', buildVoiceCommentContent({
+        voiceAttachment: {
+          filename: 'voice-note.webm',
+          mimeType: 'audio/webm',
+          durationMs: 2400,
+        },
+        note: 'Listen to this clip.',
+      }))
+
+      const updated = await sdk.deleteComment(card.id, 'c1')
+
+      expect(updated.comments).toHaveLength(0)
+      expect(updated.attachments).toContain('photo.png')
+      expect(updated.attachments).not.toContain('voice-note.webm')
+
+      const reloaded = await sdk.getCard(card.id)
+      expect(reloaded?.attachments).toContain('photo.png')
+      expect(reloaded?.attachments).not.toContain('voice-note.webm')
+    })
+
+    it('should keep a linked voice attachment when another comment still references it', async () => {
+      const card = await sdk.createCard({ content: '# Shared Voice Attachment' })
+      const sharedVoiceComment = buildVoiceCommentContent({
+        voiceAttachment: {
+          filename: 'shared-note.webm',
+          mimeType: 'audio/webm',
+          durationMs: 3100,
+        },
+      })
+
+      await sdk.addAttachmentData(card.id, 'shared-note.webm', Buffer.from('voice bytes'))
+      await sdk.addComment(card.id, 'alice', sharedVoiceComment)
+      await sdk.addComment(card.id, 'bob', sharedVoiceComment)
+
+      const updated = await sdk.deleteComment(card.id, 'c1')
+
+      expect(updated.comments).toHaveLength(1)
+      expect(updated.attachments).toContain('shared-note.webm')
+      expect(updated.comments[0].id).toBe('c2')
     })
 
     it('should reject empty comment content', async () => {

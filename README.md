@@ -74,7 +74,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Real-time updates**: WebSocket-powered live sync on the Node standalone server, plus an event-driven Cloudflare Worker mode that uses Durable Object WebSocket invalidations with HTTP latest-state resync between tabs
 - **Light & dark mode** support
 - **Tabbed settings panel**: Settings are organized into **General**, **Board**, and **Plugin Options** tabs, with board-level subviews for **Defaults**, **Title**, **Actions**, **Labels**, and **Meta**
-- **Board settings deep links**: Standalone browser routes now include `/settings/board/defaults`, `/settings/board/title`, `/settings/board/actions`, `/settings/board/labels`, and `/settings/board/meta`, with legacy board-setting URLs such as `/settings/defaults` and `/settings/labels` redirecting to the matching board subview
+- **Board settings deep links**: Standalone browser routes now include `/settings/board/defaults`, `/settings/board/title`, `/settings/board/actions`, `/settings/board/labels`, and `/settings/board/meta`, with legacy board-setting URLs such as `/settings/defaults` and `/settings/labels` redirecting to the matching board subview, and the shared settings panel opens the matching left-rail board sub-tab for each route
 - **Broader shared settings coverage**: The shared settings UI now exposes `showBuildWithAI`, `markdownEditorMode`, and drawer position alongside the existing layout and display controls
 - **Board title/action editors**: Manage `boards.<id>.title` metadata prefixes and `boards.<id>.actions` toolbar actions directly from **Board → Title** and **Board → Actions**
 - **Simplified metadata field builder**: The Board → **Meta** settings view now uses a quieter form-and-list layout with stacked edit fields, duplicate-name validation, inline editing, and straightforward controls for deciding which metadata appears on card previews
@@ -105,6 +105,7 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Labels**: Tag cards with multiple labels
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
+- **Voice comments**: Record spoken task updates with an optional typed note from desktop (standalone + VS Code) or the mobile app; the audio is stored as a linked attachment, rendered with an inline player, and deleted automatically when the linked voice comment is removed
 - **Streaming comments**: AI agents can stream a comment live — a blinking-cursor indicator and `streaming` badge are shown to all connected viewers while text is being written; the comment is persisted once the stream completes (see [REST API](#comments) and [`sdk.streamComment`](#sdkstreamcomment))
 - **Logs**: Append timestamped log entries to cards (stored as `<cardId>.log` text file, supports markdown, optional source labels and structured data objects)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context

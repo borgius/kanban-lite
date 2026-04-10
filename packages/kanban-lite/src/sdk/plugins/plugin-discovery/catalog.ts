@@ -470,6 +470,17 @@ export async function persistPluginSettingsProviderSelection(
     ...(persistedOptions !== undefined ? { options: persistedOptions } : {}),
   }
 
+  // Run beforeSave when moving to a new provider (activating it).
+  const isActivating = !selectedRef || selectedRef.provider !== normalizedProviderId || selectedRef.provider === 'none'
+  if (isActivating && provider.optionsSchema?.beforeSave) {
+    try {
+      await provider.optionsSchema.beforeSave(persistedOptions ?? {}, { capability, providerId: normalizedProviderId, sdk, isActivating })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Plugin options validation failed before save.'
+      throw new PluginSettingsStoreError('plugin-settings-before-save-rejected', message, { capability, providerId: normalizedProviderId })
+    }
+  }
+
   getMutablePluginsRecord(config)[capability] = nextRef
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
@@ -509,6 +520,16 @@ export async function persistPluginSettingsProviderOptions(
   )
 
   if (selectedRef?.provider === normalizedProviderId) {
+    // Provider is already active; run beforeSave with isActivating=false before persisting.
+    if (provider.optionsSchema?.beforeSave) {
+      try {
+        await provider.optionsSchema.beforeSave(isRecord(mergedOptions) ? mergedOptions : {}, { capability, providerId: normalizedProviderId, sdk, isActivating: false })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Plugin options validation failed before save.'
+        throw new PluginSettingsStoreError('plugin-settings-before-save-rejected', message, { capability, providerId: normalizedProviderId })
+      }
+    }
+
     getMutablePluginsRecord(config)[capability] = {
       provider: normalizedProviderId,
       options: persistedOptions,

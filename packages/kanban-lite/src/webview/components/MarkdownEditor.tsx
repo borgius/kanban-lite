@@ -568,6 +568,7 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
         })}
         {activeTab === 'comments' && comments && onAddComment && onUpdateComment && onDeleteComment && (
           <CommentsSection
+            cardId={cardId}
             comments={comments}
             onAddComment={onAddComment}
             onUpdateComment={onUpdateComment}

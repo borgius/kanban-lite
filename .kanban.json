@@ -4,7 +4,8 @@
     "default": {
       "name": "Default",
       "title": [
-        "ticketId"
+        "company",
+        "location"
       ],
       "metadata": {
         "ticketId": {

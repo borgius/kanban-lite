@@ -54,6 +54,7 @@ export type {
   PluginSettingsInstallRequest,
   PluginSettingsInstallScope,
   PluginSettingsJsonSchema,
+  PluginSettingsBeforeSaveContext,
   PluginSettingsOptionsSchemaMetadata,
   PluginSettingsPayload,
   PluginSettingsProviderRow,

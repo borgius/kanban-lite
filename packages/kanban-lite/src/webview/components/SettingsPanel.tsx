@@ -10,6 +10,7 @@ import type {
   CardDisplaySettings,
   Priority,
   CardStatus,
+  SettingsSupport,
   WorkspaceInfo,
   LabelDefinition,
   PluginSettingsDiscoverySource,
@@ -20,7 +21,7 @@ import type {
   PluginSettingsProviderTransport,
   PluginSettingsSecretFieldMetadata,
 } from '../../shared/types'
-import { DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
+import { DEFAULT_SETTINGS_SUPPORT, DELETED_STATUS_ID, LABEL_PRESET_COLORS, normalizeBoardBackgroundSettings } from '../../shared/types'
 import type { CardViewMode } from '../../shared/types'
 import { useStore } from '../store'
 import { cn } from '../lib/utils'
@@ -28,7 +29,9 @@ import type { SettingsTab, BoardSubTab } from '../settingsTabs'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
 import { drawerContainerClass, drawerPanelStyle, getSlideInClass, isHorizontalDrawer } from '../drawerPositionHelpers'
 import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
+import { ActionsBuilderSection } from './ActionsBuilderSection'
 import { MetaBuilderSection } from './MetaBuilderSection'
+import { TitleBuilderSection } from './TitleBuilderSection'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
 const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the masked value unchanged to keep the current secret, or type a new value to replace it.'
@@ -84,6 +87,7 @@ const plainBackgroundOptions: { value: BoardBackgroundPreset; label: string }[] 
 interface SettingsPanelProps {
   isOpen: boolean
   settings: CardDisplaySettings
+  settingsSupport?: SettingsSupport
   workspace?: WorkspaceInfo | null
   pluginSettings?: PluginSettingsPayload | null
   pluginSettingsProvider?: PluginSettingsProviderTransport | null
@@ -103,13 +107,20 @@ interface SettingsPanelProps {
   onPluginOptionsTabActivated?: () => void
   onTabChange?: (tab: SettingsTab) => void
   initialTab?: SettingsTab
+  initialBoardSubTab?: BoardSubTab
+  onBoardSubTabChange?: (tab: BoardSubTab) => void
   boardMeta?: Record<string, BoardMetaFieldDef>
+  boardTitle?: string[]
+  boardActions?: Record<string, string>
   onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
+  onSaveBoardTitle?: (title: string[]) => void
+  onSaveBoardActions?: (actions: Record<string, string>) => void
 }
 
 export function SettingsPanel({
   isOpen,
   settings,
+  settingsSupport,
   workspace,
   pluginSettings,
   pluginSettingsProvider,
@@ -129,13 +140,20 @@ export function SettingsPanel({
   onPluginOptionsTabActivated,
   onTabChange,
   initialTab,
+  initialBoardSubTab,
+  onBoardSubTabChange,
   boardMeta,
+  boardTitle,
+  boardActions,
   onSaveBoardMeta,
+  onSaveBoardTitle,
+  onSaveBoardActions,
 }: SettingsPanelProps) {
   if (!isOpen) return null
   return (
     <SettingsPanelContent
       settings={settings}
+      settingsSupport={settingsSupport}
       workspace={workspace}
       pluginSettings={pluginSettings}
       pluginSettingsProvider={pluginSettingsProvider}
@@ -155,8 +173,14 @@ export function SettingsPanel({
       onPluginOptionsTabActivated={onPluginOptionsTabActivated}
       onTabChange={onTabChange}
       initialTab={initialTab}
+      initialBoardSubTab={initialBoardSubTab}
+      onBoardSubTabChange={onBoardSubTabChange}
       boardMeta={boardMeta}
+      boardTitle={boardTitle}
+      boardActions={boardActions}
       onSaveBoardMeta={onSaveBoardMeta}
+      onSaveBoardTitle={onSaveBoardTitle}
+      onSaveBoardActions={onSaveBoardActions}
     />
   )
 }
@@ -439,6 +463,7 @@ function getCapabilityEntry(
 interface PluginListEntry {
   key: string
   label: string
+  description: string
   discoverySource: PluginSettingsDiscoverySource
   capabilities: Array<{
     capability: PluginCapabilityNamespace
@@ -483,38 +508,32 @@ function isPluginOptionsSchemaUiEditable(optionsSchema: PluginSettingsOptionsSch
 function derivePluginList(pluginSettings: PluginSettingsPayload | null | undefined): PluginListEntry[] {
   if (!pluginSettings?.capabilities) return []
 
-  const map = new Map<string, PluginListEntry>()
+  const list: PluginListEntry[] = []
 
   for (const capEntry of pluginSettings.capabilities) {
     for (const provider of capEntry.providers) {
-      const key = provider.packageName
-      let entry = map.get(key)
-      if (!entry) {
-        entry = {
-          key,
-          label: provider.packageName,
-          discoverySource: provider.discoverySource,
-          capabilities: [],
-          hasSelectedCapability: false,
-        }
-        map.set(key, entry)
-      }
-      entry.capabilities.push({
-        capability: capEntry.capability,
-        providerId: provider.providerId,
-        isSelected: provider.isSelected,
-        optionsSchema: provider.optionsSchema,
+      list.push({
+        key: getPluginProviderCacheKey(capEntry.capability, provider.providerId),
+        label: provider.packageName,
+        description: capEntry.capability,
+        discoverySource: provider.discoverySource,
+        capabilities: [{
+          capability: capEntry.capability,
+          providerId: provider.providerId,
+          isSelected: provider.isSelected,
+          optionsSchema: provider.optionsSchema,
+        }],
+        hasSelectedCapability: provider.isSelected,
       })
-      if (provider.isSelected) {
-        entry.hasSelectedCapability = true
-      }
     }
   }
 
-  return Array.from(map.values()).sort((a, b) => {
+  return list.sort((a, b) => {
     if (a.discoverySource === 'builtin' && b.discoverySource !== 'builtin') return -1
     if (a.discoverySource !== 'builtin' && b.discoverySource === 'builtin') return 1
-    return a.label.localeCompare(b.label)
+    const labelCompare = a.label.localeCompare(b.label)
+    if (labelCompare !== 0) return labelCompare
+    return a.description.localeCompare(b.description)
   })
 }
 
@@ -742,7 +761,11 @@ function PluginOptionsSection({
       return preferredPluginKey
     }
 
-    return plugins.find(plugin => plugin.key === pluginSettingsProvider?.packageName)?.key
+    return plugins.find(
+      plugin => plugin.key === (pluginSettingsProvider
+        ? getPluginProviderCacheKey(pluginSettingsProvider.capability, pluginSettingsProvider.providerId)
+        : null),
+    )?.key
       ?? plugins.find(plugin => plugin.capabilities.some(
         capability => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
       ))?.key
@@ -906,7 +929,15 @@ function PluginOptionsSection({
                   className="text-sm font-medium flex-1 truncate"
                   style={activePluginKey === plugin.key && !isInstallVisible ? undefined : { color: 'var(--vscode-foreground)' }}
                 >
-                  {plugin.label}
+                  <span className="block truncate">{plugin.label}</span>
+                  <span
+                    className="block truncate text-[11px] font-normal"
+                    style={activePluginKey === plugin.key && !isInstallVisible
+                      ? { color: 'var(--vscode-list-activeSelectionForeground)' }
+                      : { color: 'var(--vscode-descriptionForeground)' }}
+                  >
+                    {plugin.description}
+                  </span>
                 </span>
                 <div className="flex items-center gap-1 shrink-0">
                   <PluginSettingsBadge>{pluginDiscoverySourceLabels[plugin.discoverySource]}</PluginSettingsBadge>
@@ -1662,12 +1693,15 @@ function LabelsSection({ onSetLabel, onRenameLabel, onDeleteLabel }: {
 
 const boardSubTabLabels: Record<BoardSubTab, string> = {
   defaults: 'Defaults',
+  title: 'Title',
+  actions: 'Actions',
   labels: 'Labels',
   meta: 'Meta',
 }
 
 function SettingsPanelContent({
   settings,
+  settingsSupport = DEFAULT_SETTINGS_SUPPORT,
   workspace,
   pluginSettings,
   pluginSettingsProvider,
@@ -1687,17 +1721,28 @@ function SettingsPanelContent({
   onPluginOptionsTabActivated,
   onTabChange,
   initialTab,
+  initialBoardSubTab,
+  onBoardSubTabChange,
   boardMeta,
+  boardTitle,
+  boardActions,
   onSaveBoardMeta,
+  onSaveBoardTitle,
+  onSaveBoardActions,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
-  const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>('defaults')
+  const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>(initialBoardSubTab ?? 'defaults')
 
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab)
     onTabChange?.(tab)
   }, [onTabChange])
+
+  const setBoardSubTabAndSync = useCallback((tab: BoardSubTab) => {
+    setBoardSubTab(tab)
+    onBoardSubTabChange?.(tab)
+  }, [onBoardSubTabChange])
 
   // Sync activeTab when initialTab changes from URL navigation
   useEffect(() => {
@@ -1709,6 +1754,12 @@ function SettingsPanelContent({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTab])
+
+  useEffect(() => {
+    if (initialBoardSubTab && initialBoardSubTab !== boardSubTab) {
+      setBoardSubTab(initialBoardSubTab)
+    }
+  }, [boardSubTab, initialBoardSubTab])
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
   useEffect(() => {
@@ -1861,12 +1912,28 @@ function SettingsPanelContent({
                   checked={local.showLabels}
                   onChange={v => update({ showLabels: v })}
                 />
+                {settingsSupport.showBuildWithAI !== false && (
+                  <SettingsToggle
+                    label="Show Build with AI"
+                    description="Display the Build with AI action on cards"
+                    checked={local.showBuildWithAI}
+                    onChange={v => update({ showBuildWithAI: v })}
+                  />
+                )}
                 <SettingsToggle
                   label="Show Filename"
                   description="Display the source markdown filename on cards"
                   checked={local.showFileName}
                   onChange={v => update({ showFileName: v })}
                 />
+                {settingsSupport.markdownEditorMode !== false && (
+                  <SettingsToggle
+                    label="Markdown Editor Mode"
+                    description="Open cards in the markdown editor instead of the detail panel"
+                    checked={local.markdownEditorMode}
+                    onChange={v => update({ markdownEditorMode: v })}
+                  />
+                )}
                 <SettingsDropdown
                   label="Card Size"
                   value={local.cardViewMode ?? 'large'}
@@ -1899,17 +1966,19 @@ function SettingsPanelContent({
                 />
                 {(local.panelMode ?? 'drawer') === 'drawer' && (
                   <>
-                    <SettingsDropdown
-                      label="Drawer Position"
-                      value={local.drawerPosition ?? 'right'}
-                      options={[
-                        { value: 'right', label: 'Right' },
-                        { value: 'left', label: 'Left' },
-                        { value: 'top', label: 'Top' },
-                        { value: 'bottom', label: 'Bottom' },
-                      ]}
-                      onChange={v => update({ drawerPosition: v as 'right' | 'left' | 'top' | 'bottom' })}
-                    />
+                    {settingsSupport.drawerPosition !== false && (
+                      <SettingsDropdown
+                        label="Drawer Position"
+                        value={local.drawerPosition ?? 'right'}
+                        options={[
+                          { value: 'right', label: 'Right' },
+                          { value: 'left', label: 'Left' },
+                          { value: 'top', label: 'Top' },
+                          { value: 'bottom', label: 'Bottom' },
+                        ]}
+                        onChange={v => update({ drawerPosition: v as 'right' | 'left' | 'top' | 'bottom' })}
+                      />
+                    )}
                     <SettingsSlider
                       label="Drawer Size"
                       description="Size of the drawer as a percentage of the viewport"
@@ -2009,11 +2078,11 @@ function SettingsPanelContent({
                 className="flex flex-col shrink-0 py-2"
                 style={{ width: 96, borderRight: '1px solid var(--vscode-panel-border)' }}
               >
-                {(['defaults', 'labels', 'meta'] as const).map(sub => (
+                {(['defaults', 'title', 'actions', 'labels', 'meta'] as const).map(sub => (
                   <button
                     key={sub}
                     type="button"
-                    onClick={() => setBoardSubTab(sub)}
+                    onClick={() => setBoardSubTabAndSync(sub)}
                     className="px-3 py-2 text-xs text-left transition-colors relative"
                     style={{
                       color: boardSubTab === sub
@@ -2053,6 +2122,21 @@ function SettingsPanelContent({
                       onChange={v => update({ defaultStatus: v as CardStatus })}
                     />
                   </SettingsSection>
+                )}
+
+                {boardSubTab === 'title' && (
+                  <TitleBuilderSection
+                    boardMeta={boardMeta}
+                    boardTitle={boardTitle}
+                    onSave={onSaveBoardTitle}
+                  />
+                )}
+
+                {boardSubTab === 'actions' && (
+                  <ActionsBuilderSection
+                    boardActions={boardActions}
+                    onSave={onSaveBoardActions}
+                  />
                 )}
 
                 {boardSubTab === 'labels' && (

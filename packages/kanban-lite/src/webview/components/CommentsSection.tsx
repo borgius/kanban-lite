@@ -2,16 +2,30 @@ import { useState, useMemo } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
 import { parseCommentMarkdown } from '../lib/markdownTools'
 import type { Comment } from '../../shared/types'
+import { parseVoiceCommentContent } from '../../shared/voiceComments'
 import { CommentEditor } from './CommentEditor'
+import { VoiceCommentPlayer } from './VoiceCommentPlayer'
 
-function CommentBody({ content }: { content: string }) {
-  const html = useMemo(() => parseCommentMarkdown(content), [content])
+function CommentBody({ cardId, content }: { cardId?: string; content: string }) {
+  const { note, voiceAttachment } = useMemo(() => parseVoiceCommentContent(content), [content])
+  const html = useMemo(() => note.trim() ? parseCommentMarkdown(note) : '', [note])
+
   return (
-    <div
-      className="comment-markdown"
-      style={{ color: 'var(--vscode-foreground)' }}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className="card-comment-content-stack">
+      {voiceAttachment && (
+        <VoiceCommentPlayer
+          cardId={cardId}
+          voiceAttachment={voiceAttachment}
+        />
+      )}
+      {html && (
+        <div
+          className="comment-markdown"
+          style={{ color: 'var(--vscode-foreground)' }}
+          dangerouslySetInnerHTML={{ __html: html }}
+        />
+      )}
+    </div>
   )
 }
 
@@ -30,13 +44,14 @@ function timeAgo(dateStr: string): string {
 }
 
 interface CommentsSectionProps {
+  cardId?: string
   comments: Comment[]
   onAddComment: (author: string, content: string) => void
   onUpdateComment: (commentId: string, content: string) => void
   onDeleteComment: (commentId: string) => void
 }
 
-export function CommentsSection({ comments, onAddComment, onUpdateComment, onDeleteComment }: CommentsSectionProps) {
+export function CommentsSection({ cardId, comments, onAddComment, onUpdateComment, onDeleteComment }: CommentsSectionProps) {
   const [editingId, setEditingId] = useState<string | null>(null)
 
   return (
@@ -83,6 +98,7 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
                 {editingId === comment.id ? (
                   <div className="mt-1">
                     <CommentEditor
+                      cardId={cardId}
                       initialContent={comment.content}
                       submitLabel="Save"
                       onSubmit={(_, content) => {
@@ -94,7 +110,7 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
                   </div>
                 ) : (
                   <div className="card-comment-content-wrap">
-                    <CommentBody content={comment.content} />
+                    <CommentBody cardId={cardId} content={comment.content} />
                     {comment.streaming && <span className="card-comment-cursor" aria-hidden="true" />}
                   </div>
                 )}
@@ -106,6 +122,7 @@ export function CommentsSection({ comments, onAddComment, onUpdateComment, onDel
 
       <div className="card-comments-composer">
         <CommentEditor
+          cardId={cardId}
           onSubmit={(author, content) => onAddComment(author, content)}
           submitLabel="Comment"
         />

@@ -35,10 +35,26 @@ export function createExpoSecureStoreStorage(): {
   removeItem(key: string): Promise<void>
 } {
   let availablePromise: Promise<boolean> | undefined
+  let secureStorePromise: Promise<typeof import('expo-secure-store')> | undefined
+
+  function loadSecureStore(): Promise<typeof import('expo-secure-store')> {
+    secureStorePromise ??= import('expo-secure-store')
+    return secureStorePromise
+  }
 
   async function checkAvailable(): Promise<boolean> {
-    availablePromise ??= import('expo-secure-store')
-      .then((s) => s.isAvailableAsync())
+    availablePromise ??= loadSecureStore()
+      .then((secureStore) => {
+        if (typeof secureStore.isAvailableAsync === 'function') {
+          return secureStore.isAvailableAsync()
+        }
+
+        return (
+          typeof secureStore.getItemAsync === 'function'
+          && typeof secureStore.setItemAsync === 'function'
+          && typeof secureStore.deleteItemAsync === 'function'
+        )
+      })
       .catch(() => false)
     return availablePromise
   }
@@ -53,7 +69,7 @@ export function createExpoSecureStoreStorage(): {
       if (!(await checkAvailable())) {
         try { return typeof localStorage !== 'undefined' ? localStorage.getItem(webKey(key)) : null } catch { return null }
       }
-      const secureStore = await import('expo-secure-store')
+      const secureStore = await loadSecureStore()
       return secureStore.getItemAsync(toExpoSecureStoreKey(key))
     },
     async setItem(key, value) {
@@ -61,7 +77,7 @@ export function createExpoSecureStoreStorage(): {
         try { if (typeof localStorage !== 'undefined') localStorage.setItem(webKey(key), value) } catch { /* ignore */ }
         return
       }
-      const secureStore = await import('expo-secure-store')
+      const secureStore = await loadSecureStore()
       await secureStore.setItemAsync(toExpoSecureStoreKey(key), value)
     },
     async removeItem(key) {
@@ -69,7 +85,7 @@ export function createExpoSecureStoreStorage(): {
         try { if (typeof localStorage !== 'undefined') localStorage.removeItem(webKey(key)) } catch { /* ignore */ }
         return
       }
-      const secureStore = await import('expo-secure-store')
+      const secureStore = await loadSecureStore()
       await secureStore.deleteItemAsync(toExpoSecureStoreKey(key))
     },
   }

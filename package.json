@@ -26,6 +26,7 @@
     "dev": "pnpm --filter kanban-lite dev",
     "dev:ext": "pnpm --filter kanban-lite dev:ext",
     "dev:workspace": "pnpm --filter './packages/*' --if-present run dev",
+    "deploy": "node --env-file=.env.cloudflare scripts/deploy-cloudflare-worker.mjs --config .kanban.cloudflare.json --create-resources",
     "test": "pnpm --filter kanban-lite test",
     "test:workspace": "pnpm --filter './packages/*' --if-present run test",
     "test:integration": "pnpm --filter kanban-lite --if-present run test:integration:minio",

@@ -517,6 +517,7 @@ export class KanbanPanel {
               if (boardId) {
                 await this._runWithAuth(sdk, () => sdk.updateBoard(boardId, {
                   title: message.title.filter((field: unknown): field is string => typeof field === 'string'),
+                  ...(typeof message.titleTemplate === 'string' ? { titleTemplate: message.titleTemplate } : {}),
                 }))
                 this._sendCardsToWebview()
               }
@@ -1709,8 +1710,10 @@ export class KanbanPanel {
     const aiRoot = this._getWorkspaceRoot()
     const aiConfig = aiRoot ? readConfig(aiRoot) : DEFAULT_CONFIG
     const activeBoardId = this._currentBoardId || aiConfig.defaultBoard
-    const titleFields = aiConfig.boards[activeBoardId]?.title
-    const title = getDisplayTitleFromContent(card.content, card.metadata, titleFields)
+    const activeBoard = aiConfig.boards[activeBoardId]
+    const titleFields = activeBoard?.title
+    const titleTemplate = activeBoard?.titleTemplate
+    const title = getDisplayTitleFromContent(card.content, card.metadata, titleFields, titleTemplate)
 
     const labels = card.labels.length > 0 ? ` [${card.labels.join(', ')}]` : ''
     const description = card.content.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()

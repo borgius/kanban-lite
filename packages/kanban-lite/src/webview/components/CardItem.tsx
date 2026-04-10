@@ -78,8 +78,10 @@ export function CardItem({ card, onClick, isDragging, isSelected }: CardItemProp
     observer.observe(el)
     return () => observer.disconnect()
   }, [card.id, card.cardState])
-  const titleMetadataKeys = boards.find((board) => board.id === currentBoard)?.title ?? []
-  const title = getDisplayTitleFromContent(card.content, card.metadata, titleMetadataKeys)
+  const currentBoardInfo = boards.find((board) => board.id === currentBoard)
+  const titleMetadataKeys = currentBoardInfo?.title ?? []
+  const titleTemplate = currentBoardInfo?.titleTemplate
+  const title = getDisplayTitleFromContent(card.content, card.metadata, titleMetadataKeys, titleTemplate)
   const description = getDescriptionFromContent(card.content)
   const fileName = card.filePath ? card.filePath.split('/').pop() || '' : ''
   const viewMode = cardSettings.cardViewMode ?? 'large'

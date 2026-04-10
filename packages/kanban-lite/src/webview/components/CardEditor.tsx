@@ -882,12 +882,16 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
     () => boards.find(b => b.id === currentBoard)?.title,
     [boards, currentBoard],
   )
+  const titleTemplate = useMemo(
+    () => boards.find(b => b.id === currentBoard)?.titleTemplate,
+    [boards, currentBoard],
+  )
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID
-  const cardTitle = getDisplayTitleFromContent(currentContent, currentFrontmatter.metadata, titleMetadataKeys)
+  const cardTitle = getDisplayTitleFromContent(currentContent, currentFrontmatter.metadata, titleMetadataKeys, titleTemplate)
   const metadata = useMemo(() => currentFrontmatter.metadata ?? {}, [currentFrontmatter.metadata])
   const pinnedMetadataEntries = useMemo(
     () => pinnedMetadataKeys

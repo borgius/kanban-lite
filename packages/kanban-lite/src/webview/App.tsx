@@ -192,7 +192,9 @@ function App(): React.JSX.Element {
     settingsSupport: SettingsSupport
   } | null>(null)
   const pendingDeletesRef = useRef(pendingDeletes)
-  const currentBoardTitleFields = boards.find(board => board.id === currentBoard)?.title
+  const currentBoardInfo = boards.find(board => board.id === currentBoard)
+  const currentBoardTitleFields = currentBoardInfo?.title
+  const currentBoardTitleTemplate = currentBoardInfo?.titleTemplate
   useEffect(() => {
     pendingDeletesRef.current = pendingDeletes
   }, [pendingDeletes])
@@ -1313,9 +1315,10 @@ function App(): React.JSX.Element {
           onBoardSubTabChange={setSettingsBoardSubTab}
           boardMeta={boards.find(b => b.id === currentBoard)?.metadata}
           boardTitle={boards.find(b => b.id === currentBoard)?.title}
+          boardTitleTemplate={boards.find(b => b.id === currentBoard)?.titleTemplate}
           boardActions={boards.find(b => b.id === currentBoard)?.actions}
           onSaveBoardMeta={(metadata) => vscode.postMessage({ type: 'updateBoardMeta', boardId: currentBoard, metadata })}
-          onSaveBoardTitle={(title) => vscode.postMessage({ type: 'updateBoardTitle', boardId: currentBoard, title })}
+          onSaveBoardTitle={(title, titleTemplate) => vscode.postMessage({ type: 'updateBoardTitle', boardId: currentBoard, title, ...(titleTemplate !== undefined ? { titleTemplate } : {}) })}
           onSaveBoardActions={(actions) => vscode.postMessage({ type: 'updateBoardActions', boardId: currentBoard, actions })}
         />
       </Suspense>
@@ -1341,7 +1344,7 @@ function App(): React.JSX.Element {
       {pendingDeletes.map((entry, i) => (
         <UndoToast
           key={entry.id}
-          message={`Deleted "${getDisplayTitleFromContent(entry.card.content, entry.card.metadata, currentBoardTitleFields)}"`}
+          message={`Deleted "${getDisplayTitleFromContent(entry.card.content, entry.card.metadata, currentBoardTitleFields, currentBoardTitleTemplate)}"`}
           onUndo={() => handleUndoDelete(entry.id)}
           onExpire={() => commitDelete(entry.id)}
           duration={5000}

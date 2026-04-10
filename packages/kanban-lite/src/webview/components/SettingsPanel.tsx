@@ -111,9 +111,10 @@ interface SettingsPanelProps {
   onBoardSubTabChange?: (tab: BoardSubTab) => void
   boardMeta?: Record<string, BoardMetaFieldDef>
   boardTitle?: string[]
+  boardTitleTemplate?: string
   boardActions?: Record<string, string>
   onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
-  onSaveBoardTitle?: (title: string[]) => void
+  onSaveBoardTitle?: (title: string[], titleTemplate?: string) => void
   onSaveBoardActions?: (actions: Record<string, string>) => void
 }
 
@@ -144,6 +145,7 @@ export function SettingsPanel({
   onBoardSubTabChange,
   boardMeta,
   boardTitle,
+  boardTitleTemplate,
   boardActions,
   onSaveBoardMeta,
   onSaveBoardTitle,
@@ -177,6 +179,7 @@ export function SettingsPanel({
       onBoardSubTabChange={onBoardSubTabChange}
       boardMeta={boardMeta}
       boardTitle={boardTitle}
+      boardTitleTemplate={boardTitleTemplate}
       boardActions={boardActions}
       onSaveBoardMeta={onSaveBoardMeta}
       onSaveBoardTitle={onSaveBoardTitle}
@@ -1725,6 +1728,7 @@ function SettingsPanelContent({
   onBoardSubTabChange,
   boardMeta,
   boardTitle,
+  boardTitleTemplate,
   boardActions,
   onSaveBoardMeta,
   onSaveBoardTitle,
@@ -2128,6 +2132,7 @@ function SettingsPanelContent({
                   <TitleBuilderSection
                     boardMeta={boardMeta}
                     boardTitle={boardTitle}
+                    boardTitleTemplate={boardTitleTemplate}
                     onSave={onSaveBoardTitle}
                   />
                 )}

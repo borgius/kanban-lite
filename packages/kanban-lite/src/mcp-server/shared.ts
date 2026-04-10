@@ -143,19 +143,21 @@ export async function buildMcpCardStateMutationModel(sdk: KanbanSDK, unread: Car
   }
 }
 
-export function getBoardTitleFieldsForMcp(sdk: KanbanSDK, boardId?: string): readonly string[] | undefined {
+export function getBoardTitleFieldsForMcp(sdk: KanbanSDK, boardId?: string): { fields: readonly string[] | undefined; template: string | undefined } {
   const config = sdk.getConfigSnapshot()
   const resolvedBoardId = boardId || config.defaultBoard
-  return config.boards[resolvedBoardId]?.title
+  const board = config.boards[resolvedBoardId]
+  return { fields: board?.title, template: board?.titleTemplate }
 }
 
 export function decorateMcpCardTitle<T extends { content: string; metadata?: Record<string, unknown> }>(
   card: T,
   titleFields?: readonly string[],
+  titleTemplate?: string,
 ): T & { title: string } {
   return {
     ...card,
-    title: getDisplayTitleFromContent(card.content, card.metadata, titleFields),
+    title: getDisplayTitleFromContent(card.content, card.metadata, titleFields, titleTemplate),
   }
 }
 

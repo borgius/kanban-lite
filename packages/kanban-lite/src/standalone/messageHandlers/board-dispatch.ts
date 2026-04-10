@@ -220,7 +220,13 @@ export async function dispatchBoardMessage(
     case 'updateBoardTitle': {
       const boardId = (msg.boardId as string | undefined) ?? ctx.currentBoardId ?? undefined
       if (boardId) {
-        await runWithScopedAuth(() => ctx.sdk.updateBoard(boardId, { title: normalizeBoardTitleFields(msg.title) }))
+        const updates: Parameters<typeof ctx.sdk.updateBoard>[1] = {
+          title: normalizeBoardTitleFields(msg.title),
+        }
+        if (typeof msg.titleTemplate === 'string') {
+          updates.titleTemplate = msg.titleTemplate
+        }
+        await runWithScopedAuth(() => ctx.sdk.updateBoard(boardId, updates))
         broadcast(ctx, buildInitMessage(ctx))
       }
       break

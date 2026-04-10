@@ -654,7 +654,7 @@ describe('SettingsPanel drawer resize integration', () => {
 
     expect(titleMarkup).toContain('Title')
     expect(titleMarkup).toContain('Actions')
-    expect(titleMarkup).toContain('Title Fields')
+    expect(titleMarkup).toContain('Title Template')
     expect(titleMarkup).toContain('ticketId')
     expect(titleMarkup).toContain('region')
 

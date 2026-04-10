@@ -48,7 +48,7 @@ export function registerCardMcpTools(
     },
     async ({ boardId, status, priority, assignee, label, labelGroup, includeDeleted, searchQuery, fuzzy, metaFilter, sort }) => {
       try {
-        const titleFields = getBoardTitleFieldsForMcp(sdk, boardId)
+        const { fields: titleFields, template: titleTemplate } = getBoardTitleFieldsForMcp(sdk, boardId)
         const summary = await runWithMcpAuth(async () => {
           let cards = await sdk.listCards(undefined, boardId, {
             metaFilter: metaFilter && Object.keys(metaFilter).length > 0 ? metaFilter : undefined,
@@ -68,7 +68,7 @@ export function registerCardMcpTools(
 
           return cards.map(c => ({
             id: c.id,
-            title: getDisplayTitleFromContent(c.content, c.metadata, titleFields),
+            title: getDisplayTitleFromContent(c.content, c.metadata, titleFields, titleTemplate),
             status: c.status,
             priority: c.priority,
             assignee: c.assignee,
@@ -104,11 +104,11 @@ export function registerCardMcpTools(
           return resolvedCard
         })
 
-        const titleFields = getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId)
+        const { fields: titleFields, template: titleTemplate } = getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId)
         return {
           content: [{
             type: 'text' as const,
-            text: JSON.stringify(decorateMcpCardTitle(card, titleFields), null, 2),
+            text: JSON.stringify(decorateMcpCardTitle(card, titleFields, titleTemplate), null, 2),
           }],
         }
       } catch (err) {
@@ -126,11 +126,11 @@ export function registerCardMcpTools(
     async ({ boardId }) => {
       try {
         const card = await runWithMcpAuth(() => sdk.getActiveCard(boardId))
-        const titleFields = card ? getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId) : undefined
+        const titleEntry = card ? getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId) : undefined
         return {
           content: [{
             type: 'text' as const,
-            text: JSON.stringify(card ? decorateMcpCardTitle(card, titleFields) : null, null, 2),
+            text: JSON.stringify(card ? decorateMcpCardTitle(card, titleEntry?.fields, titleEntry?.template) : null, null, 2),
           }],
         }
       } catch (err) {

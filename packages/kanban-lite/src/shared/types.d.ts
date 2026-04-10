@@ -182,7 +182,10 @@ export interface BoardInfo {
     /** Named metadata field definitions; keys with `highlighted: true` are shown on card previews. */
     metadata?: Record<string, import('./config').BoardMetaFieldDef>;
     /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
+    /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
     title?: string[];
+    /** Template string for card display titles (e.g. `${metadata.company}: ${title}`). When set, takes precedence over `title`. */
+    titleTemplate?: string;
     /** Reusable named workspace forms available for attachment/resolution on this board. */
     forms?: Record<string, import('./config').FormDefinition>;
 }
@@ -223,7 +226,12 @@ export declare function getTitleFromContent(content: string): string;
  * getDisplayTitleFromContent('# Ship release', { ticket: 'REL-42' }, ['missing', 'ticket'])
  * // => 'REL-42 Ship release'
  */
-export declare function getDisplayTitleFromContent(content: string, metadata?: Record<string, unknown>, titleFields?: readonly string[]): string;
+export declare function getDisplayTitleFromContent(content: string, metadata?: Record<string, unknown>, titleFields?: readonly string[], titleTemplate?: string): string;
+/**
+ * Evaluates a title template string by replacing `${metadata.key}` and `${title}`
+ * placeholders with their runtime values.
+ */
+export declare function evaluateTitleTemplate(template: string, content: string, metadata?: Record<string, unknown>): string;
 /**
  * Creates a filename-safe slug from a title string.
  *

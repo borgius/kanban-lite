@@ -34,10 +34,11 @@ import {
 } from '../shared'
 
 
-function getBoardTitleFieldsForCli(sdk: Pick<KanbanSDK, 'getConfigSnapshot'>, boardId?: string): readonly string[] | undefined {
+function getBoardTitleFieldsForCli(sdk: Pick<KanbanSDK, 'getConfigSnapshot'>, boardId?: string): { fields: readonly string[] | undefined; template: string | undefined } {
   const config = sdk.getConfigSnapshot()
   const resolvedBoardId = boardId || config.defaultBoard
-  return config.boards[resolvedBoardId]?.title
+  const board = config.boards[resolvedBoardId]
+  return { fields: board?.title, template: board?.titleTemplate }
 }
 
 export async function cmdEvents(sdk: KanbanSDK, flags: Flags): Promise<void> {
@@ -65,7 +66,7 @@ export async function cmdEvents(sdk: KanbanSDK, flags: Flags): Promise<void> {
 
 export async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
-  const boardTitleFields = getBoardTitleFieldsForCli(sdk, boardId)
+  const { fields: boardTitleFields, template: boardTitleTemplate } = getBoardTitleFieldsForCli(sdk, boardId)
   const searchQuery = typeof flags.search === 'string' ? flags.search : undefined
   const fuzzy = flags.fuzzy === true
 
@@ -134,14 +135,14 @@ export async function cmdList(sdk: KanbanSDK, flags: Flags): Promise<void> {
   console.log(`  ${dim('ID'.padEnd(30))}  ${dim('STATUS'.padEnd(12))}  ${dim('PRIORITY'.padEnd(8))}  ${dim('ASSIGNEE'.padEnd(12))}  ${dim('TITLE')}`)
   console.log(dim('  ' + '-'.repeat(90)))
   for (const c of cards) {
-    console.log(formatCardRow(c, getDisplayTitleFromContent(c.content, c.metadata, boardTitleFields)))
+    console.log(formatCardRow(c, getDisplayTitleFromContent(c.content, c.metadata, boardTitleFields, boardTitleTemplate)))
   }
   console.log(dim(`\n  ${cards.length} card(s)`))
 }
 
 export async function cmdActive(sdk: KanbanSDK, flags: Flags): Promise<void> {
   const boardId = getBoardId(flags)
-  const boardTitleFields = getBoardTitleFieldsForCli(sdk, boardId)
+  const { fields: boardTitleFields, template: boardTitleTemplate } = getBoardTitleFieldsForCli(sdk, boardId)
   const card = await runWithCliAuth(sdk, flags, () => sdk.getActiveCard(boardId))
 
   if (flags.json) {
@@ -154,7 +155,7 @@ export async function cmdActive(sdk: KanbanSDK, flags: Flags): Promise<void> {
     return
   }
 
-  console.log(formatCardDetail(card, getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields)))
+  console.log(formatCardDetail(card, getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields, boardTitleTemplate)))
 }
 
 export async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
@@ -165,7 +166,7 @@ export async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags
   }
 
   const boardId = getBoardId(flags)
-  const boardTitleFields = getBoardTitleFieldsForCli(sdk, boardId)
+  const { fields: boardTitleFields, template: boardTitleTemplate } = getBoardTitleFieldsForCli(sdk, boardId)
   const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
   const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(resolvedId, boardId))
   if (!card) {
@@ -176,7 +177,7 @@ export async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags
   if (flags.json) {
     console.log(JSON.stringify(card, null, 2))
   } else {
-    console.log(formatCardDetail(card, getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields)))
+    console.log(formatCardDetail(card, getDisplayTitleFromContent(card.content, card.metadata, boardTitleFields, boardTitleTemplate)))
   }
 }
 

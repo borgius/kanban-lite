@@ -196,7 +196,7 @@ export type WebviewMessage =
   | { type: 'purgeDeletedCards' }
   | { type: 'transferCard'; cardId: string; toBoard: string; targetStatus: string }
   | { type: 'setLabel'; name: string; definition: LabelDefinition }
-  | { type: 'updateBoardTitle'; boardId?: string; title: string[] }
+  | { type: 'updateBoardTitle'; boardId?: string; title: string[]; titleTemplate?: string }
   | { type: 'updateBoardActions'; boardId?: string; actions: Record<string, string> }
   | { type: 'renameLabel'; oldName: string; newName: string }
   | { type: 'deleteLabel'; name: string }

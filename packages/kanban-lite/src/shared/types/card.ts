@@ -218,6 +218,8 @@ export interface BoardInfo {
   metadata?: Record<string, BoardMetaFieldDef>
   /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
   title?: string[]
+  /** Template string for card display titles (e.g. `${metadata.company}: ${title}`). When set, takes precedence over `title`. */
+  titleTemplate?: string
   /** Reusable named workspace forms available for attachment/resolution on this board. */
   forms?: Record<string, FormDefinition>
 }

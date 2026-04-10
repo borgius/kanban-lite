@@ -54,6 +54,29 @@ function stringifyDisplayTitlePrefix(value: unknown): string | null {
 }
 
 /**
+ * Evaluates a title template string by replacing `${metadata.key}` and `${title}`
+ * placeholders with their runtime values.
+ *
+ * @param template - Template string such as `${metadata.company}: ${title}`.
+ * @param content - Raw markdown card content (used to extract the base title).
+ * @param metadata - Optional card metadata object.
+ * @returns Rendered title string.
+ */
+export function evaluateTitleTemplate(
+  template: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+): string {
+  const baseTitle = getTitleFromContent(content)
+  const result = template.replace(/\$\{(title|metadata\.[^}]+)\}/g, (_, key: string) => {
+    if (key === 'title') return baseTitle
+    const metaKey = key.slice('metadata.'.length)
+    return stringifyDisplayTitlePrefix(getMetadataPathValue(metadata, metaKey)) ?? ''
+  })
+  return result.trim() || baseTitle
+}
+
+/**
  * Returns the user-visible card title for a board by prefixing selected
  * metadata values ahead of the raw markdown-derived title.
  *
@@ -63,6 +86,7 @@ function stringifyDisplayTitlePrefix(value: unknown): string | null {
  * @param content - Raw markdown card content.
  * @param metadata - Optional card metadata object.
  * @param titleFields - Ordered metadata keys whose non-empty rendered values should prefix the title.
+ * @param titleTemplate - Optional template string (e.g. `${metadata.company}: ${title}`). Takes precedence over `titleFields` when provided.
  * @returns The raw markdown title, optionally prefixed by configured metadata values.
  *
  * @example
@@ -77,8 +101,14 @@ export function getDisplayTitleFromContent(
   content: string,
   metadata?: Record<string, unknown>,
   titleFields?: readonly string[],
+  titleTemplate?: string,
 ): string {
   const title = getTitleFromContent(content)
+
+  if (titleTemplate) {
+    return evaluateTitleTemplate(titleTemplate, content, metadata)
+  }
+
   if (!titleFields || titleFields.length === 0) {
     return title
   }

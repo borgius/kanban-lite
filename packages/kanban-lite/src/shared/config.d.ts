@@ -120,6 +120,8 @@ export interface BoardConfig {
     metadata?: Record<string, BoardMetaFieldDef>;
     /** Metadata keys whose rendered values prefix card display titles in user-visible surfaces. */
     title?: string[];
+    /** Template string for card display titles (e.g. `${metadata.company}: ${title}`). When set, takes precedence over `title`. */
+    titleTemplate?: string;
     /** Column IDs currently minimized (shown as a narrow rail) on this board. */
     minimizedColumnIds?: string[];
 }

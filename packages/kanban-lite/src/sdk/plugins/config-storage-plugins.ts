@@ -198,5 +198,4 @@ export function resolveConfigStorageProviderForRepository(
   }
 }
 
-// Wire the resolver into the configRepository module seam.
 installConfigStorageProviderResolver(resolveConfigStorageProviderForRepository)

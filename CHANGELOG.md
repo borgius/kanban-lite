@@ -47,6 +47,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Cloudflare Worker live cross-tab refreshes**: Worker deployments now accept `/ws` through the generated Durable Object seam and use event-driven `syncRequired` invalidations plus HTTP latest-state resync, so committed mutations in one browser refresh other connected tabs without periodic polling. The Worker path still targets latest-state catch-up rather than full raw Node WebSocket payload parity.
+
 - **Cloudflare Worker active-card persistence**: The standalone Worker runtime now stores workspace active-card selection in a generated Durable Object, so HTTP bridge open/preview flows keep `/api/tasks/active` working without a writable `.active-card.json` sidecar. Non-Worker hosts still fall back to the local file-backed active-card state.
 
 - **Standalone Cloudflare Worker browser bootstrap**: The standalone browser shim now falls back to an HTTP webview-sync bridge when the Cloudflare Worker entrypoint returns `501` for `/ws`, so deployed boards load and keep handling user actions instead of hanging forever on `Loading...`.

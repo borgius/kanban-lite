@@ -18,8 +18,15 @@ import {
   BUILTIN_ATTACHMENT_IDS,
   PROVIDER_ALIASES,
 } from './storage-plugins'
+import {
+  BUILTIN_CARD_STATE_PROVIDER_IDS,
+  CARD_STATE_PROVIDER_ALIASES,
+} from './card-state-plugins'
 import { AUTH_PROVIDER_ALIASES } from './auth-plugins'
-import { WEBHOOK_PROVIDER_ALIASES } from './webhook-callback-plugins'
+import {
+  CALLBACK_PROVIDER_ALIASES,
+  WEBHOOK_PROVIDER_ALIASES,
+} from './webhook-callback-plugins'
 import type * as http from 'node:http'
 
 // ---------------------------------------------------------------------------
@@ -329,5 +336,104 @@ export function resolveSDKExtensions(
       resolved.push(ext)
     }
   }
+  return resolved
+}
+
+// ---------------------------------------------------------------------------
+// Active external package collection and MCP resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Collects the canonical set of external package names referenced by the
+ * current workspace plugin configuration.
+ */
+export function collectActiveExternalPackageNames(config: {
+  readonly plugins?: Partial<Record<string, ProviderRef>>
+  readonly webhookPlugin?: Partial<Record<string, ProviderRef>>
+  readonly auth?: Partial<Record<string, ProviderRef>>
+}): string[] {
+  const packageNames = new Set<string>()
+  const add = (packageName: string | undefined): void => {
+    if (packageName) packageNames.add(packageName)
+  }
+
+  const cardProvider = config.plugins?.['card.storage']?.provider === 'markdown'
+    ? 'localfs'
+    : config.plugins?.['card.storage']?.provider
+  if (cardProvider && !BUILTIN_CARD_PLUGINS.has(cardProvider)) {
+    add(PROVIDER_ALIASES.get(cardProvider) ?? cardProvider)
+  }
+
+  const attachmentProvider = config.plugins?.['attachment.storage']?.provider
+  if (attachmentProvider && !BUILTIN_ATTACHMENT_IDS.has(attachmentProvider)) {
+    add(PROVIDER_ALIASES.get(attachmentProvider) ?? attachmentProvider)
+  }
+
+  const configStorageProvider = config.plugins?.['config.storage']?.provider === 'markdown'
+    ? 'localfs'
+    : config.plugins?.['config.storage']?.provider
+  if (configStorageProvider && configStorageProvider !== 'localfs') {
+    add(PROVIDER_ALIASES.get(configStorageProvider) ?? configStorageProvider)
+  }
+
+  const cardStateProvider = config.plugins?.['card.state']?.provider === 'builtin'
+    ? 'localfs'
+    : config.plugins?.['card.state']?.provider
+  if (cardStateProvider && !BUILTIN_CARD_STATE_PROVIDER_IDS.has(cardStateProvider)) {
+    add(CARD_STATE_PROVIDER_ALIASES.get(cardStateProvider) ?? cardStateProvider)
+  }
+
+  const identityProvider = config.plugins?.['auth.identity']?.provider
+    ?? config.auth?.['auth.identity']?.provider
+  if (identityProvider) {
+    add(AUTH_PROVIDER_ALIASES.get(identityProvider) ?? identityProvider)
+  }
+
+  const policyProvider = config.plugins?.['auth.policy']?.provider
+    ?? config.auth?.['auth.policy']?.provider
+  if (policyProvider) {
+    add(AUTH_PROVIDER_ALIASES.get(policyProvider) ?? policyProvider)
+  }
+
+  const visibilityProvider = config.plugins?.['auth.visibility']?.provider
+    ?? config.auth?.['auth.visibility']?.provider
+  if (visibilityProvider && visibilityProvider !== 'none') {
+    add(AUTH_PROVIDER_ALIASES.get(visibilityProvider) ?? visibilityProvider)
+  }
+
+  const webhookProvider = config.plugins?.['webhook.delivery']?.provider
+    ?? config.webhookPlugin?.['webhook.delivery']?.provider
+    ?? 'webhooks'
+  if (webhookProvider !== 'none') {
+    add(WEBHOOK_PROVIDER_ALIASES.get(webhookProvider) ?? webhookProvider)
+  }
+
+  const callbackProvider = config.plugins?.['callback.runtime']?.provider ?? 'none'
+  if (callbackProvider !== 'none') {
+    add(CALLBACK_PROVIDER_ALIASES.get(callbackProvider) ?? callbackProvider)
+  }
+
+  return [...packageNames]
+}
+
+/**
+ * Resolves optional MCP tool plugins from the canonical active-package set.
+ */
+export function resolveMcpPlugins(config: {
+  readonly plugins?: Partial<Record<string, ProviderRef>>
+  readonly webhookPlugin?: Partial<Record<string, ProviderRef>>
+  readonly auth?: Partial<Record<string, ProviderRef>>
+}): McpPluginRegistration[] {
+  const resolved: McpPluginRegistration[] = []
+  const seen = new Set<string>()
+
+  for (const packageName of collectActiveExternalPackageNames(config)) {
+    const plugin = tryLoadMcpPlugin(packageName)
+    if (plugin && !seen.has(plugin.manifest.id)) {
+      seen.add(plugin.manifest.id)
+      resolved.push(plugin)
+    }
+  }
+
   return resolved
 }

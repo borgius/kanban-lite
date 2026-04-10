@@ -5,6 +5,7 @@ A VSCode extension + standalone server + CLI + MCP server for managing kanban bo
 ## Repo-wide defaults
 
 - The SDK is the source of truth for shared business logic. Keep API, CLI, and MCP behavior in feature parity when a capability changes.
+- Keep `index.ts` files as barrel-only entrypoints: do not add implementation logic, conditionals, helpers, or side effects there; move real behavior into named modules and only re-export from `index.ts`.
 - Make surgical edits only: avoid unrelated refactors, large rewrites, or new dependencies unless the task clearly needs them.
 - **No source file may exceed 600 lines** (excluding generated files, test fixtures, and `*.d.ts` declarations). Split oversized modules before adding more logic.
 - For user-facing changes, update `README.md` and `CHANGELOG.md`, and regenerate generated docs from source comments or route metadata instead of editing generated docs directly.

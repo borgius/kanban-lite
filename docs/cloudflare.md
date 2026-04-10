@@ -2,7 +2,7 @@
 
 This document explains the current Kanban Lite Cloudflare Workers path, what the Worker runtime does, how plugin loading works there, what is still unsupported, and how to deploy it.
 
-It is intentionally explicit about the limits: the current Worker entrypoint is a **minimal HTTP host** for the standalone runtime. It does **not** yet provide full Node standalone parity.
+It is intentionally explicit about the limits: the current Worker entrypoint is a **Worker-safe standalone host with event-driven live refresh**, not a byte-for-byte clone of the Node standalone server. It still does **not** provide full Node standalone parity.
 
 ---
 
@@ -18,6 +18,7 @@ The repository now includes:
 - a reusable standalone dispatcher at `packages/kanban-lite/src/standalone/dispatch.ts`
 - Wrangler config at `packages/kanban-lite/wrangler.toml`
 - a deployment helper script at `scripts/deploy-cloudflare-worker.mjs`
+- a generated Durable Object seam that now handles both active-card persistence and Cloudflare live-sync invalidations
 
 The goal is:
 
@@ -102,13 +103,16 @@ That is what the deployment script scaffolds for you.
 
 - standalone HTTP API hosting through the existing dispatcher
 - standalone static asset hosting through Wrangler assets
+- Durable Object-backed `/ws` upgrades for Worker live-sync invalidations
+- event-driven latest-state resync over `/api/webview-sync` after committed mutations
 - statically bundled plugin module injection
 - custom config injection
 - explicit deployment workflow for a Worker wrapper
 
 ### Explicitly not supported yet
 
-- WebSocket parity with the Node standalone server
+- full WebSocket payload parity with the Node standalone server
+- exact ordered replay of every missed event after disconnect
 - file watching / `chokidar`
 - local temp-file editing flows that assume writable disk
 - runtime `npm install` from inside the app
@@ -122,9 +126,9 @@ That is what the deployment script scaffolds for you.
 
 ## WebSockets on Cloudflare
 
-The current Worker entrypoint returns `501` for WebSocket upgrade requests.
+The Worker entrypoint now accepts `/ws` upgrades when the generated `KANBAN_ACTIVE_CARD_STATE` Durable Object binding is present.
 
-That is intentional.
+That WebSocket is intentionally **not** a clone of the Node standalone WebSocket server.
 
 The Node standalone runtime currently depends on:
 
@@ -139,11 +143,25 @@ Cloudflare can support WebSockets, but matching the current semantics safely wou
 2. **Auth-scoped payload decoration must remain per client**. Shared raw broadcasts must not leak actor-scoped card state.
 3. **External mutation visibility changes** currently rely on Node watcher assumptions that do not exist in Workers.
 
-So the current Worker runtime is honest about the gap:
+So the Worker runtime uses a cheaper hybrid transport instead:
 
-- REST works
-- static assets work
-- realtime `/ws` parity does not ship yet
+1. the browser opens `/ws`
+2. the Durable Object replies with `{ type: "syncTransportMode", mode: "http-sync-websocket-notify" }`
+3. the browser keeps sending authoritative board/card messages through `/api/webview-sync`
+4. after committed non-auth SDK mutations, the Worker posts `{ type: "syncRequired", reason }` to the same Durable Object
+5. connected tabs resync the latest board/card state over HTTP
+
+What that gives you:
+
+- event-driven cross-tab refresh without polling or long-polling
+- latest-state catch-up after reconnects and invalidations
+- the same Durable Object seam also backing active-card persistence for `/api/tasks/active`
+
+What it still does **not** give you:
+
+- exact ordered replay of every missed event
+- raw Node-style WebSocket payload fan-out for every mutation
+- watcher-driven visibility for external file changes
 
 ---
 
@@ -182,7 +200,7 @@ node scripts/deploy-cloudflare-worker.mjs --help
 The script:
 
 1. reads a `.kanban.json` file at deploy time
-2. generates a temporary Worker wrapper entrypoint
+2. generates a temporary Worker wrapper entrypoint plus a Durable Object class for active-card persistence and live-sync invalidations
 3. statically imports the requested plugin packages plus any configured `callback.runtime` module handlers when `plugins["callback.runtime"].provider === "cloudflare"`
 4. builds the standalone web assets (unless `--skip-build` is used)
 5. calls `wrangler deploy` with a generated config
@@ -321,7 +339,8 @@ After deploying, verify that:
 - static board assets load
 - REST API routes respond
 - any bundled standalone plugin routes work
-- `/ws` returns the documented unsupported response
+- opening two tabs shows committed mutations propagate via the Worker live-sync transport
+- `/ws` no longer returns `501` when the generated Durable Object binding is present
 
 ---
 
@@ -361,6 +380,7 @@ Cloudflare support currently means:
 - use the first-party `cloudflare` storage bundle for `card.storage`, `attachment.storage`, `card.state`, and `config.storage` with D1 + R2 through the shared Worker binding/context contract
 - deploy a generated Worker wrapper with Wrangler
 - serve standalone assets through the `ASSETS` binding
-- accept that realtime WebSocket parity still needs a Durable Object follow-up
+- use a Durable Object-backed WebSocket invalidation channel plus HTTP latest-state resync for event-driven cross-tab refreshes
+- accept that full raw Node WebSocket parity still remains out of scope for the Worker host
 
-If you need full standalone parity on Cloudflare, the next major step is a Durable Object-backed realtime layer for realtime parity; the v1 Worker-safe storage/provider bundle is now available via the canonical `cloudflare` provider id.
+If you need full standalone parity on Cloudflare, the next major step would be richer Durable Object coordination for raw payload fan-out and replay semantics; the current Worker-safe path already ships the cheaper latest-state invalidation model together with the canonical `cloudflare` storage/provider bundle.

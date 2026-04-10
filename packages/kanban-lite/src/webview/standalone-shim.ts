@@ -2,7 +2,7 @@
 // Must be imported BEFORE App.tsx so the global is available at module load time.
 // When loaded inside VS Code the native acquireVsCodeApi is already injected —
 // skip this entire shim so we never overwrite the real API.
-import type { ConnectionStatusMessage, ExtensionMessage, WebviewMessage } from '../shared/types'
+import type { ConnectionStatusMessage, ExtensionMessage, SyncTransportMode, WebviewMessage } from '../shared/types'
 
 if (!('acquireVsCodeApi' in window)) {
 
@@ -24,6 +24,7 @@ let reconnectTimer: number | null = null
 let allowReconnect = true
 let httpFallbackActive = false
 let httpFallbackActivation: Promise<boolean> | null = null
+let syncTransportMode: SyncTransportMode = 'websocket'
 
 function getDisconnectedSubmitErrorMessage(): string {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -47,6 +48,10 @@ function clearReconnectTimer() {
 
 function isSocketOpen(): boolean {
   return connected && ws !== null && ws.readyState === WebSocket.OPEN
+}
+
+function shouldUseHttpSyncTransport(): boolean {
+  return httpFallbackActive || syncTransportMode === 'http-sync-websocket-notify'
 }
 
 function parseCachedMessage(json: string | null): Record<string, unknown> | null {
@@ -105,6 +110,14 @@ async function syncMessagesOverHttp(messages: unknown[]): Promise<void> {
   for (const message of payload.data?.messages ?? []) {
     window.postMessage(message, '*')
   }
+}
+
+async function syncCurrentStateOverHttp(): Promise<void> {
+  if (!readyRequested) {
+    return
+  }
+
+  await syncMessagesOverHttp(buildHttpSyncMessages({ type: 'ready' }))
 }
 
 async function activateHttpFallback(): Promise<boolean> {
@@ -234,6 +247,12 @@ function connect() {
       retryCount: 0,
       maxRetries: MAX_RETRIES
     })
+
+    if (syncTransportMode === 'http-sync-websocket-notify' && readyRequested) {
+      void syncCurrentStateOverHttp().catch((err) => {
+        console.error('Standalone HTTP resync failed:', err)
+      })
+    }
   })
 
   socket.addEventListener('message', (event) => {
@@ -243,6 +262,21 @@ function connect() {
 
     try {
       const data = JSON.parse(event.data) as ExtensionMessage
+      if (data.type === 'syncTransportMode') {
+        syncTransportMode = data.mode
+        if (data.mode === 'http-sync-websocket-notify' && readyRequested) {
+          void syncCurrentStateOverHttp().catch((err) => {
+            console.error('Standalone HTTP resync failed:', err)
+          })
+        }
+        return
+      }
+      if (data.type === 'syncRequired' && syncTransportMode === 'http-sync-websocket-notify') {
+        void syncCurrentStateOverHttp().catch((err) => {
+          console.error('Standalone HTTP resync failed:', err)
+        })
+        return
+      }
       window.postMessage(data, '*')
     } catch {
       // ignore malformed messages
@@ -403,8 +437,8 @@ function handleOpenAttachment(cardId: string, attachment: string) {
 
     if (msg.type === 'ready') {
       readyRequested = true
-      if (httpFallbackActive) {
-        void syncMessagesOverHttp(syncMessages).catch((err) => {
+      if (shouldUseHttpSyncTransport()) {
+        void syncCurrentStateOverHttp().catch((err) => {
           console.error('Standalone HTTP fallback failed:', err)
         })
         return
@@ -428,7 +462,7 @@ function handleOpenAttachment(cardId: string, attachment: string) {
     }
 
     if (msg.type === 'switchBoard' || msg.type === 'openCard' || msg.type === 'closeCard') {
-      if (httpFallbackActive) {
+      if (shouldUseHttpSyncTransport()) {
         void syncMessagesOverHttp(syncMessages).catch((err) => {
           console.error('Standalone HTTP fallback failed:', err)
         })
@@ -440,7 +474,7 @@ function handleOpenAttachment(cardId: string, attachment: string) {
       return
     }
 
-    if (msg.type === 'submitForm' && !httpFallbackActive && !isSocketOpen()) {
+    if (msg.type === 'submitForm' && !shouldUseHttpSyncTransport() && !isSocketOpen()) {
       window.postMessage({
         type: 'submitFormResult',
         callbackKey: msg.callbackKey,
@@ -449,7 +483,7 @@ function handleOpenAttachment(cardId: string, attachment: string) {
       return
     }
 
-    if (httpFallbackActive) {
+    if (shouldUseHttpSyncTransport()) {
       void syncMessagesOverHttp(syncMessages).catch((err) => {
         console.error('Standalone HTTP fallback failed:', err)
       })

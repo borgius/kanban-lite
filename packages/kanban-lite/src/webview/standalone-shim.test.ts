@@ -40,6 +40,10 @@ class MockWebSocket {
     this.dispatch('close')
   }
 
+  emitMessage(payload: unknown) {
+    this.dispatch('message', { data: JSON.stringify(payload) })
+  }
+
   private dispatch(type: string, event?: unknown) {
     for (const listener of this.listeners.get(type) ?? []) {
       listener(event)
@@ -104,6 +108,13 @@ function installStandaloneGlobals(postMessageSpy: ReturnType<typeof vi.fn>) {
   vi.stubGlobal('fetch', vi.fn())
   vi.stubGlobal('btoa', (value: string) => Buffer.from(value, 'binary').toString('base64'))
   vi.stubGlobal('WebSocket', MockWebSocket)
+}
+
+async function flushAsyncWork() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
 }
 
 afterEach(() => {
@@ -283,6 +294,122 @@ describe('standalone shim reconnect behavior', () => {
       JSON.stringify({ type: 'ready' }),
       JSON.stringify({ type: 'switchBoard', boardId: 'ops' }),
     ])
+  })
+
+  it('switches to HTTP snapshot sync when Cloudflare notify transport is negotiated', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          messages: [
+            {
+              type: 'init',
+              cards: [],
+              columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+              settings: { defaultStatus: 'backlog' },
+            },
+          ],
+        },
+      }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+
+    const socket = MockWebSocket.instances[0]
+    socket.open()
+
+    api.postMessage({ type: 'switchBoard', boardId: 'ops' })
+    api.postMessage({ type: 'openCard', cardId: 'incident-42' })
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockClear()
+
+    socket.emitMessage({ type: 'syncTransportMode', mode: 'http-sync-websocket-notify' })
+    await flushAsyncWork()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      messages: [
+        { type: 'switchBoard', boardId: 'ops' },
+        { type: 'openCard', cardId: 'incident-42' },
+        { type: 'ready' },
+      ],
+    })
+
+    fetchMock.mockClear()
+    api.postMessage({ type: 'switchBoard', boardId: 'ops-2' })
+    await flushAsyncWork()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      messages: [{ type: 'switchBoard', boardId: 'ops-2' }],
+    })
+    expect(socket.sent).toEqual([
+      JSON.stringify({ type: 'ready' }),
+      JSON.stringify({ type: 'switchBoard', boardId: 'ops' }),
+      JSON.stringify({ type: 'openCard', cardId: 'incident-42' }),
+    ])
+  })
+
+  it('resyncs the current HTTP snapshot when Cloudflare sends an invalidation notice', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          messages: [
+            {
+              type: 'init',
+              cards: [],
+              columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+              settings: { defaultStatus: 'backlog' },
+            },
+          ],
+        },
+      }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+
+    const socket = MockWebSocket.instances[0]
+    socket.open()
+
+    api.postMessage({ type: 'switchBoard', boardId: 'ops' })
+    api.postMessage({ type: 'openCard', cardId: 'incident-42' })
+    socket.emitMessage({ type: 'syncTransportMode', mode: 'http-sync-websocket-notify' })
+    await flushAsyncWork()
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockClear()
+
+    socket.emitMessage({ type: 'syncRequired', reason: 'task.updated' })
+    await flushAsyncWork()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      messages: [
+        { type: 'switchBoard', boardId: 'ops' },
+        { type: 'openCard', cardId: 'incident-42' },
+        { type: 'ready' },
+      ],
+    })
   })
 
   it('fails form submits immediately while disconnected instead of leaving them in-flight', async () => {

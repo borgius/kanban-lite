@@ -19,9 +19,6 @@ const workerSdkEntrypoint = path.join(packageRoot, 'src', 'sdk', 'index.ts')
 const standaloneAssetsDir = path.join(packageRoot, 'dist', 'standalone-webview')
 const defaultCompatibilityDate = '2026-04-05'
 const defaultCompatibilityFlags = ['nodejs_compat']
-const activeCardDurableObjectBinding = 'KANBAN_ACTIVE_CARD_STATE'
-const activeCardDurableObjectClassName = 'KanbanActiveCardState'
-const activeCardDurableObjectMigrationTag = 'kanban-active-card-state-v1'
 const firstPartyStorageProviderIds = new Set(['sqlite', 'mysql', 'postgresql', 'mongodb', 'redis', 'cloudflare'])
 const storageProviderPackages = new Map([
   ['sqlite', 'kl-plugin-storage-sqlite'],
@@ -48,6 +45,10 @@ const nodeProcess = globalThis.process
 
 import { printHelp, parseArgs, runDeployInteractive } from './lib/deploy-prompts.mjs'
 import { ensureD1Database, findD1DatabaseByName, ensureR2Bucket, ensureQueue } from './lib/cloudflare-resources.mjs'
+import {
+  renderKanbanWorkerDurableObjectClassSource,
+  renderKanbanWorkerDurableObjectConfigBlocks,
+} from './lib/cloudflare-worker-durable-objects.mjs'
 
 function fail(message) {
   nodeConsole.error(message)
@@ -543,37 +544,7 @@ export async function createGeneratedWorker(tempDir, options) {
 
   const generatedEntry = `${importLines.join('\n')}
 
-export class ${activeCardDurableObjectClassName} extends DurableObject {
-  constructor(ctx, env) {
-    super(ctx, env)
-  }
-
-  async getActiveCardState() {
-    const state = await this.ctx.storage.get('active-card')
-    if (!state || typeof state !== 'object') {
-      return null
-    }
-
-    if (typeof state.cardId !== 'string' || typeof state.boardId !== 'string') {
-      return null
-    }
-
-    return {
-      cardId: state.cardId,
-      boardId: state.boardId,
-      updatedAt: typeof state.updatedAt === 'string' ? state.updatedAt : new Date().toISOString(),
-    }
-  }
-
-  async setActiveCardState(state) {
-    await this.ctx.storage.put('active-card', state)
-  }
-
-  async clearActiveCardState() {
-    await this.ctx.storage.delete('active-card')
-  }
-}
-
+${renderKanbanWorkerDurableObjectClassSource()}
 const embeddedBootstrap = ${JSON.stringify(embeddedBootstrap, null, 2)}
 const moduleRegistry = {
 ${registryEntries.join(',\n')}
@@ -644,18 +615,6 @@ function renderQueueConsumerConfigBlock(queueConsumer) {
   return `${lines.join('\n')}\n`
 }
 
-function renderDurableObjectBlocks() {
-  return `
-[[durable_objects.bindings]]
-name = ${JSON.stringify(activeCardDurableObjectBinding)}
-class_name = ${JSON.stringify(activeCardDurableObjectClassName)}
-
-[[migrations]]
-tag = ${JSON.stringify(activeCardDurableObjectMigrationTag)}
-new_sqlite_classes = [${JSON.stringify(activeCardDurableObjectClassName)}]
-`
-}
-
 function renderCustomDomainRouteBlocks(customDomains, customDomainZoneName) {
   const normalizedDomains = normalizeCustomDomainList(customDomains)
   if (normalizedDomains.length === 0) {
@@ -684,7 +643,7 @@ workers_dev = true
 [assets]
 directory = ${JSON.stringify(standaloneAssetsDir)}
 binding = "ASSETS"
-${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderDurableObjectBlocks()}`
+${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderKanbanWorkerDurableObjectConfigBlocks()}`
   const configPath = path.join(tempDir, 'wrangler.toml')
   fs.writeFileSync(configPath, config, 'utf8')
   return configPath

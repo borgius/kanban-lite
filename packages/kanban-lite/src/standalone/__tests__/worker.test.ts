@@ -183,7 +183,7 @@ describe('Cloudflare worker entrypoint', () => {
     })).resolves.toBeDefined()
   })
 
-  it('returns an explicit 501 for websocket upgrades', async () => {
+  it('returns an explicit 501 when websocket live sync is not configured', async () => {
     const handler = createCloudflareWorkerFetchHandler({
       kanbanDir: '.kanban',
       bootstrap: createCloudflareWorkerBootstrap({ config: createWorkerBootstrapConfig() }),
@@ -194,7 +194,7 @@ describe('Cloudflare worker entrypoint', () => {
     }))
 
     expect(response.status).toBe(501)
-    await expect(response.text()).resolves.toContain('WebSocket upgrades are not supported')
+    await expect(response.text()).resolves.toContain('WebSocket live sync is not configured')
   })
 
   it('serves health checks with the built-in cloudflare storage provider aliases and no explicit module registry entry', async () => {

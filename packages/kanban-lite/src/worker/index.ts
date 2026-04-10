@@ -33,10 +33,89 @@ import {
 } from './worker-utils'
 import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './worker-runtime'
 
-function createWorkerContext(kanbanDir: string): StandaloneContext {
+const CLOUDFLARE_ACTIVE_CARD_STATE_BINDING = 'KANBAN_ACTIVE_CARD_STATE'
+const LIVE_SYNC_OBJECT_NAME_PREFIX = 'live-sync:'
+const LIVE_SYNC_NOTIFY_PATH = '/live-sync/notify'
+
+type WorkerLiveSyncDurableObjectStub = {
+  fetch(request: Request): Promise<Response>
+}
+
+type WorkerLiveSyncDurableObjectNamespace = {
+  getByName(name: string): WorkerLiveSyncDurableObjectStub
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isAfterEventEnvelope(value: unknown): value is { event: string; data: unknown } {
+  return isRecord(value)
+    && typeof value.event === 'string'
+    && Object.prototype.hasOwnProperty.call(value, 'data')
+    && !Object.prototype.hasOwnProperty.call(value, 'input')
+}
+
+function getWorkerLiveSyncNamespace(
+  env?: CloudflareWorkerRuntimeEnv,
+): WorkerLiveSyncDurableObjectNamespace | null {
+  const candidate = env?.[CLOUDFLARE_ACTIVE_CARD_STATE_BINDING]
+  if (!candidate || typeof candidate !== 'object') {
+    return null
+  }
+
+  return typeof (candidate as WorkerLiveSyncDurableObjectNamespace).getByName === 'function'
+    ? candidate as WorkerLiveSyncDurableObjectNamespace
+    : null
+}
+
+function getWorkerLiveSyncStub(
+  namespace: WorkerLiveSyncDurableObjectNamespace,
+  kanbanDir: string,
+): WorkerLiveSyncDurableObjectStub {
+  return namespace.getByName(`${LIVE_SYNC_OBJECT_NAME_PREFIX}${path.resolve(kanbanDir)}`)
+}
+
+async function notifyWorkerLiveSync(
+  env: CloudflareWorkerRuntimeEnv | undefined,
+  kanbanDir: string,
+  event: string,
+): Promise<void> {
+  const namespace = getWorkerLiveSyncNamespace(env)
+  if (!namespace) {
+    return
+  }
+
+  const response = await getWorkerLiveSyncStub(namespace, kanbanDir).fetch(new Request(`https://kanban-lite.worker${LIVE_SYNC_NOTIFY_PATH}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ type: 'syncRequired', reason: event }),
+  }))
+
+  if (!response.ok) {
+    throw new Error(`Cloudflare live sync notify failed with status ${response.status}`)
+  }
+}
+
+function createWorkerSyncEventHandler(
+  getEnv: () => CloudflareWorkerRuntimeEnv | undefined,
+  kanbanDir: string,
+): (event: string, data: unknown) => void {
+  return (event, data) => {
+    if (event.startsWith('auth.') || !isAfterEventEnvelope(data)) {
+      return
+    }
+
+    void notifyWorkerLiveSync(getEnv(), kanbanDir, event).catch((error) => {
+      console.error(`Failed to publish Cloudflare live sync event (${event}):`, error)
+    })
+  }
+}
+
+function createWorkerContext(kanbanDir: string, onEvent?: (event: string, data: unknown) => void): StandaloneContext {
   const absoluteKanbanDir = path.resolve(kanbanDir)
   const workspaceRoot = path.dirname(absoluteKanbanDir)
-  const sdk = new KanbanSDK(absoluteKanbanDir)
+  const sdk = new KanbanSDK(absoluteKanbanDir, onEvent ? { onEvent } : undefined)
     return {
       absoluteKanbanDir,
       workspaceRoot,
@@ -125,6 +204,53 @@ async function toIncomingMessage(request: Request): Promise<IncomingMessageWithR
   } as IncomingMessageWithRawBody
 }
 
+async function maybeHandleWebSocketUpgrade(
+  request: Request,
+  options: CloudflareWorkerFetchHandlerOptions,
+  state: WorkerEntrypointState,
+  env?: CloudflareWorkerRuntimeEnv,
+): Promise<Response | null> {
+  if (request.headers.get('upgrade')?.toLowerCase() !== 'websocket') {
+    return null
+  }
+
+  const url = new URL(request.url)
+  const basePath = options.basePath ?? ''
+  if (url.pathname !== `${basePath}/ws`) {
+    return new Response('Not found', {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+  }
+
+  const namespace = getWorkerLiveSyncNamespace(env)
+  if (!namespace) {
+    return new Response('WebSocket live sync is not configured for this Cloudflare Workers entrypoint yet.', {
+      status: 501,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
+  }
+
+  const { kanbanDir, workspaceRoot } = getWorkerPaths(options, env)
+  const workerRuntimeHost = resolveWorkerRuntimeHostHandle(options, env, workspaceRoot, state)
+
+  await workerRuntimeHost.refreshCommittedConfig()
+  installWorkerRuntimeHost(workerRuntimeHost.runtimeHost)
+
+  if (!state.dispatcher || workerRuntimeHost.needsDispatcherRefresh()) {
+    const ctx = createWorkerContext(kanbanDir, createWorkerSyncEventHandler(() => state.runtimeEnv, kanbanDir))
+    state.dispatcher = createStandaloneRouteDispatcher(ctx, options.webviewDir ?? '', getIndexHtml(basePath), basePath)
+    workerRuntimeHost.markDispatcherReady()
+  }
+
+  const req = await toIncomingMessage(request)
+  await workerRuntimeHost.runWithRequestScope(async () => {
+    await state.dispatcher?.resolveWsAuthContext(req)
+  })
+
+  return getWorkerLiveSyncStub(namespace, kanbanDir).fetch(request)
+}
+
 export function createCloudflareWorkerFetchHandler(options: CloudflareWorkerFetchHandlerOptions = {}) {
   return createCloudflareWorkerEntrypoint(options).fetch
 }
@@ -139,14 +265,15 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
     workerRuntimeHost: null,
     bootstrap: null,
     moduleRegistry: {},
+    runtimeEnv: undefined,
   }
 
   const fetch = async (request: Request, env?: CloudflareWorkerRuntimeEnv): Promise<Response> => {
-    if (request.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-      return new Response('WebSocket upgrades are not supported by this Cloudflare Workers entrypoint yet.', {
-        status: 501,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-      })
+    state.runtimeEnv = env
+
+    const webSocketUpgradeResponse = await maybeHandleWebSocketUpgrade(request, options, state, env)
+    if (webSocketUpgradeResponse) {
+      return webSocketUpgradeResponse
     }
 
     const url = new URL(request.url)
@@ -165,7 +292,7 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
       installWorkerRuntimeHost(workerRuntimeHost.runtimeHost)
 
       if (!state.dispatcher || workerRuntimeHost.needsDispatcherRefresh()) {
-        const ctx = createWorkerContext(kanbanDir)
+        const ctx = createWorkerContext(kanbanDir, createWorkerSyncEventHandler(() => state.runtimeEnv, kanbanDir))
         state.dispatcher = createStandaloneRouteDispatcher(ctx, options.webviewDir ?? '', getIndexHtml(basePath), basePath)
         workerRuntimeHost.markDispatcherReady()
       }
@@ -199,6 +326,7 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
     env?: CloudflareWorkerRuntimeEnv,
     _context?: CloudflareWorkerExecutionContext,
   ): Promise<void> => {
+    state.runtimeEnv = env
     const { kanbanDir, workspaceRoot } = getWorkerPaths(options, env)
     const workerRuntimeHost = resolveWorkerRuntimeHostHandle(options, env, workspaceRoot, state)
 
@@ -226,7 +354,9 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
         workspaceRoot,
         workerProviderContext,
       )
-      const sdk = new KanbanSDK(path.resolve(kanbanDir))
+      const sdk = new KanbanSDK(path.resolve(kanbanDir), {
+        onEvent: createWorkerSyncEventHandler(() => env, kanbanDir),
+      })
 
       try {
         callbackConsumer.attachRuntimeContext?.({

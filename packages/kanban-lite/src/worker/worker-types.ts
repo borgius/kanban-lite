@@ -48,6 +48,7 @@ export interface WorkerEntrypointState {
   workerRuntimeHost: WorkerRuntimeHostHandle | null
   bootstrap: CloudflareWorkerBootstrap | null
   moduleRegistry: WorkerModuleRegistry
+  runtimeEnv?: CloudflareWorkerRuntimeEnv
 }
 
 

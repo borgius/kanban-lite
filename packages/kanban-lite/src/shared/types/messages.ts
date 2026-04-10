@@ -101,10 +101,14 @@ export interface ConnectionStatusMessage {
   reason?: string
 }
 
+export type SyncTransportMode = 'websocket' | 'http-sync-websocket-notify'
+
 // Messages between extension and webview
 export type ExtensionMessage =
   | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; labels?: Record<string, LabelDefinition>; minimizedColumnIds?: string[] }
   | ConnectionStatusMessage
+  | { type: 'syncTransportMode'; mode: SyncTransportMode }
+  | { type: 'syncRequired'; reason?: string }
   | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }
   | { type: 'cardContent'; cardId: string; content: string; frontmatter: CardFrontmatter; comments: Comment[]; logs?: LogEntry[]; canUpdateMetadata?: boolean }

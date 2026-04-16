@@ -1,0 +1,32 @@
+# kanban-lite local Cloudflare Worker dev config.
+# Run with: wrangler dev --config wrangler.local.toml --port 8788
+#
+# This config fully emulates the Cloudflare runtime locally via Miniflare:
+#   - D1 for card/config storage (kl-plugin-cloudflare)
+#   - R2 for attachment storage (kl-plugin-cloudflare)
+# The webview [assets] binding is intentionally omitted so the SDK build step
+# (pnpm build:standalone-webview) is NOT required for API-only dev sessions.
+#
+# Secrets and bootstrap config live in .dev.vars (gitignored).
+
+name = "kanban-lite-worker"
+main = "src/worker/index.ts"
+compatibility_date = "2026-04-05"
+compatibility_flags = ["nodejs_compat"]
+
+# Static webview assets (JS/CSS bundles built by `pnpm build:standalone-webview`)
+# The worker serves index.html dynamically and delegates all static file requests
+# (e.g. /index.js, /style.css) to env.ASSETS.fetch(). Without this binding those
+# requests fall through and the UI loads blank.
+[assets]
+directory = "dist/standalone-webview"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "KANBAN_DB"
+database_name = "kanban-lite-db"
+database_id = "00000000-0000-0000-0000-000000000000"   # dummy; Miniflare uses local SQLite
+
+[[r2_buckets]]
+binding = "KANBAN_BUCKET"
+bucket_name = "kanban-lite-attachments"

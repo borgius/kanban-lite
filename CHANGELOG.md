@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Graphify workspace setup for Copilot**: Added a repo-local `.graphifyignore`, wired `graphify-out/graph.json` into [`.vscode/mcp.json`](.vscode/mcp.json) as a local `graphify` MCP server, and documented the recommended Graphify + Copilot refresh flow in the root README so Agent mode can query the repo graph directly.
+
 - **Cross-platform voice comments**: Card comments can now carry linked audio clips with an optional typed note. Desktop runtimes (standalone browser + VS Code webview) and the Expo mobile task-detail screen now expose recorder/playback UI, store voice clips as task attachments, render inline play controls for saved voice comments, and remove the linked audio attachment automatically when the parent voice comment is deleted.
 
 - **Cloudflare deploy script custom domains**: `scripts/deploy-cloudflare-worker.mjs` now accepts repeatable `--custom-domain <hostname>` values plus `KANBAN_CF_CUSTOM_DOMAIN` / `KANBAN_CF_CUSTOM_DOMAINS` env defaults, supports an explicit `--custom-domain-zone` / `KANBAN_CF_CUSTOM_DOMAIN_ZONE` override, emits Worker `custom_domain` route blocks in the generated `wrangler.toml`, and keeps `workers_dev = true` so deployments can attach hostnames such as `kl.incidentmind.com` without manual Wrangler edits or losing the default `*.workers.dev` URL.

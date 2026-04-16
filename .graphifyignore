@@ -1,0 +1,22 @@
+# Generated graph output
+graphify-out/
+
+# Package manager noise
+node_modules/
+**/node_modules/
+
+# Build artifacts
+dist/
+**/dist/
+coverage/
+**/coverage/
+
+# Repo-local scratch and release outputs
+tmp/
+releases/
+
+# Common framework caches
+.next/
+**/.next/
+.turbo/
+**/.turbo/

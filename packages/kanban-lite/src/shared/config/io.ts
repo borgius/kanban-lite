@@ -241,8 +241,9 @@ function migrateConfigV1ToV2(raw: Record<string, unknown>): KanbanConfig {
 function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = ''): unknown {
   const isFormDefaultDataPath = /^\.forms\.(?:[^.]+|"[^"]+")\.data(?:$|[.[])/.test(nodePath)
   const isCallbackInlineSourcePath = /^\.plugins\."callback\.runtime"\.options\.handlers\[\d+\]\.source$/.test(nodePath)
+  const isBoardTitleTemplatePath = /^\.boards\.(?:[^.]+|"[^"]+")\.titleTemplate$/.test(nodePath)
 
-  if (isFormDefaultDataPath || isCallbackInlineSourcePath) {
+  if (isFormDefaultDataPath || isCallbackInlineSourcePath || isBoardTitleTemplatePath) {
     return node
   }
 

@@ -1,6 +1,7 @@
 node_modules
 .env
 .env.cloudflare
+.dev.vars
 dist
 out
 .DS_Store
@@ -21,4 +22,7 @@ docs/press
 docs/plan
 examples/chat-sdk-vercel-ai-aspida
 tmp
-
+graphify-out/
+**/graphify-out/
+**/graphify-out/cache
+.wrangler/

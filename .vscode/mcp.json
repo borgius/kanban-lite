@@ -15,6 +15,11 @@
       "env": {
         "KANBAN_DIR": ".kanban"
       }
+    },
+    "graphify": {
+      "type": "stdio",
+      "command": "python3",
+      "args": ["-m", "graphify.serve", "packages/kanban-lite/graphify-out/graph.json"]
     }
   }
 }

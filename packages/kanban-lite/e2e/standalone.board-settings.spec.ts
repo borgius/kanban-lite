@@ -59,7 +59,7 @@ describeStandaloneScenario('standalone board settings routes', 'board-settings',
   test('routes to the title tab and persists added title fields', async ({ page }) => {
     await openBoardSettings(page)
     await switchBoardSubTab(page, 'Title', 'title')
-    await expect(settingsDialog(page).getByRole('heading', { name: 'Title Fields', exact: true })).toBeVisible()
+    await expect(settingsDialog(page).getByRole('heading', { name: 'Title Template', exact: true })).toBeVisible()
 
     await settingsDialog(page).getByRole('button', { name: 'location', exact: true }).click()
 

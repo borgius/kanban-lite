@@ -29,6 +29,35 @@ This workspace also includes a custom VS Code chat agent for building polished S
 
 - [`.github/agents/slidev-demo-presentation.agent.md`](.github/agents/slidev-demo-presentation.agent.md) — creates or updates beautiful, truthful Slidev demo presentations with strong speaker notes, proof-focused story flow, and Slidev-safe layout guidance.
 
+## Graphify with Copilot
+
+This repo now includes a small Graphify starter setup for GitHub Copilot agent mode:
+
+- [`.graphifyignore`](.graphifyignore) trims generated output, temp folders, and other low-signal artifacts.
+- [`.vscode/mcp.json`](.vscode/mcp.json) now exposes `packages/kanban-lite/graphify-out/graph.json` as a local `graphify` MCP server alongside the existing Kanban and browser tooling.
+
+### Try it
+
+```bash
+python3 -m pip install --upgrade 'graphifyy[mcp]'
+graphify copilot install
+graphify update packages/kanban-lite
+```
+
+Then in VS Code:
+
+1. Open [`.vscode/mcp.json`](.vscode/mcp.json) and start the `graphify` server.
+2. Open Copilot Chat in **Agent** mode.
+3. Ask architecture questions directly, or use the installed `/graphify` skill for explicit rebuild/query flows.
+
+Good first prompts for this repo:
+
+- `Use the graphify MCP server and explain the auth flow.`
+- `/graphify query "show the auth flow"`
+- `/graphify query "what connects KanbanSDK to auth?"`
+
+For this monorepo, `packages/kanban-lite` is usually the best first target. It stays focused enough to be useful without dragging every temporary workspace and release artifact into the graph.
+
 ## Quick Start
 
 ```bash

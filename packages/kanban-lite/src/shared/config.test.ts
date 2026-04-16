@@ -1,9 +1,13 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_CONFIG, configToSettings, readConfig, settingsToConfig } from './config'
 import { DEFAULT_COLUMNS } from './types'
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('config defaults', () => {
   it('keeps DEFAULT_CONFIG columns detached from DEFAULT_COLUMNS entries', () => {
@@ -41,5 +45,31 @@ describe('config defaults', () => {
     expect(updated.markdownEditorMode).toBe(true)
     expect(updated.drawerPosition).toBe('left')
     expect(configToSettings(updated)).toMatchObject(settings)
+  })
+
+  it('preserves board title templates without treating display placeholders as env vars', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'kanban-lite-config-'))
+
+    try {
+      const config = structuredClone(DEFAULT_CONFIG)
+      config.boards.default.title = ['ticketId', 'location']
+      config.boards.default.titleTemplate = '${metadata.ticketId} ${metadata.location} ${title}'
+
+      writeFileSync(join(workspaceRoot, '.kanban.json'), JSON.stringify(config, null, 2), 'utf-8')
+
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new Error(`process.exit(${code ?? 'undefined'})`)
+      }) as typeof process.exit)
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+
+      const loaded = readConfig(workspaceRoot)
+
+      expect(loaded.boards.default.title).toEqual(['ticketId', 'location'])
+      expect(loaded.boards.default.titleTemplate).toBe('${metadata.ticketId} ${metadata.location} ${title}')
+      expect(exitSpy).not.toHaveBeenCalled()
+      expect(stderrSpy).not.toHaveBeenCalled()
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
   })
 })

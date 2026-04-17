@@ -71,7 +71,11 @@ function messageIncludesPathHint(message: string, hint: string): boolean {
 export function isRecoverableMissingModuleError(err: unknown, ...hints: string[]): err is NodeJS.ErrnoException {
   const code = (err as NodeJS.ErrnoException)?.code
   const message = typeof (err as Error)?.message === 'string' ? (err as Error).message : ''
-  return ['MODULE_NOT_FOUND', 'ENOENT', 'ENOTDIR'].includes(code ?? '')
+  // Standard Node.js missing-module codes
+  const isKnownCode = ['MODULE_NOT_FOUND', 'ENOENT', 'ENOTDIR'].includes(code ?? '')
+  // Cloudflare Workers throws "No such module 'bundle/…'" without a standard error code
+  const isCloudflareModuleNotFound = !code && message.startsWith('No such module ')
+  return (isKnownCode || isCloudflareModuleNotFound)
     && hints.some((hint) => hint.length > 0 && messageIncludesPathHint(message, hint))
 }
 

@@ -177,12 +177,24 @@ export const RBAC_ROLE_MATRIX: Record<RbacRole, ReadonlySet<string>> = {
 }
 
 /**
- * Maps short auth provider ids to the external auth package.
+ * Maps short auth provider ids to the external auth identity package.
  */
 export const AUTH_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['noop', 'kl-plugin-auth'],
   ['rbac', 'kl-plugin-auth'],
   ['local', 'kl-plugin-auth'],
+  ['openauth', 'kl-plugin-openauth'],
+])
+
+/**
+ * Maps short auth provider ids to the external auth policy package.
+ */
+export const AUTH_POLICY_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['noop', 'kl-plugin-rbac'],
+  ['rbac', 'kl-plugin-rbac'],
+  ['local', 'kl-plugin-rbac'],
+  ['kl-plugin-auth', 'kl-plugin-rbac'],
+  ['openauth', 'kl-plugin-openauth'],
 ])
 
 export const BUILTIN_AUTH_PROVIDER_IDS: ReadonlySet<string> = new Set(['noop'])
@@ -272,22 +284,38 @@ function isValidRbacRoleMatrix(value: unknown): value is Record<RbacRole, Readon
 }
 
 function tryLoadBundledAuthCompatExports(): BundledAuthCompatExports | null {
-  const packageName = 'kl-plugin-auth'
+  const authPackageName = 'kl-plugin-auth'
+  const rbacPackageName = 'kl-plugin-rbac'
   try {
-    const mod = loadExternalModule(packageName) as AuthPluginModule
-    const noopIdentity = mod.NOOP_IDENTITY_PLUGIN
-    const noopPolicy = mod.NOOP_POLICY_PLUGIN
-    const rbacIdentity = mod.RBAC_IDENTITY_PLUGIN
-    const rbacPolicy = mod.RBAC_POLICY_PLUGIN
-    const userActions = mod.RBAC_USER_ACTIONS
-    const managerActions = mod.RBAC_MANAGER_ACTIONS
-    const adminActions = mod.RBAC_ADMIN_ACTIONS
-    const roleMatrix = mod.RBAC_ROLE_MATRIX
+    const authMod = loadExternalModule(authPackageName) as AuthPluginModule
+    const noopIdentity = authMod.NOOP_IDENTITY_PLUGIN
+    const rbacIdentity = authMod.RBAC_IDENTITY_PLUGIN
+    const userActions = authMod.RBAC_USER_ACTIONS
+    const managerActions = authMod.RBAC_MANAGER_ACTIONS
+    const adminActions = authMod.RBAC_ADMIN_ACTIONS
+    const roleMatrix = authMod.RBAC_ROLE_MATRIX
 
     if (
       !isValidAuthIdentityPlugin(noopIdentity, 'noop')
-      || !isValidAuthPolicyPlugin(noopPolicy, 'noop')
       || !isValidAuthIdentityPlugin(rbacIdentity, 'rbac')
+    ) {
+      return null
+    }
+
+    let noopPolicy: unknown
+    let rbacPolicy: unknown
+    try {
+      const rbacMod = loadExternalModule(rbacPackageName) as AuthPluginModule
+      noopPolicy = rbacMod.NOOP_POLICY_PLUGIN
+      rbacPolicy = rbacMod.RBAC_POLICY_PLUGIN
+    } catch {
+      // Fall back to auth module for policy (transition period)
+      noopPolicy = authMod.NOOP_POLICY_PLUGIN
+      rbacPolicy = authMod.RBAC_POLICY_PLUGIN
+    }
+
+    if (
+      !isValidAuthPolicyPlugin(noopPolicy, 'noop')
       || !isValidAuthPolicyPlugin(rbacPolicy, 'rbac')
       || !isValidRoleActionSet(userActions)
       || !isValidRoleActionSet(managerActions)
@@ -306,8 +334,8 @@ function tryLoadBundledAuthCompatExports(): BundledAuthCompatExports | null {
       RBAC_MANAGER_ACTIONS: managerActions,
       RBAC_ADMIN_ACTIONS: adminActions,
       RBAC_ROLE_MATRIX: roleMatrix,
-      createRbacIdentityPlugin: typeof mod.createRbacIdentityPlugin === 'function'
-        ? mod.createRbacIdentityPlugin as (principals: ReadonlyMap<string, RbacPrincipalEntry>) => AuthIdentityPlugin
+      createRbacIdentityPlugin: typeof authMod.createRbacIdentityPlugin === 'function'
+        ? authMod.createRbacIdentityPlugin as (principals: ReadonlyMap<string, RbacPrincipalEntry>) => AuthIdentityPlugin
         : undefined,
     }
   } catch {
@@ -491,7 +519,7 @@ export function resolveAuthIdentityPlugin(ref: ProviderRef): AuthIdentityPlugin 
 export function resolveAuthPolicyPlugin(ref: ProviderRef): AuthPolicyPlugin {
   if (ref.provider === 'noop') return NOOP_POLICY_PLUGIN
   if (ref.provider === 'rbac') return RBAC_POLICY_PLUGIN
-  const packageName = AUTH_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
+  const packageName = AUTH_POLICY_PROVIDER_ALIASES.get(ref.provider) ?? ref.provider
   return loadExternalAuthPolicyPlugin(packageName, ref.provider, ref.options)
 }
 

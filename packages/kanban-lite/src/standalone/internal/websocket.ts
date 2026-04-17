@@ -10,6 +10,16 @@ export function attachWebSocketHandlers(
   resolveAuthContext?: (req: http.IncomingMessage) => Promise<AuthContext>,
 ): void {
   ctx.wss.on('connection', async (ws, req) => {
+    // Buffer messages that arrive while auth is being resolved asynchronously.
+    // Without this, the browser's immediate 'ready' message (sent on WS open)
+    // is dropped because the real message handler isn't registered yet.
+    const buffered: Buffer[] = []
+    ws.on('message', (data) => { buffered.push(data as Buffer) })
+    ws.on('close', () => {
+      clearClientAuthContext(ctx, ws)
+      clearClientEditingCard(ctx, ws)
+    })
+
     let authContext: AuthContext
     try {
       authContext = resolveAuthContext ? await resolveAuthContext(req) : extractAuthContext(req)
@@ -18,7 +28,8 @@ export function attachWebSocketHandlers(
     }
     setClientAuthContext(ctx, ws, authContext)
     setClientEditingCard(ctx, ws, null)
-    ws.on('message', (data) => {
+
+    function dispatch(data: Buffer) {
       let message: unknown
       try {
         message = JSON.parse(data.toString())
@@ -34,10 +45,11 @@ export function attachWebSocketHandlers(
           console.error('Failed to handle message:', err)
         }
       })
-    })
-    ws.on('close', () => {
-      clearClientAuthContext(ctx, ws)
-      clearClientEditingCard(ctx, ws)
-    })
+    }
+
+    // Swap the temporary buffer listener for the real one, then replay.
+    ws.removeAllListeners('message')
+    ws.on('message', dispatch)
+    for (const data of buffered) dispatch(data)
   })
 }

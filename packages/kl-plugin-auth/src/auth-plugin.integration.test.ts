@@ -15,29 +15,31 @@ import {
 import { describe, expect, it, vi } from 'vitest'
 import {
   LOCAL_IDENTITY_PLUGIN,
-  LOCAL_POLICY_PLUGIN,
   NOOP_IDENTITY_PLUGIN,
-  NOOP_POLICY_PLUGIN,
   RBAC_IDENTITY_PLUGIN,
+  authIdentityPlugins,
+  createAuthIdentityPlugin,
+  createRbacIdentityPlugin,
+  createStandaloneHttpPlugin,
+  type AuthContext,
+  type AuthIdentity,
+  type StandaloneHttpPluginRegistrationOptions,
+} from './index'
+import {
+  LOCAL_POLICY_PLUGIN,
+  NOOP_POLICY_PLUGIN,
   RBAC_POLICY_PLUGIN,
   RBAC_USER_ACTIONS,
   RBAC_MANAGER_ACTIONS,
   RBAC_ADMIN_ACTIONS,
   RBAC_ROLE_MATRIX,
-  authIdentityPlugins,
   authPolicyPlugins,
-  createAuthIdentityPlugin,
   createAuthPolicyPlugin,
   createAuthListenerPlugin,
   createNoopAuthListenerPlugin,
   createRbacAuthListenerPlugin,
-  createRbacIdentityPlugin,
-  createStandaloneHttpPlugin,
-  type AuthContext,
   type AuthDecision,
-  type AuthIdentity,
-  type StandaloneHttpPluginRegistrationOptions,
-} from './index'
+} from '../../kl-plugin-rbac/src/index'
 
 type WorkspaceSdkExports = typeof import('../../kanban-lite/src/sdk')
 
@@ -668,7 +670,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
 
     const exportedIdentitySchema = await authIdentityPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
     const createdIdentitySchema = await createAuthIdentityPlugin().optionsSchema?.(sdk)
-    const exportedPolicySchema = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const exportedPolicySchema = await authPolicyPlugins['kl-plugin-rbac']?.optionsSchema?.(sdk)
     const createdPolicySchema = await createAuthPolicyPlugin().optionsSchema?.(sdk)
 
     await expect(resolvePluginSettingsOptionsSchema(exportedIdentitySchema!, sdk)).resolves.toEqual(
@@ -805,8 +807,8 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     expect((userItems.role as Record<string, unknown>).enum).toEqual(['user', 'manager', 'admin'])
   })
 
-  it('auth.policy providers expose editable permission-matrix schema metadata and no secrets', () => {
-    const schema = authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.()
+  it('auth.policy providers expose editable permission-matrix schema metadata and no secrets (rbac package)', () => {
+    const schema = authPolicyPlugins['kl-plugin-rbac']?.optionsSchema?.()
 
     expect(schema).toBeDefined()
     expect(schema?.schema).toMatchObject({
@@ -824,7 +826,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
                 type: 'array',
                 minItems: 1,
                 uniqueItems: true,
-                items: { type: 'string', title: 'Action', enum: expect.any(Function) },
+                items: { type: 'string', title: 'Before-event', enum: expect.any(Function) },
               },
             },
           },
@@ -852,7 +854,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
                     {
                       type: 'Control',
                       scope: '#/properties/actions',
-                      label: 'Allowed actions',
+                      label: 'Allowed before-events',
                       options: { showSortButtons: true },
                       rule: {
                         effect: 'DISABLE',
@@ -902,13 +904,13 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     ])
   })
 
-  it('kl-plugin-auth auth.policy schema also defaults to the canonical RBAC role matrix', async () => {
+  it('kl-plugin-rbac auth.policy schema also defaults to the canonical RBAC role matrix', async () => {
     const sdk = {
       getConfigSnapshot: vi.fn(() => ({ plugins: {} })),
       listAvailableEvents: vi.fn(async () => []),
     } as unknown as Pick<KanbanSDK, 'getConfigSnapshot' | 'listAvailableEvents'> as KanbanSDK
 
-    const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schemaInput = await authPolicyPlugins['kl-plugin-rbac']?.optionsSchema?.(sdk)
     const schema = schemaInput
       ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
       : undefined
@@ -932,7 +934,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       })),
     } as unknown as Pick<KanbanSDK, 'getConfigSnapshot'> as KanbanSDK
 
-    const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schemaInput = await authPolicyPlugins['kl-plugin-rbac']?.optionsSchema?.(sdk)
     const schema = schemaInput
       ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
       : undefined
@@ -944,7 +946,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
   })
 
-  it('auth.policy providers resolve action enums from the SDK event inventory plus auth-only supplements', async () => {
+  it('auth.policy providers resolve action enums from the SDK event inventory', async () => {
     const sdk = {
       listAvailableEvents: vi.fn(async () => [
           { event: 'settings.update', phase: 'before' },
@@ -954,7 +956,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
         ]),
     } as unknown as Pick<KanbanSDK, 'listAvailableEvents'> as KanbanSDK
 
-    const schemaInput = await authPolicyPlugins['kl-plugin-auth']?.optionsSchema?.(sdk)
+    const schemaInput = await authPolicyPlugins['kl-plugin-rbac']?.optionsSchema?.(sdk)
     const schema = schemaInput
       ? await resolvePluginSettingsOptionsSchema(schemaInput, sdk)
       : undefined
@@ -962,16 +964,9 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
 
     expect((actionsItems.actions as Record<string, unknown>).items).toMatchObject({
       type: 'string',
-      title: 'Action',
+      title: 'Before-event',
       enum: [
-        'card.*',
-        'card.checklist.*',
-        'card.checklist.show',
         'card.create',
-        'plugin-settings.*',
-        'plugin-settings.read',
-        'plugin-settings.update',
-        'settings.*',
         'settings.update',
       ],
       minLength: 1,

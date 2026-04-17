@@ -249,10 +249,16 @@ function resolveConfigEnvVars(node: unknown, configFileName: string, nodePath = 
 
   if (typeof node === 'string') {
     return node.replace(/\$\{([^}]+)\}/g, (_match, varName: string) => {
-      const envValue = process.env[varName]
+      // Always check the KL_-prefixed variant first (unless the name already
+      // starts with KL_) so operators can scope secrets to this process without
+      // risking conflicts with the bare third-party variable name.
+      // e.g.  KL_GOOGLE_CLIENT_ID  →  GOOGLE_CLIENT_ID
+      const prefixedKey = varName.startsWith('KL_') ? varName : `KL_${varName}`
+      const envValue = process.env[prefixedKey] ?? process.env[varName]
       if (envValue === undefined) {
+        const hint = prefixedKey !== varName ? ` (also checked ${prefixedKey})` : ''
         throw new Error(
-          `missing ${varName} in ${configFileName}: ${nodePath} "${node}"`
+          `missing ${varName} in ${configFileName}: ${nodePath} "${node}"${hint}`
         )
       }
       return envValue

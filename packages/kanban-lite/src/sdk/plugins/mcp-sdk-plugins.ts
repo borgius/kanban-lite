@@ -22,7 +22,7 @@ import {
   BUILTIN_CARD_STATE_PROVIDER_IDS,
   CARD_STATE_PROVIDER_ALIASES,
 } from './card-state-plugins'
-import { AUTH_PROVIDER_ALIASES } from './auth-plugins'
+import { AUTH_PROVIDER_ALIASES, AUTH_POLICY_PROVIDER_ALIASES } from './auth-plugins'
 import {
   CALLBACK_PROVIDER_ALIASES,
   WEBHOOK_PROVIDER_ALIASES,
@@ -288,7 +288,7 @@ export function collectStandaloneHttpPackageNames(
   }
 
   add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.identity'].provider) ?? authCapabilities['auth.identity'].provider)
-  add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.policy'].provider) ?? authCapabilities['auth.policy'].provider)
+  add(AUTH_POLICY_PROVIDER_ALIASES.get(authCapabilities['auth.policy'].provider) ?? authCapabilities['auth.policy'].provider)
   if (authCapabilities['auth.visibility'].provider !== 'none') {
     add(AUTH_PROVIDER_ALIASES.get(authCapabilities['auth.visibility'].provider) ?? authCapabilities['auth.visibility'].provider)
   }
@@ -392,7 +392,7 @@ export function collectActiveExternalPackageNames(config: {
   const policyProvider = config.plugins?.['auth.policy']?.provider
     ?? config.auth?.['auth.policy']?.provider
   if (policyProvider) {
-    add(AUTH_PROVIDER_ALIASES.get(policyProvider) ?? policyProvider)
+    add(AUTH_POLICY_PROVIDER_ALIASES.get(policyProvider) ?? policyProvider)
   }
 
   const visibilityProvider = config.plugins?.['auth.visibility']?.provider

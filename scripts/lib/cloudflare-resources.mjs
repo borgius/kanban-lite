@@ -97,9 +97,12 @@ export function ensureD1Database(name) {
  * @returns {string | null}
  */
 export function findR2BucketByName(name) {
-  const { status, stdout } = spawnCapture('npx', ['wrangler', 'r2', 'bucket', 'list'])
-  if (status !== 0) return null
-  return parseKeyedListValues(stdout, 'name').find((bucketName) => bucketName === name) ?? null
+  // wrangler 4.x has no --json flag for r2 bucket list; search combined stdout+stderr
+  // since the bucket list may be written to either stream depending on wrangler version.
+  const result = spawnCapture('npx', ['wrangler', 'r2', 'bucket', 'list'])
+  if (result.status !== 0 && !result.stdout && !result.stderr) return null
+  const combined = result.stdout + result.stderr
+  return parseKeyedListValues(combined, 'name').find((bucketName) => bucketName === name) ?? null
 }
 
 /**

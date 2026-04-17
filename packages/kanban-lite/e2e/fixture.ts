@@ -44,6 +44,11 @@ const standaloneScenarioDefinitions = {
     templateDir: path.join(fixtureTemplatesDir, 'board-settings'),
     port: 4179,
   },
+  'openauth': {
+    templateDir: path.join(fixtureTemplatesDir, 'openauth'),
+    port: 4180,
+    healthPath: '/auth/openauth/login',
+  },
 } as const
 
 export type StandaloneE2EScenarioName = keyof typeof standaloneScenarioDefinitions

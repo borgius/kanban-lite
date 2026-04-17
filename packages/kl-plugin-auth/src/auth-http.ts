@@ -5,10 +5,8 @@ import * as path from 'node:path'
 import { compare } from 'bcryptjs'
 import type {
   AuthContext,
-  AuthDecision,
   AuthIdentity,
   AuthIdentityPlugin,
-  AuthPolicyPlugin,
   StandaloneHttpHandler,
   StandaloneHttpPlugin,
   StandaloneHttpPluginRegistrationOptions,
@@ -22,7 +20,6 @@ import {
   MOBILE_AUTH_CONTRACT,
   MOBILE_BOOTSTRAP_FILE,
   MOBILE_SESSIONS_FILE,
-  createResolvedLocalAuthPolicyOptionsSchema,
   createAuthIdentityOptionsSchema,
   getConfiguredApiToken,
   loadSessionsFromFile,
@@ -43,18 +40,6 @@ export const LOCAL_IDENTITY_PLUGIN: AuthIdentityPlugin = {
   optionsSchema: createAuthIdentityOptionsSchema,
   async resolveIdentity(context: AuthContext): Promise<AuthIdentity | null> {
     return resolveLocalIdentity(context)
-  },
-}
-
-export const LOCAL_POLICY_PLUGIN: AuthPolicyPlugin = {
-  manifest: { id: 'local', provides: ['auth.policy'] },
-  optionsSchema: createResolvedLocalAuthPolicyOptionsSchema,
-  async checkPolicy(identity: AuthIdentity | null, action: string, _context: AuthContext): Promise<AuthDecision> {
-    if (!identity) {
-      return { allowed: false, reason: 'auth.identity.missing' }
-    }
-    void action
-    return { allowed: true, actor: identity.subject }
   },
 }
 
@@ -128,6 +113,7 @@ function clearCookie(res: import('node:http').ServerResponse, name: string): voi
 
 function normalizeReturnTo(rawValue: string | null | undefined): string {
   if (!rawValue || !rawValue.startsWith('/') || rawValue.startsWith('//')) return '/'
+  if (rawValue.startsWith('/.well-known/')) return '/'
   return rawValue
 }
 

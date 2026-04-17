@@ -30,8 +30,9 @@ const storageProviderPackages = new Map([
 ])
 const authProviderPackages = new Map([
   ['noop', 'kl-plugin-auth'],
-  ['rbac', 'kl-plugin-auth'],
-  ['local', 'kl-plugin-auth'],
+  ['rbac', 'kl-plugin-rbac'],
+  ['local', 'kl-plugin-rbac'],
+  ['kl-plugin-rbac', 'kl-plugin-rbac'],
 ])
 const webhookProviderPackages = new Map([
   ['webhooks', 'kl-plugin-webhook'],

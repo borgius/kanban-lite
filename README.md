@@ -29,35 +29,6 @@ This workspace also includes a custom VS Code chat agent for building polished S
 
 - [`.github/agents/slidev-demo-presentation.agent.md`](.github/agents/slidev-demo-presentation.agent.md) — creates or updates beautiful, truthful Slidev demo presentations with strong speaker notes, proof-focused story flow, and Slidev-safe layout guidance.
 
-## Graphify with Copilot
-
-This repo now includes a small Graphify starter setup for GitHub Copilot agent mode:
-
-- [`.graphifyignore`](.graphifyignore) trims generated output, temp folders, and other low-signal artifacts.
-- [`.vscode/mcp.json`](.vscode/mcp.json) now exposes `packages/kanban-lite/graphify-out/graph.json` as a local `graphify` MCP server alongside the existing Kanban and browser tooling.
-
-### Try it
-
-```bash
-python3 -m pip install --upgrade 'graphifyy[mcp]'
-graphify copilot install
-graphify update packages/kanban-lite
-```
-
-Then in VS Code:
-
-1. Open [`.vscode/mcp.json`](.vscode/mcp.json) and start the `graphify` server.
-2. Open Copilot Chat in **Agent** mode.
-3. Ask architecture questions directly, or use the installed `/graphify` skill for explicit rebuild/query flows.
-
-Good first prompts for this repo:
-
-- `Use the graphify MCP server and explain the auth flow.`
-- `/graphify query "show the auth flow"`
-- `/graphify query "what connects KanbanSDK to auth?"`
-
-For this monorepo, `packages/kanban-lite` is usually the best first target. It stays focused enough to be useful without dragging every temporary workspace and release artifact into the graph.
-
 ## Quick Start
 
 ```bash
@@ -134,7 +105,6 @@ See [`examples/README.md`](examples/README.md) for the canonical top-level examp
 - **Labels**: Tag cards with multiple labels
 - **Attachments**: Attach files to cards
 - **Comments**: Add discussion threads to cards (stored in the same markdown file)
-- **Voice comments**: Record spoken task updates with an optional typed note from desktop (standalone + VS Code) or the mobile app; the audio is stored as a linked attachment, rendered with an inline player, and deleted automatically when the linked voice comment is removed
 - **Streaming comments**: AI agents can stream a comment live — a blinking-cursor indicator and `streaming` badge are shown to all connected viewers while text is being written; the comment is persisted once the stream completes (see [REST API](#comments) and [`sdk.streamComment`](#sdkstreamcomment))
 - **Logs**: Append timestamped log entries to cards (stored as `<cardId>.log` text file, supports markdown, optional source labels and structured data objects)
 - **Actions**: Attach named triggers to a card (e.g. `retry`, `deploy`, `notify`) and fire them from the UI, CLI, API, or MCP server — calls a configured webhook with the card's full context

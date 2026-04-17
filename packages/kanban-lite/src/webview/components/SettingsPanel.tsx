@@ -111,10 +111,9 @@ interface SettingsPanelProps {
   onBoardSubTabChange?: (tab: BoardSubTab) => void
   boardMeta?: Record<string, BoardMetaFieldDef>
   boardTitle?: string[]
-  boardTitleTemplate?: string
   boardActions?: Record<string, string>
   onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
-  onSaveBoardTitle?: (title: string[], titleTemplate?: string) => void
+  onSaveBoardTitle?: (title: string[]) => void
   onSaveBoardActions?: (actions: Record<string, string>) => void
 }
 
@@ -145,7 +144,6 @@ export function SettingsPanel({
   onBoardSubTabChange,
   boardMeta,
   boardTitle,
-  boardTitleTemplate,
   boardActions,
   onSaveBoardMeta,
   onSaveBoardTitle,
@@ -179,7 +177,6 @@ export function SettingsPanel({
       onBoardSubTabChange={onBoardSubTabChange}
       boardMeta={boardMeta}
       boardTitle={boardTitle}
-      boardTitleTemplate={boardTitleTemplate}
       boardActions={boardActions}
       onSaveBoardMeta={onSaveBoardMeta}
       onSaveBoardTitle={onSaveBoardTitle}
@@ -511,24 +508,40 @@ function isPluginOptionsSchemaUiEditable(optionsSchema: PluginSettingsOptionsSch
 function derivePluginList(pluginSettings: PluginSettingsPayload | null | undefined): PluginListEntry[] {
   if (!pluginSettings?.capabilities) return []
 
-  const list: PluginListEntry[] = []
+  const byPackage = new Map<string, PluginListEntry>()
 
   for (const capEntry of pluginSettings.capabilities) {
     for (const provider of capEntry.providers) {
-      list.push({
-        key: getPluginProviderCacheKey(capEntry.capability, provider.providerId),
-        label: provider.packageName,
-        description: capEntry.capability,
-        discoverySource: provider.discoverySource,
-        capabilities: [{
-          capability: capEntry.capability,
-          providerId: provider.providerId,
-          isSelected: provider.isSelected,
-          optionsSchema: provider.optionsSchema,
-        }],
-        hasSelectedCapability: provider.isSelected,
-      })
+      const existing = byPackage.get(provider.packageName)
+      const capItem = {
+        capability: capEntry.capability,
+        providerId: provider.providerId,
+        isSelected: provider.isSelected,
+        optionsSchema: provider.optionsSchema,
+      }
+
+      if (existing) {
+        existing.capabilities.push(capItem)
+        if (provider.isSelected) existing.hasSelectedCapability = true
+      } else {
+        byPackage.set(provider.packageName, {
+          key: provider.packageName,
+          label: provider.packageName,
+          description: capEntry.capability,
+          discoverySource: provider.discoverySource,
+          capabilities: [capItem],
+          hasSelectedCapability: provider.isSelected,
+        })
+      }
     }
+  }
+
+  const list = [...byPackage.values()]
+
+  // Update description to show all capabilities
+  for (const entry of list) {
+    const caps = [...new Set(entry.capabilities.map(c => c.capability))]
+    entry.description = caps.join(', ')
   }
 
   return list.sort((a, b) => {
@@ -765,9 +778,10 @@ function PluginOptionsSection({
     }
 
     return plugins.find(
-      plugin => plugin.key === (pluginSettingsProvider
-        ? getPluginProviderCacheKey(pluginSettingsProvider.capability, pluginSettingsProvider.providerId)
-        : null),
+      plugin => pluginSettingsProvider
+        ? plugin.capabilities.some(c =>
+            c.capability === pluginSettingsProvider.capability && c.providerId === pluginSettingsProvider.providerId)
+        : false,
     )?.key
       ?? plugins.find(plugin => plugin.capabilities.some(
         capability => capability.isSelected && isPluginOptionsSchemaUiEditable(capability.optionsSchema),
@@ -1728,7 +1742,6 @@ function SettingsPanelContent({
   onBoardSubTabChange,
   boardMeta,
   boardTitle,
-  boardTitleTemplate,
   boardActions,
   onSaveBoardMeta,
   onSaveBoardTitle,
@@ -2132,7 +2145,6 @@ function SettingsPanelContent({
                   <TitleBuilderSection
                     boardMeta={boardMeta}
                     boardTitle={boardTitle}
-                    boardTitleTemplate={boardTitleTemplate}
                     onSave={onSaveBoardTitle}
                   />
                 )}

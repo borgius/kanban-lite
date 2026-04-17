@@ -16,6 +16,7 @@ export {
 
 export {
   AUTH_PROVIDER_ALIASES,
+  AUTH_POLICY_PROVIDER_ALIASES,
   createRbacIdentityPlugin,
   NOOP_IDENTITY_PLUGIN,
   NOOP_POLICY_PLUGIN,

@@ -58,6 +58,7 @@ import {
 } from '../storage-plugins'
 import {
   AUTH_PROVIDER_ALIASES,
+  AUTH_POLICY_PROVIDER_ALIASES,
   BUILTIN_AUTH_PROVIDER_IDS,
   isValidAuthIdentityPlugin,
   isValidAuthPolicyPlugin,
@@ -199,8 +200,8 @@ export function resolveExternalPackageName(capability: PluginCapabilityNamespace
     case 'config.storage':
     case 'attachment.storage': return PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'card.state': return CARD_STATE_PROVIDER_ALIASES.get(providerId) ?? providerId
-    case 'auth.identity':
-    case 'auth.policy':
+    case 'auth.identity': return AUTH_PROVIDER_ALIASES.get(providerId) ?? providerId
+    case 'auth.policy': return AUTH_POLICY_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'auth.visibility': return AUTH_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'webhook.delivery': return WEBHOOK_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'callback.runtime': return CALLBACK_PROVIDER_ALIASES.get(providerId) ?? providerId

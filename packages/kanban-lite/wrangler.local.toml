@@ -1,5 +1,5 @@
 # kanban-lite local Cloudflare Worker dev config.
-# Run with: wrangler dev --config wrangler.local.toml --port 8788
+# Run with: wrangler dev --config wrangler.local.toml
 #
 # This config fully emulates the Cloudflare runtime locally via Miniflare:
 #   - D1 for card/config storage (kl-plugin-cloudflare)
@@ -13,6 +13,9 @@ name = "kanban-lite-worker"
 main = "src/worker/index.ts"
 compatibility_date = "2026-04-05"
 compatibility_flags = ["nodejs_compat"]
+
+[dev]
+port = 8374
 
 # Static webview assets (JS/CSS bundles built by `pnpm build:standalone-webview`)
 # The worker serves index.html dynamically and delegates all static file requests

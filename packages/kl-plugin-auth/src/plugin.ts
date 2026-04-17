@@ -12,78 +12,41 @@ import type {
 import {
   AUTH_PLUGIN_SECRET_REDACTION,
   NOOP_IDENTITY_PLUGIN,
-  NOOP_POLICY_PLUGIN,
-  RBAC_USER_ACTIONS,
-  RBAC_MANAGER_ACTIONS,
-  RBAC_ADMIN_ACTIONS,
-  RBAC_ROLE_MATRIX,
   createAuthIdentityOptionsSchema,
-  createResolvedKlauthPolicyOptionsSchema,
-  createResolvedLocalAuthPolicyOptionsSchema,
-  createResolvedRbacPolicyOptionsSchema,
   getAuthProviderSelection,
   cloneWritableConfig,
   getWritableUsers,
   getWritableRoles,
   normalizeOptionalRole,
   type AuthPluginOptionsSchemaFactory,
-  type AuthListenerOverrideContext,
-  type AuthListenerPluginOptions,
 } from './auth-core'
 import { createStandaloneHttpPlugin } from './auth-http'
 import {
   createAuthIdentityPlugin,
-  createAuthPolicyPlugin,
   authIdentityPlugins,
-  authPolicyPlugins,
-  createAuthListenerPlugin,
-  createNoopAuthListenerPlugin,
-  createRbacAuthListenerPlugin,
-  createLocalAuthListenerPlugin,
-  authListenerPluginFactories,
   createRbacIdentityPlugin,
   RBAC_IDENTITY_PLUGIN,
-  RBAC_POLICY_PLUGIN,
-  ProviderBackedAuthListenerPlugin,
 } from './auth-plugins'
-export { createStandaloneHttpPlugin, LOCAL_IDENTITY_PLUGIN, LOCAL_POLICY_PLUGIN } from './auth-http'
+export { createStandaloneHttpPlugin, LOCAL_IDENTITY_PLUGIN } from './auth-http'
 export {
   createAuthIdentityPlugin,
-  createAuthPolicyPlugin,
   authIdentityPlugins,
-  authPolicyPlugins,
-  createAuthListenerPlugin,
-  createNoopAuthListenerPlugin,
-  createRbacAuthListenerPlugin,
-  createLocalAuthListenerPlugin,
-  authListenerPluginFactories,
   createRbacIdentityPlugin,
   RBAC_IDENTITY_PLUGIN,
-  RBAC_POLICY_PLUGIN,
-  ProviderBackedAuthListenerPlugin,
 } from './auth-plugins'
-export { RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, SDK_BEFORE_EVENT_NAMES } from './auth-rbac'
+export { NOOP_IDENTITY_PLUGIN } from './auth-core'
 
 export type {
   AuthContext,
-  AuthDecision,
-  AuthErrorCategory,
   AuthIdentity,
   AuthIdentityPlugin,
   AuthPluginManifest,
-  AuthPolicyPlugin,
-  BeforeEventListenerResponse,
-  BeforeEventPayload,
   CliPluginContext,
   KanbanCliPlugin,
   PluginSettingsOptionsSchemaMetadata,
   ProviderRef,
   RbacPrincipalEntry,
   RbacRole,
-  SDKBeforeEventType,
-  SDKEvent,
-  SDKEventListener,
-  SDKEventListenerPlugin,
   StandaloneHttpPlugin,
   StandaloneHttpPluginRegistrationOptions,
 } from 'kanban-lite/sdk'
@@ -166,9 +129,8 @@ export const pluginManifest = {
   id: 'kl-plugin-auth',
   capabilities: {
     'auth.identity': ['local', 'rbac', 'kl-plugin-auth'] as const,
-    'auth.policy': ['local', 'rbac', 'kl-plugin-auth'] as const,
   },
-  integrations: ['standalone.http', 'cli', 'event.listener'] as const,
+  integrations: ['standalone.http', 'cli'] as const,
 } as const
 
 /** Options schemas keyed by provider id for plugin-settings discovery. */
@@ -178,27 +140,12 @@ export const optionsSchemas: Record<string, AuthPluginOptionsSchemaFactory> = {
   rbac: createAuthIdentityOptionsSchema,
 }
 
-/** Policy options schemas keyed by provider id for plugin-settings discovery. */
-export const policyOptionsSchemas: Record<string, AuthPluginOptionsSchemaFactory> = {
-  'kl-plugin-auth': createResolvedKlauthPolicyOptionsSchema,
-  local: createResolvedLocalAuthPolicyOptionsSchema,
-  rbac: createResolvedRbacPolicyOptionsSchema,
-}
-
 const authPluginPackage = {
   pluginManifest,
   authIdentityPlugins,
-  authPolicyPlugins,
   createAuthIdentityPlugin,
-  createAuthPolicyPlugin,
   createStandaloneHttpPlugin,
-  createAuthListenerPlugin,
-  createLocalAuthListenerPlugin,
-  createNoopAuthListenerPlugin,
-  createRbacAuthListenerPlugin,
-  authListenerPluginFactories,
   optionsSchemas,
-  policyOptionsSchemas,
 }
 
 export default authPluginPackage

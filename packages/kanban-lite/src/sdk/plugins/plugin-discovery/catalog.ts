@@ -58,6 +58,7 @@ import {
 } from '../storage-plugins'
 import {
   AUTH_PROVIDER_ALIASES,
+  AUTH_POLICY_PROVIDER_ALIASES,
   BUILTIN_AUTH_PROVIDER_IDS,
   isValidAuthIdentityPlugin,
   isValidAuthPolicyPlugin,
@@ -126,6 +127,7 @@ function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapsh
   for (const request of PROVIDER_ALIASES.values()) add(request)
   for (const request of CARD_STATE_PROVIDER_ALIASES.values()) add(request)
   for (const request of AUTH_PROVIDER_ALIASES.values()) add(request)
+  for (const request of AUTH_POLICY_PROVIDER_ALIASES.values()) add(request)
   for (const request of WEBHOOK_PROVIDER_ALIASES.values()) add(request)
   for (const request of CALLBACK_PROVIDER_ALIASES.values()) add(request)
 

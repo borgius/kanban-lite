@@ -585,7 +585,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Capabilities')
     expect(markup).toContain('markdown')
     expect(markup).toContain('kl-plugin-auth')
-    expect(markup).toContain('data-testid="plugin-package-auth.identity:local"')
+    expect(markup).toContain('data-testid="plugin-package-kl-plugin-auth"')
     expect(markup).toContain('auth.identity')
     expect(markup).toContain('Provider: local')
     expect(markup).toContain('Built-in')
@@ -883,7 +883,7 @@ describe('SettingsPanel drawer resize integration', () => {
         workspace={null}
         pluginSettings={PLUGIN_SETTINGS_FIXTURE}
         initialTab="pluginOptions"
-        activePluginId="card.storage:sqlite"
+        activePluginId="kl-plugin-storage-sqlite"
         onClose={() => {}}
         onSave={() => {}}
       />
@@ -908,7 +908,7 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(css).toContain('.card-jsonforms .validation.validation_error')
   })
 
-  it('renders same-package provider entries separately and scopes options to the selected provider', () => {
+  it('groups same-package providers under one entry and scopes options to the selected provider', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         isOpen
@@ -932,18 +932,16 @@ describe('SettingsPanel drawer resize integration', () => {
       />
     )
 
-    expect(markup).toContain('data-testid="plugin-package-auth.identity:kl-plugin-auth"')
-    expect(markup).toContain('data-testid="plugin-package-auth.policy:kl-plugin-auth"')
+    expect(markup).toContain('data-testid="plugin-package-kl-plugin-auth"')
     expect(markup).toContain('auth.identity')
     expect(markup).toContain('auth.policy')
     expect(markup).toContain('API token')
     expect(markup).not.toContain('Provider: rbac')
-    expect(markup).not.toContain('Role matrix')
     expect((markup.match(/Save options/g) ?? []).length).toBe(1)
     expect(markup.lastIndexOf('Options')).toBeGreaterThan(markup.indexOf('Capabilities'))
   })
 
-  it('treats same-package provider variants as distinct plugin option identities', () => {
+  it('groups same-package provider variants under one entry showing all capabilities', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         isOpen
@@ -952,16 +950,16 @@ describe('SettingsPanel drawer resize integration', () => {
         pluginSettings={PLUGIN_SETTINGS_AUTH_PACKAGE_FIXTURE}
         pluginSettingsProvider={AUTH_POLICY_PROVIDER_FIXTURE}
         initialTab="pluginOptions"
-        activePluginId="auth.policy:kl-plugin-auth"
+        activePluginId="kl-plugin-auth"
         onClose={() => {}}
         onSave={() => {}}
       />
     )
 
-    expect(markup).toContain('data-testid="plugin-package-auth.identity:kl-plugin-auth"')
-    expect(markup).toContain('data-testid="plugin-package-auth.policy:kl-plugin-auth"')
+    expect(markup).toContain('data-testid="plugin-package-kl-plugin-auth"')
+    expect(markup).toContain('auth.identity')
+    expect(markup).toContain('auth.policy')
     expect(markup).toContain('Role matrix')
-    expect(markup).not.toContain('API token')
   })
 
   it('annotates masked secret schema fields without redisplaying raw values', () => {

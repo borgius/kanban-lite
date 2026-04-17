@@ -71,7 +71,7 @@
   "showLabels": true,
   "showBuildWithAI": false,
   "showFileName": false,
-  "cardViewMode": "compact",
+  "cardViewMode": "large",
   "markdownEditorMode": false,
   "showDeletedColumn": false,
   "boardZoom": 120,
@@ -233,31 +233,46 @@
       }
     },
     "auth.identity": {
-      "provider": "kl-plugin-auth",
+      "provider": "openauth",
       "options": {
-        "apiToken": "kl-59db945ae025dd4ec37556bcc99da903c5791241061df210",
-        "users": [
-          {
-            "username": "admin",
-            "password": "$2b$12$dKzCXt54rChG.k0JHPpzaeuF8dXu.SZ4pWupU0hGSY7nljoCJnGtu",
-            "role": "admin"
+        "issuer": "http://localhost:2954",
+        "clientId": "kanban-lite-local",
+        "embeddedIssuer": {
+          "google": {
+            "clientId": "${GOOGLE_CLIENT_ID}",
+            "clientSecret": "${GOOGLE_CLIENT_SECRET}",
+            "roleMatrix": {
+              "admin@example.com": "admin",
+              "user@example.com": "user"
+            }
           },
-          {
-            "username": "manager",
-            "password": "$2b$12$LJh37RPCyXDMJY7fBtIAau4cVEls0Zwem13Lq3oCVSfrhreQzw7nS",
-            "role": "manager"
-          },
-          {
-            "username": "user",
-            "password": "$2b$12$jTWn5brY73ona8JW/1tS.uGVKCrPDqpTp25rIPNfT4AsPC.iiDYcy",
-            "role": "user"
+          "password": {
+            "users": [
+              {
+                "email": "admin@example.com",
+                "passwordHash": {
+                  "hash": "mlicN1rKrXiDxtRq7W3RO/pzs7HacbYAMSpCsqifi/A=",
+                  "salt": "oKnLB27M8bT+b5aG4+spPg==",
+                  "N": 16384,
+                  "r": 8,
+                  "p": 1
+                },
+                "role": "admin"
+              },
+              {
+                "email": "user@example.com",
+                "passwordHash": {
+                  "hash": "0SBZNtPh9Y3TkwQwNGk728L98DN6sWxfXwUXNFd9R/o=",
+                  "salt": "3XHI3MyZhLc7AHKA2R0qDg==",
+                  "N": 16384,
+                  "r": 8,
+                  "p": 1
+                },
+                "role": "user"
+              }
+            ]
           }
-        ],
-        "roles": [
-          "user",
-          "manager",
-          "admin"
-        ]
+        }
       }
     },
     "auth.policy": {
@@ -341,6 +356,6 @@
       "objects": false
     }
   },
-  "columnWidth": 208,
+  "columnWidth": 256,
   "logLevel": "debug"
 }

@@ -32,6 +32,7 @@ import {
   loadWorkerCallbackQueueConsumer,
 } from './worker-utils'
 import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './worker-runtime'
+import { handleMcpRequest } from './mcp-handler'
 
 const CLOUDFLARE_ACTIVE_CARD_STATE_BINDING = 'KANBAN_ACTIVE_CARD_STATE'
 const LIVE_SYNC_OBJECT_NAME_PREFIX = 'live-sync:'
@@ -278,6 +279,27 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
 
     const url = new URL(request.url)
     const basePath = options.basePath ?? ''
+
+    const mcpPath = `${basePath}/mcp`
+    if (url.pathname === mcpPath || url.pathname === `${mcpPath}/`) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, mcp-session-id, Last-Event-ID, mcp-protocol-version',
+            'Access-Control-Expose-Headers': 'mcp-session-id, mcp-protocol-version',
+          },
+        })
+      }
+      const mcpResponse = await handleMcpRequest(request, options, state, env)
+      const headers = new Headers(mcpResponse.headers)
+      headers.set('Access-Control-Allow-Origin', '*')
+      headers.set('Access-Control-Expose-Headers', 'mcp-session-id, mcp-protocol-version')
+      return new Response(mcpResponse.body, { status: mcpResponse.status, statusText: mcpResponse.statusText, headers })
+    }
+
     const isApiRequest = url.pathname === '/api' || url.pathname.startsWith('/api/')
     if (!isApiRequest && /\.[^./]+$/.test(url.pathname) && env?.ASSETS) {
       const assetResponse = await env.ASSETS.fetch(request)

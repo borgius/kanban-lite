@@ -43,20 +43,21 @@ export async function resolveKanbanDir(): Promise<string> {
   return resolveDefaultKanbanDir(process.cwd(), configFilePath)
 }
 
-export async function main(): Promise<void> {
-  const kanbanDir = await resolveKanbanDir()
-  const configIndex = process.argv.indexOf('--config')
-  const configFilePath = configIndex !== -1 && process.argv[configIndex + 1]
-    ? path.resolve(process.argv[configIndex + 1])
-    : undefined
-  const workspaceRoot = resolveWorkspaceRoot(process.cwd(), configFilePath)
-  const sdk = new KanbanSDK(kanbanDir)
+export interface CreateMcpServerOptions {
+  sdk: KanbanSDK
+  workspaceRoot: string
+  kanbanDir: string
+  authHelpers?: ReturnType<typeof createMcpAuthHelpers>
+}
+
+export function createMcpServerInstance(options: CreateMcpServerOptions): McpServer {
+  const { sdk, workspaceRoot, kanbanDir } = options
+  const { getAuthStatus: getMcpAuthStatus, runWithAuth: runWithMcpAuth } = options.authHelpers ?? createMcpAuthHelpers(sdk)
 
   const server = new McpServer({
     name: 'kanban-lite',
     version: '1.0.0',
   })
-  const { getAuthStatus: getMcpAuthStatus, runWithAuth: runWithMcpAuth } = createMcpAuthHelpers(sdk)
 
   const mcpPluginContext = createMcpPluginContext({
     sdk,
@@ -69,6 +70,20 @@ export async function main(): Promise<void> {
   registerCardMcpTools(server, sdk, runWithMcpAuth)
   registerContentMcpTools(server, sdk, runWithMcpAuth)
   registerSettingsMcpTools(server, sdk, runWithMcpAuth, getMcpAuthStatus, workspaceRoot, kanbanDir, mcpPluginContext)
+
+  return server
+}
+
+export async function main(): Promise<void> {
+  const kanbanDir = await resolveKanbanDir()
+  const configIndex = process.argv.indexOf('--config')
+  const configFilePath = configIndex !== -1 && process.argv[configIndex + 1]
+    ? path.resolve(process.argv[configIndex + 1])
+    : undefined
+  const workspaceRoot = resolveWorkspaceRoot(process.cwd(), configFilePath)
+  const sdk = new KanbanSDK(kanbanDir)
+
+  const server = createMcpServerInstance({ sdk, workspaceRoot, kanbanDir })
 
   const transport = new StdioServerTransport()
   await server.connect(transport)

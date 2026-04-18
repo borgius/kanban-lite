@@ -16,6 +16,13 @@
         "KANBAN_DIR": ".kanban"
       }
     },
+    "kanban-remote": {
+      "type": "http",
+      "url": "https://kanban-lite.modena.workers.dev/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:kanban-token}"
+      }
+    },
     "graphify": {
       "type": "stdio",
       "command": "python3",

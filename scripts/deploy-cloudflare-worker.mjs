@@ -32,7 +32,10 @@ const authProviderPackages = new Map([
   ['noop', 'kl-plugin-auth'],
   ['rbac', 'kl-plugin-rbac'],
   ['local', 'kl-plugin-rbac'],
+  ['kl-plugin-auth', 'kl-plugin-rbac'],
   ['kl-plugin-rbac', 'kl-plugin-rbac'],
+  ['openauth', 'kl-plugin-openauth'],
+  ['kl-plugin-openauth', 'kl-plugin-openauth'],
 ])
 const webhookProviderPackages = new Map([
   ['webhooks', 'kl-plugin-webhook'],
@@ -41,6 +44,23 @@ const callbackProviderPackages = new Map([
   ['callbacks', 'kl-plugin-callback'],
   ['cloudflare', 'kl-plugin-cloudflare'],
 ])
+// All first-party plugins that can be safely bundled for Cloudflare Workers.
+// kl-plugin-cloudflare is excluded (it IS the worker provider; already filtered in createGeneratedWorker).
+// kl-plugin-storage-sqlite is excluded because it has a static top-level import of the native
+// better-sqlite3 addon which cannot be bundled for the Workers runtime.
+const allInternalPluginPackages = [
+  'kl-plugin-auth',
+  'kl-plugin-auth-visibility',
+  'kl-plugin-rbac',
+  'kl-plugin-openauth',
+  'kl-plugin-webhook',
+  'kl-plugin-callback',
+  'kl-plugin-attachment-s3',
+  'kl-plugin-storage-mysql',
+  'kl-plugin-storage-postgresql',
+  'kl-plugin-storage-mongodb',
+  'kl-plugin-storage-redis',
+]
 const nodeConsole = globalThis.console
 const nodeProcess = globalThis.process
 
@@ -514,6 +534,7 @@ export async function createGeneratedWorker(tempDir, options) {
   const registryEntries = []
   let registryImportIndex = 0
   const pluginNames = [...new Set([
+    ...allInternalPluginPackages,
     ...collectRequiredWorkerPluginPackages(options.config),
     ...options.plugins,
   ])].filter((pluginName) => pluginName !== 'kl-plugin-cloudflare')

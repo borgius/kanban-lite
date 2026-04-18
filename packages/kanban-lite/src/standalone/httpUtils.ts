@@ -19,7 +19,7 @@ export const MIME_TYPES: Record<string, string> = {
   '.map': 'application/json'
 }
 
-/** Extended IncomingMessage that may carry a pre-buffered body injected by Fastify. */
+/** Extended IncomingMessage that may carry a pre-buffered body injected by the HTTP adapter. */
 export type IncomingMessageWithRawBody = http.IncomingMessage & { _rawBody?: Buffer }
 
 export function readBody(req: IncomingMessageWithRawBody): Promise<Record<string, unknown>> {

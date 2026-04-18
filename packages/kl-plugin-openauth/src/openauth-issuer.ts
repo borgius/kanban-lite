@@ -107,9 +107,9 @@ async function nodeReqToRequest(req: http.IncomingMessage, baseUrl: string): Pro
   }
 
   const hasBody = req.method !== 'GET' && req.method !== 'HEAD'
-  // Fastify pre-buffers the body into req._rawBody before calling handlers.
-  // Use it when available to avoid re-reading an already-consumed stream
-  // (which would hang indefinitely waiting for 'end' events that never fire).
+  // The standalone HTTP adapter pre-buffers the body onto req._rawBody before
+  // invoking handlers. Use it when available to avoid re-reading an already-consumed
+  // stream (which would hang indefinitely waiting for 'end' events that never fire).
   const pre = (req as { _rawBody?: Buffer })._rawBody
   const rawBody: Buffer | undefined = hasBody ? (pre ?? await readIncomingBody(req)) : undefined
   // Slice to a plain ArrayBuffer so TS is happy with BodyInit

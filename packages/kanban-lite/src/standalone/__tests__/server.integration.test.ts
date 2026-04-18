@@ -787,24 +787,19 @@ describe('Standalone Server Integration', () => {
       }
     })
 
-    it('starts even when the Swagger UI package logo file is unavailable', async () => {
+    it('starts even when the Swagger UI package static assets are unavailable', async () => {
       vi.resetModules()
 
       const actualFs = await vi.importActual<typeof import('fs')>('fs')
-      const swaggerUiMock = vi.fn(async (_instance?: unknown, _options?: Record<string, unknown>) => {})
 
       vi.doMock('fs', () => ({
         ...actualFs,
         existsSync: (filePath: fs.PathLike) => {
           const normalizedPath = String(filePath)
-          if (normalizedPath.endsWith('/swagger-ui.css')) return true
+          if (normalizedPath.endsWith('/swagger-ui.css')) return false
           if (normalizedPath.endsWith('/logo.svg')) return false
           return actualFs.existsSync(filePath)
         },
-      }))
-      vi.doMock('@fastify/swagger-ui', () => ({
-        __esModule: true,
-        default: swaggerUiMock,
       }))
 
       const { startServer: startServerWithMocks } = await import('../server')
@@ -813,19 +808,24 @@ describe('Standalone Server Integration', () => {
       const localServer = startServerWithMocks(tempDir, localPort, webviewDir)
       await sleep(200)
       try {
-        expect(swaggerUiMock).toHaveBeenCalledTimes(1)
-        expect(swaggerUiMock.mock.calls[0]?.[1]).toMatchObject({
-          routePrefix: '/api/docs',
-        })
-        expect(swaggerUiMock.mock.calls[0]?.[1]).not.toHaveProperty('logo')
+        // Hono's @hono/swagger-ui renders a self-contained HTML page that loads
+        // assets from a CDN, so the server must still come up and serve the UI
+        // and the OpenAPI JSON even when the packaged static assets are missing.
+        const rootRes = await httpGet(`http://localhost:${localPort}/`)
+        expect(rootRes.status).toBe(200)
 
-        const res = await httpGet(`http://localhost:${localPort}/`)
-        expect(res.status).toBe(200)
+        const docsRes = await httpGet(`http://localhost:${localPort}/api/docs`)
+        expect(docsRes.status).toBe(200)
+        expect(docsRes.body).toContain('swagger')
+
+        const specRes = await httpGet(`http://localhost:${localPort}/api/docs/json`)
+        expect(specRes.status).toBe(200)
+        const spec = JSON.parse(specRes.body) as { paths: Record<string, unknown> }
+        expect(spec.paths).toBeTruthy()
       } finally {
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
         // Undo the module mocks so subsequent tests are not affected
         vi.unmock('fs')
-        vi.unmock('@fastify/swagger-ui')
         vi.resetModules()
       }
     })

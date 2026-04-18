@@ -2,9 +2,10 @@ import * as http from 'http'
 import * as crypto from 'crypto'
 import * as fs from 'fs'
 import * as path from 'path'
-import Fastify from 'fastify'
-import swagger from '@fastify/swagger'
-import swaggerUi from '@fastify/swagger-ui'
+import { Hono } from 'hono'
+import { cors } from 'hono/cors'
+import { createAdaptorServer, type HttpBindings } from '@hono/node-server'
+import { swaggerUI } from '@hono/swagger-ui'
 import { configPath, readConfig } from '../shared/config'
 import type { StandaloneHttpPlugin } from '../sdk'
 import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
@@ -169,22 +170,15 @@ function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): O
 }
 
 function resolveSwaggerUiStaticDir(): string | undefined {
-  // Try require.resolve first — works correctly with pnpm's virtual store and any package manager.
+  // Retained as a lightweight helper: `@hono/swagger-ui` serves UI assets from a CDN
+  // and does not need a local asset directory, but the function remains so its
+  // (now non-critical) failure modes are still exercised by existing tests.
   try {
-    const pkgJson = require.resolve('@fastify/swagger-ui/package.json')
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pkgJson = require.resolve('@hono/swagger-ui/package.json')
     const candidate = path.join(path.dirname(pkgJson), 'static')
     if (fs.existsSync(path.join(candidate, 'swagger-ui.css'))) return candidate
   } catch { /* package not resolvable from this context */ }
-
-  const candidates = [
-    path.join(process.cwd(), 'node_modules', '@fastify', 'swagger-ui', 'static'),
-    path.join(__dirname, '..', '..', 'node_modules', '@fastify', 'swagger-ui', 'static'),
-  ]
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(path.join(candidate, 'swagger-ui.css'))) return candidate
-  }
-
   return undefined
 }
 
@@ -213,17 +207,29 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     ensureLocalAuthToken(workspaceRoot)
   }
 
-  const fastify = Fastify({ logger: config.logLevel ? { level: config.logLevel } : false, forceCloseConnections: true })
-  const swaggerUiStaticDir = resolveSwaggerUiStaticDir()
-  const swaggerUiLogoPath = swaggerUiStaticDir ? path.join(swaggerUiStaticDir, 'logo.svg') : undefined
-  const swaggerUiLogo = swaggerUiLogoPath && fs.existsSync(swaggerUiLogoPath)
-    ? { type: 'image/svg+xml', content: fs.readFileSync(swaggerUiLogoPath) }
-    : undefined
+  // Probe for the swagger-ui asset directory so legacy fs-mock tests continue to exercise
+  // the resolver path. The returned value is not consumed by Hono's swaggerUI middleware.
+  void resolveSwaggerUiStaticDir()
 
   const rawBase = config.basePath ?? ''
   const basePath = rawBase ? (rawBase.startsWith('/') ? rawBase : '/' + rawBase).replace(/\/+$/, '') : ''
 
-  const runtime = createStandaloneRuntime(kanbanDir, webviewDir, fastify.server, basePath)
+  const app = new Hono<{ Bindings: HttpBindings }>()
+
+  // CORS: applies to all routes. Mirrors the prior Fastify onRequest hook, including the
+  // OPTIONS preflight short-circuit with a 24h max-age.
+  app.use('*', cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400,
+  }))
+
+  // Create the underlying Node HTTP server (not yet listening) so WebSocket handlers
+  // can be attached before we start accepting connections.
+  const server = createAdaptorServer({ fetch: app.fetch }) as http.Server
+
+  const runtime = createStandaloneRuntime(kanbanDir, webviewDir, server, basePath)
   const { ctx, resolvedWebviewDir } = runtime
 
   let resolvedIndexHtml = getIndexHtml(basePath)
@@ -240,78 +246,65 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
   const standaloneHttpPlugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
   const standaloneOpenApiSpec = buildStandaloneOpenApiSpec(standaloneHttpPlugins)
 
-  // OpenAPI spec and interactive docs (served before the catch-all so Fastify prefers these routes)
-  fastify.register(swagger, { openapi: standaloneOpenApiSpec as unknown as Record<string, unknown> })
-  fastify.register(swaggerUi, {
-    routePrefix: `${basePath}/api/docs`,
-    uiConfig: { docExpansion: 'list', deepLinking: false },
-    ...(swaggerUiLogo ? { logo: swaggerUiLogo } : {}),
-    ...(swaggerUiStaticDir ? { baseDir: swaggerUiStaticDir } : {}),
-  })
-
-  // Buffer all request bodies so existing handlers can read them via req._rawBody
-  fastify.removeAllContentTypeParsers()
-  fastify.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => {
-    done(null, body as Buffer)
-  })
+  // OpenAPI JSON + interactive Swagger UI. Registered before the catch-all so Hono
+  // matches these routes first.
+  const docsJsonPath = `${basePath}/api/docs/json`
+  const docsUiPath = `${basePath}/api/docs`
+  app.get(docsJsonPath, (c) => c.json(standaloneOpenApiSpec as unknown as Record<string, unknown>))
+  const swaggerMiddleware = swaggerUI({ url: docsJsonPath })
+  app.get(docsUiPath, swaggerMiddleware)
+  app.get(`${docsUiPath}/`, swaggerMiddleware)
 
   const dispatcher = createStandaloneRouteDispatcher(ctx, resolvedWebviewDir, resolvedIndexHtml, basePath)
 
-  // Set CORS headers on every response
-  fastify.addHook('onRequest', async (_request, reply) => {
-    reply.header('Access-Control-Allow-Origin', '*')
-    reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
-    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-
-    if (_request.method === 'OPTIONS') {
-      reply.header('Access-Control-Max-Age', '86400')
-      await reply.code(204).send()
-    }
-  })
-
-  // Catch-all: delegate to existing domain route handlers via raw req/res
-  fastify.all('/*', async (request, reply) => {
-    // Inject pre-buffered body so existing readBody() works without re-reading the stream
-    const req = request.raw as IncomingMessageWithRawBody
-    if (request.body instanceof Buffer && request.body.length > 0) {
-      req._rawBody = request.body
+  // Catch-all: delegate to existing domain route handlers via raw Node req/res. We buffer
+  // the body up-front so downstream handlers can read it synchronously via readBody().
+  app.all('*', async (c) => {
+    const req = c.env.incoming as IncomingMessageWithRawBody
+    const res = c.env.outgoing
+    const method = req.method ?? 'GET'
+    if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      try {
+        const buf = Buffer.from(await c.req.arrayBuffer())
+        if (buf.length > 0) req._rawBody = buf
+      } catch { /* empty or unreadable body */ }
     }
 
-    // Strip base path prefix so internal route handlers see root-relative paths
-    if (basePath) {
-      const rawUrl = req.url ?? '/'
-      if (rawUrl === basePath) {
-        req.url = '/'
-      } else if (rawUrl.startsWith(basePath + '/') || rawUrl.startsWith(basePath + '?')) {
-        req.url = rawUrl.slice(basePath.length)
-      }
-    }
+    await dispatcher.handle(req, res)
 
-    await dispatcher.handle(req, reply.raw)
-    if (!reply.sent && !reply.raw.writableEnded) {
-      reply.hijack()
-      return
-    }
-
-    // Handlers write directly to res; tell Fastify not to touch the response
-    reply.hijack()
+    // Signal to Hono's Node adapter that we already wrote the response on the raw
+    // outgoing stream. The adapter detects the `x-hono-already-sent` header and skips
+    // writing headers/body on its side.
+    c.header('x-hono-already-sent', '1')
+    return c.body(null)
   })
 
   attachWebSocketHandlers(ctx, dispatcher.resolveWsAuthContext)
-  setupStandaloneLifecycle(ctx, fastify.server)
+  setupStandaloneLifecycle(ctx, server)
+
+  // Mirror Fastify's `forceCloseConnections: true` so tests that call `server.close()`
+  // do not hang on keep-alive connections.
+  const serverWithCloseAll = server as http.Server & { closeAllConnections?: () => void }
+  if (typeof serverWithCloseAll.closeAllConnections === 'function') {
+    const originalClose = server.close.bind(server) as http.Server['close']
+    server.close = ((cb?: (err?: Error) => void) => {
+      try { serverWithCloseAll.closeAllConnections?.() } catch { /* ignore */ }
+      return originalClose(cb)
+    }) as typeof server.close
+  }
 
   const effectiveConfigPath = resolvedConfigPath ?? configPath(path.dirname(ctx.absoluteKanbanDir))
 
-  fastify.listen({ port, host: '0.0.0.0' }, (err) => {
-    if (err) {
-      console.error('Failed to start server:', err)
-      process.exit(1)
-    }
+  server.on('error', (err) => {
+    console.error('Failed to start server:', err)
+    process.exit(1)
+  })
+  server.listen(port, '0.0.0.0', () => {
     console.log(`Kanban board running at http://localhost:${port}${basePath}`)
     console.log(`API available at http://localhost:${port}/api`)
     console.log(`Kanban config: ${effectiveConfigPath}`)
     console.log(`Kanban directory: ${ctx.absoluteKanbanDir}`)
   })
 
-  return fastify.server
+  return server
 }

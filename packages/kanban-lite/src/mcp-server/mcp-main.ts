@@ -1,7 +1,6 @@
 import * as path from 'path'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import { resolveKanbanDir as resolveDefaultKanbanDir, resolveWorkspaceRoot } from '../sdk/fileUtils'
@@ -85,6 +84,7 @@ export async function main(): Promise<void> {
 
   const server = createMcpServerInstance({ sdk, workspaceRoot, kanbanDir })
 
+  const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js')
   const transport = new StdioServerTransport()
   await server.connect(transport)
 }

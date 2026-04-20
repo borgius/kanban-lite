@@ -1,6 +1,6 @@
 import type { WebSocket } from 'ws'
 import type { Card, LogEntry } from '../shared/types'
-import { readConfig } from '../shared/config'
+import { readConfig, withConfigReadCache } from '../shared/config'
 import { resolveCurrentUserName } from '../sdk/resolveCurrentUserName'
 import type { AuthContext } from '../sdk/types'
 import type { StorageEngine } from '../sdk/plugins/types'
@@ -230,9 +230,12 @@ async function broadcastPerClient(ctx: StandaloneContext, type: 'init' | 'cardsU
   for (const client of ctx.wss.clients) {
     if (client.readyState !== WS_OPEN) continue
     const authContext = ctx.clientAuthContexts.get(client)
-    const payload = type === 'init'
-      ? await buildClientInitMessage(ctx, authContext)
-      : await buildClientCardsUpdatedMessage(ctx, authContext)
+    // Coalesce repeated `readConfig()` calls inside the per-client build
+    // (getSettings, listColumns, listBoards, getLabels, …) into a single
+    // provider round-trip per client.
+    const payload = await withConfigReadCache(() => type === 'init'
+      ? buildClientInitMessage(ctx, authContext)
+      : buildClientCardsUpdatedMessage(ctx, authContext))
     client.send(JSON.stringify(payload))
   }
 }
@@ -246,7 +249,8 @@ export function buildInitMessage(ctx: StandaloneContext): unknown {
 
 export async function sendInitMessage(ctx: StandaloneContext, ws: WebSocket): Promise<void> {
   const authContext = ctx.clientAuthContexts.get(ws)
-  ws.send(JSON.stringify(await buildClientInitMessage(ctx, authContext)))
+  const payload = await withConfigReadCache(() => buildClientInitMessage(ctx, authContext))
+  ws.send(JSON.stringify(payload))
 }
 
 export async function sendCardStates(

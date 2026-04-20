@@ -6,6 +6,7 @@ import {
   writeConfigRepositoryDocument,
   type ConfigRepositoryReadResult,
 } from '../../sdk/modules/configRepository'
+import { invalidateConfigReadCache, peekConfigReadCache, primeConfigReadCache } from './readCache'
 import type { KanbanColumn, CardDisplaySettings, CardViewMode, Priority, LabelDefinition } from '../types'
 import { DEFAULT_BOARD_BACKGROUND_MODE, createDefaultColumns, getDefaultBoardBackgroundPreset, normalizeBoardBackgroundSettings } from '../types'
 import type {
@@ -324,6 +325,16 @@ function createConfigReadError(
  * console.log(config.defaultBoard) // => 'default'
  */
 export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {}): KanbanConfig {
+  // Request-scoped cache: when running inside `withConfigReadCache(...)`
+  // (e.g. `syncWebviewMessages` or `broadcastPerClient`), multiple reads
+  // for the same workspace collapse into a single provider round-trip.
+  // Only active for default-option reads; bootstrap/seed-fallback paths
+  // bypass the cache to preserve fail-closed semantics.
+  const cache = !options.allowSeedFallbackOnProviderError ? peekConfigReadCache() : undefined
+  if (cache?.hasEntry && cache.entry) {
+    return structuredClone(cache.entry)
+  }
+
   const defaults = {
     ...DEFAULT_CONFIG,
     boards: { default: { ...DEFAULT_BOARD_CONFIG, columns: createDefaultColumns() } },
@@ -339,6 +350,7 @@ export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {
       : undefined,
   )
   if (readResult.status === 'missing') {
+    if (cache) primeConfigReadCache(defaults)
     return defaults
   }
   if (readResult.status === 'error') {
@@ -370,6 +382,7 @@ export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {
       // Migrate v1 to v2 and persist
       const v2 = migrateConfigV1ToV2(raw)
       writeConfig(workspaceRoot, v2)
+      if (cache) primeConfigReadCache(v2)
       return v2
     }
     // Merge with defaults for any missing fields
@@ -389,8 +402,10 @@ export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {
         .map((b) => b.nextCardId || 1)
       config.nextCardId = Math.max(...boardMaxes)
     }
+    if (cache) primeConfigReadCache(config)
     return config
   } catch {
+    if (cache) primeConfigReadCache(defaults)
     return defaults
   }
 }
@@ -408,7 +423,12 @@ export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {
  */
 export function writeConfig(workspaceRoot: string, config: KanbanConfig): void {
   const writeResult = writeConfigRepositoryDocument(workspaceRoot, config)
-  if (writeResult.status === 'ok') return
+  if (writeResult.status === 'ok') {
+    // Drop the request-scoped read cache so subsequent reads in the same
+    // scope observe the freshly persisted document.
+    invalidateConfigReadCache()
+    return
+  }
   throw writeResult.cause
 }
 

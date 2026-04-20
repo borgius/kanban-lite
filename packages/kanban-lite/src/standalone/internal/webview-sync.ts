@@ -1,4 +1,5 @@
 import type { AuthContext } from '../../sdk/types'
+import { withConfigReadCache } from '../../shared/config'
 import { getAuthErrorLike } from '../authUtils'
 import {
   buildScopedInitMessage,
@@ -72,6 +73,19 @@ function requiresPostSyncInit(message: unknown): boolean {
 }
 
 export async function syncWebviewMessages(
+  ctx: StandaloneContext,
+  messages: unknown[],
+  authContext: AuthContext,
+): Promise<SyncOutboundMessage[]> {
+  // Coalesce repeated `readConfig(workspaceRoot)` calls that every handler
+  // performs (getSettings, listColumns, listBoards, getLabels,
+  // getMinimizedColumns, buildBaseInitMessage, per-handler default-board
+  // lookups, …) into a single provider round-trip per request. This is the
+  // dominant latency source on high-latency backends like Cloudflare KV.
+  return withConfigReadCache(() => syncWebviewMessagesInner(ctx, messages, authContext))
+}
+
+async function syncWebviewMessagesInner(
   ctx: StandaloneContext,
   messages: unknown[],
   authContext: AuthContext,

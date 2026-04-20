@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Request-scoped `readConfig()` cache**: Added a `withConfigReadCache()` scope in `shared/config` that coalesces the ~6 `readConfig(workspaceRoot)` calls a single init/broadcast triggers (`getSettings`, `listColumns`, `listBoards`, `getLabels`, `getMinimizedColumns`, base-message builder, per-handler default-board lookups, webhook dispatch, …) into one provider round-trip per request. The standalone `syncWebviewMessages`, `broadcastPerClient`, and `sendInitMessage` paths now run inside this scope, cutting Cloudflare KV / remote `config.storage` round-trips on active boards by 5–6× and eliminating redundant `.env` loading and `${VAR}` placeholder resolution within each scope. The cache is invalidated automatically on `writeConfig`, and unscoped callers keep the existing fresh-object mutation contract.
+
 - **Graphify workspace setup for Copilot**: Added a repo-local `.graphifyignore`, wired `graphify-out/graph.json` into [`.vscode/mcp.json`](.vscode/mcp.json) as a local `graphify` MCP server, and documented the recommended Graphify + Copilot refresh flow in the root README so Agent mode can query the repo graph directly.
 
 - **Cross-platform voice comments**: Card comments can now carry linked audio clips with an optional typed note. Desktop runtimes (standalone browser + VS Code webview) and the Expo mobile task-detail screen now expose recorder/playback UI, store voice clips as task attachments, render inline play controls for saved voice comments, and remove the linked audio attachment automatically when the parent voice comment is deleted.

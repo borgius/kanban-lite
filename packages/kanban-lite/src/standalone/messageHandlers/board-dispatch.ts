@@ -67,7 +67,7 @@ export async function dispatchBoardMessage(
     case 'addComment': {
       const comment = await runWithScopedAuth(() => doAddComment(ctx, msg.cardId as string, msg.author as string, msg.content as string))
       if (!comment) break
-      const card = ctx.cards.find(f => f.id === msg.cardId)
+      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string, ctx.currentBoardId))
       if (card) {
         await broadcastCardContentToEditingClients(ctx, card)
       }
@@ -77,7 +77,7 @@ export async function dispatchBoardMessage(
     case 'updateComment': {
       const comment = await runWithScopedAuth(() => doUpdateComment(ctx, msg.cardId as string, msg.commentId as string, msg.content as string))
       if (!comment) break
-      const card = ctx.cards.find(f => f.id === msg.cardId)
+      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string, ctx.currentBoardId))
       if (card) {
         await broadcastCardContentToEditingClients(ctx, card)
       }
@@ -86,7 +86,7 @@ export async function dispatchBoardMessage(
 
     case 'deleteComment': {
       await runWithScopedAuth(() => doDeleteComment(ctx, msg.cardId as string, msg.commentId as string))
-      const card = ctx.cards.find(f => f.id === msg.cardId)
+      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string, ctx.currentBoardId))
       if (card) {
         await broadcastCardContentToEditingClients(ctx, card)
       }

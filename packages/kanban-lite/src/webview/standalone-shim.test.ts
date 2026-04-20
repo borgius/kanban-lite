@@ -361,6 +361,7 @@ describe('standalone shim reconnect behavior', () => {
   })
 
   it('resyncs the current HTTP snapshot when Cloudflare sends an invalidation notice', async () => {
+    vi.useFakeTimers()
     const postMessageSpy = vi.fn()
     installStandaloneGlobals(postMessageSpy)
     vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -400,6 +401,8 @@ describe('standalone shim reconnect behavior', () => {
     fetchMock.mockClear()
 
     socket.emitMessage({ type: 'syncRequired', reason: 'task.updated' })
+    // syncRequired is debounced — advance past the debounce window
+    await vi.advanceTimersByTimeAsync(200)
     await flushAsyncWork()
 
     expect(fetchMock).toHaveBeenCalledTimes(1)

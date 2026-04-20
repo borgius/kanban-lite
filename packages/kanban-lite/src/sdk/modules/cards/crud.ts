@@ -100,14 +100,37 @@ export async function listCardsRaw(
 }
 
 /**
- * Retrieves a single card by its ID. Supports partial ID matching.
+ * Retrieves a single card by its ID.
+ *
+ * When the active storage engine implements `getCardById`, this bypasses the
+ * full-board `scanCards` and performs a targeted O(1) lookup instead.
  */
 export async function getCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+  if (ctx._storage.getCardById) {
+    await ctx._ensureMigrated()
+    const boardDir = ctx._boardDir(boardId)
+    const resolvedBoardId = ctx._resolveBoardId(boardId)
+    const raw = await ctx._storage.getCardById(boardDir, resolvedBoardId, cardId)
+    if (!raw) return null
+    const normalized = normalizeCardChecklistState(raw)
+    const checklistVisible = await canShowChecklist(ctx)
+    const projected = projectCardChecklistState(normalized, checklistVisible)
+    const visible = await applyCardVisibilityFilter(ctx, [projected])
+    return visible[0] ?? null
+  }
   const cards = await listCards(ctx, { boardId })
   return cards.find(c => c.id === cardId) || null
 }
 
 export async function getCardRaw(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+  if (ctx._storage.getCardById) {
+    await ctx._ensureMigrated()
+    const boardDir = ctx._boardDir(boardId)
+    const resolvedBoardId = ctx._resolveBoardId(boardId)
+    const raw = await ctx._storage.getCardById(boardDir, resolvedBoardId, cardId)
+    if (!raw) return null
+    return normalizeCardChecklistState(raw)
+  }
   const cards = await listCardsRaw(ctx, { boardId })
   return cards.find(c => c.id === cardId) || null
 }

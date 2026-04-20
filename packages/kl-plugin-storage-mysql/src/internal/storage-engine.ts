@@ -232,6 +232,29 @@ export class MysqlStorageEngine implements StorageEngine {
     return cardRows.map((row) => this._rowToCard(row, commentsByCardId.get(row.id) ?? []))
   }
 
+  async getCardById(_boardDir: string, boardId: string, cardId: string): Promise<Card | null> {
+    const [cardRows] = await this.pool.execute(
+      'SELECT * FROM kanban_cards WHERE board_id = ? AND id = ?',
+      [boardId, cardId],
+    ) as [CardRow[], unknown]
+
+    if (cardRows.length === 0) return null
+
+    const [commentRows] = await this.pool.execute(
+      'SELECT * FROM kanban_comments WHERE board_id = ? AND card_id = ?',
+      [boardId, cardId],
+    ) as [CommentRow[], unknown]
+
+    const comments = commentRows.map(row => ({
+      id: row.id,
+      author: row.author,
+      created: row.created,
+      content: row.content,
+    }))
+
+    return this._rowToCard(cardRows[0], comments)
+  }
+
   async writeCard(card: Card): Promise<void> {
     const boardId = card.boardId ?? 'default'
     const hasMetadata = Boolean(card.metadata && Object.keys(card.metadata).length > 0)

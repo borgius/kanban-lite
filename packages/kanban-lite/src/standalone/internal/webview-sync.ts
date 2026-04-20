@@ -4,6 +4,8 @@ import {
   buildScopedInitMessage,
   clearClientAuthContext,
   clearClientEditingCard,
+  clearScanCardsCache,
+  enableScanCardsCache,
   setClientAuthContext,
   setClientEditingCard,
 } from '../broadcastService'
@@ -113,9 +115,43 @@ export async function syncWebviewMessages(
   setClientAuthContext(ctx, wsClient, authContext)
   setClientEditingCard(ctx, wsClient, null)
 
+  // Tell the mutation service to skip loadCards + broadcast for this
+  // request.  The pseudo-client is not in ctx.wss.clients, so broadcasts
+  // are no-ops anyway, and the post-sync rebuild below provides the
+  // authoritative init when needed.
+  ctx.skipMutationBroadcast = true
+
+  // Cache scanCards results within this request so the ready handler's
+  // loadCards + sendInitMessage path (and the post-sync rebuild) do not
+  // hit D1 twice for the same board.
+  enableScanCardsCache(ctx)
+
+  // When the client-side shim embeds boardId directly on card-scoped
+  // mutations (skipping the switchBoard + openCard replays), we need to
+  // bootstrap two pieces of context that those replays would have set:
+  //  1. ctx.currentBoardId — so mutation services resolve the correct board
+  //  2. clientEditingCardId — so broadcastCardContentToEditingClients sends
+  //     the updated card content back to this pseudo-client
+  for (const message of messages) {
+    const m = message as { boardId?: unknown; cardId?: unknown; type?: unknown } | null
+    if (typeof m?.boardId === 'string' && !ctx.currentBoardId) {
+      ctx.currentBoardId = m.boardId
+    }
+    if (typeof m?.cardId === 'string' && m.type !== 'openCard') {
+      setClientEditingCard(ctx, wsClient, m.cardId)
+    }
+    if (ctx.currentBoardId) break
+  }
+
   try {
     for (const message of messages) {
       await handleMessage(ctx, wsClient, message, authContext)
+    }
+
+    // Invalidate the scanCards cache before the post-sync rebuild so
+    // the init message reflects any mutations made above.
+    if (messages.some(requiresPostSyncInit)) {
+      ctx._scanCardsCache?.clear()
     }
 
     // Because this pseudo-client is not registered for broadcasts, we
@@ -144,6 +180,8 @@ export async function syncWebviewMessages(
       throw error
     }
   } finally {
+    ctx.skipMutationBroadcast = false
+    clearScanCardsCache(ctx)
     clearClientAuthContext(ctx, wsClient)
     clearClientEditingCard(ctx, wsClient)
   }

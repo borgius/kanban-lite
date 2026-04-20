@@ -50,6 +50,16 @@ export interface StorageEngine {
   /** Scans all cards for a board. */
   scanCards(boardDir: string, boardId: string): Promise<Card[]>
 
+  /**
+   * Retrieves a single card by ID.
+   *
+   * Implementations should perform a targeted lookup (e.g. `WHERE card_id = ?
+   * AND board_id = ?`) instead of scanning the entire board.  The default
+   * fallback in the SDK falls back to `scanCards` + `.find()` for engines
+   * that do not override this method.
+   */
+  getCardById?(boardDir: string, boardId: string, cardId: string): Promise<Card | null>
+
   /** Persists a card (create or update). */
   writeCard(card: Card): Promise<void>
 

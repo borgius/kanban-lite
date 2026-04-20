@@ -444,6 +444,27 @@ export class SqliteStorageEngine implements StorageEngine {
     return cardRows.map((row) => this._rowToCard(row, commentsByCardId.get(row.id) || []))
   }
 
+  async getCardById(_boardDir: string, boardId: string, cardId: string): Promise<Card | null> {
+    const cardRow = this.db
+      .prepare('SELECT * FROM cards WHERE board_id = ? AND id = ?')
+      .get(boardId, cardId) as CardRow | undefined
+
+    if (!cardRow) return null
+
+    const commentRows = this.db
+      .prepare('SELECT * FROM comments WHERE board_id = ? AND card_id = ?')
+      .all(boardId, cardId) as CommentRow[]
+
+    const comments = commentRows.map(row => ({
+      id: row.id,
+      author: row.author,
+      created: row.created,
+      content: row.content,
+    }))
+
+    return this._rowToCard(cardRow, comments)
+  }
+
   async writeCard(card: Card): Promise<void> {
     const upsertCard = this.db.prepare(`
       INSERT INTO cards (

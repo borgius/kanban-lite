@@ -102,14 +102,26 @@ function createWorkerSyncEventHandler(
   getEnv: () => CloudflareWorkerRuntimeEnv | undefined,
   kanbanDir: string,
 ): (event: string, data: unknown) => void {
+  let pendingNotify: ReturnType<typeof setTimeout> | null = null
+  let latestEvent: string | null = null
+
   return (event, data) => {
     if (event.startsWith('auth.') || !isAfterEventEnvelope(data)) {
       return
     }
 
-    void notifyWorkerLiveSync(getEnv(), kanbanDir, event).catch((error) => {
-      console.error(`Failed to publish Cloudflare live sync event (${event}):`, error)
-    })
+    // Debounce: bulk SDK operations (cleanupColumn, purgeDeletedCards)
+    // fire one event per card; coalesce into a single Durable Object notify.
+    latestEvent = event
+    if (pendingNotify !== null) return
+    pendingNotify = setTimeout(() => {
+      pendingNotify = null
+      const ev = latestEvent ?? event
+      latestEvent = null
+      void notifyWorkerLiveSync(getEnv(), kanbanDir, ev).catch((error) => {
+        console.error(`Failed to publish Cloudflare live sync event (${ev}):`, error)
+      })
+    }, 0)
   }
 }
 

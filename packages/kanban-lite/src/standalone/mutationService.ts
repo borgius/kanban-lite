@@ -10,6 +10,18 @@ import { getAuthErrorLike } from './authUtils'
 import { broadcast, buildInitMessage, loadCards } from './broadcastService'
 import { buildCardFrontmatter } from './cardHelpers'
 
+/**
+ * Reloads `ctx.cards` and broadcasts an init to all WebSocket clients.
+ * Skipped when `ctx.skipMutationBroadcast` is set (HTTP sync path) because
+ * the pseudo-client is not in `ctx.wss.clients` and the post-sync rebuild
+ * handles state refresh.
+ */
+async function reloadAndBroadcast(ctx: StandaloneContext): Promise<void> {
+  if (ctx.skipMutationBroadcast) return
+  await loadCards(ctx)
+  broadcast(ctx, buildInitMessage(ctx))
+}
+
 export type CreateCardData = Omit<CreateCardPayload, 'tasks'> & {
   tasks?: Array<CardTask | string>
 }
@@ -36,8 +48,7 @@ export async function doCreateCardForBoard(ctx: StandaloneContext, data: CreateC
       boardId,
     })
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return card
   } finally {
     ctx.migrating = false
@@ -52,8 +63,7 @@ export async function doMoveCard(ctx: StandaloneContext, cardId: string, newStat
   try {
     const updated = await ctx.sdk.moveCard(cardId, newStatus, newOrder, ctx.currentBoardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return updated
   } finally {
     ctx.migrating = false
@@ -78,8 +88,7 @@ export async function doUpdateCardForBoard(
     const updated = await ctx.sdk.updateCard(cardId, updates, boardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return updated
   } finally {
     ctx.migrating = false
@@ -100,8 +109,7 @@ async function doChecklistMutationForBoard(
     const updated = await mutate()
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return updated
   } finally {
     ctx.migrating = false
@@ -168,8 +176,7 @@ export async function doSubmitForm(ctx: StandaloneContext, input: SubmitFormInpu
       ...input,
       boardId: input.boardId ?? ctx.currentBoardId,
     })
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return result
   } finally {
     ctx.migrating = false
@@ -183,8 +190,7 @@ export async function doDeleteCard(ctx: StandaloneContext, cardId: string): Prom
   try {
     await ctx.sdk.deleteCard(cardId, ctx.currentBoardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return true
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -200,8 +206,7 @@ export async function doPermanentDeleteCard(ctx: StandaloneContext, cardId: stri
   try {
     await ctx.sdk.permanentlyDeleteCard(cardId, ctx.currentBoardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return true
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -214,8 +219,7 @@ export async function doPurgeDeletedCards(ctx: StandaloneContext): Promise<boole
   try {
     await ctx.sdk.purgeDeletedCards(ctx.currentBoardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return true
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -227,7 +231,7 @@ export async function doPurgeDeletedCards(ctx: StandaloneContext): Promise<boole
 export async function doAddColumn(ctx: StandaloneContext, name: string, color: string): Promise<KanbanColumn> {
   const columns = await ctx.sdk.addColumn({ id: '', name, color }, ctx.currentBoardId)
   const column = columns[columns.length - 1]
-  broadcast(ctx, buildInitMessage(ctx))
+  if (!ctx.skipMutationBroadcast) broadcast(ctx, buildInitMessage(ctx))
   return column
 }
 
@@ -235,7 +239,7 @@ export async function doEditColumn(ctx: StandaloneContext, columnId: string, upd
   try {
     const columns = await ctx.sdk.updateColumn(columnId, { name: updates.name, color: updates.color }, ctx.currentBoardId)
     const updated = columns.find(c => c.id === columnId) ?? null
-    broadcast(ctx, buildInitMessage(ctx))
+    if (!ctx.skipMutationBroadcast) broadcast(ctx, buildInitMessage(ctx))
     return updated
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -250,7 +254,7 @@ export async function doRemoveColumn(ctx: StandaloneContext, columnId: string): 
     const col = columns.find(c => c.id === columnId)
     if (!col) return { removed: false, error: 'Column not found' }
     await ctx.sdk.removeColumn(columnId, ctx.currentBoardId)
-    broadcast(ctx, buildInitMessage(ctx))
+    if (!ctx.skipMutationBroadcast) broadcast(ctx, buildInitMessage(ctx))
     return { removed: true }
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -263,8 +267,7 @@ export async function doCleanupColumn(ctx: StandaloneContext, columnId: string):
     ctx.migrating = true
     await ctx.sdk.cleanupColumn(columnId, ctx.currentBoardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return true
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -277,7 +280,7 @@ export async function doCleanupColumn(ctx: StandaloneContext, columnId: string):
 
 export async function doSaveSettings(ctx: StandaloneContext, newSettings: CardDisplaySettings): Promise<void> {
   await ctx.sdk.updateSettings(newSettings)
-  broadcast(ctx, buildInitMessage(ctx))
+  if (!ctx.skipMutationBroadcast) broadcast(ctx, buildInitMessage(ctx))
 }
 
 export async function doAddAttachment(ctx: StandaloneContext, cardId: string, filename: string, fileData: Buffer): Promise<boolean> {
@@ -290,7 +293,7 @@ export async function doAddAttachment(ctx: StandaloneContext, cardId: string, fi
     const updated = await ctx.sdk.addAttachmentData(cardId, safeFilename, fileData, ctx.currentBoardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
+    if (!ctx.skipMutationBroadcast) await loadCards(ctx)
     return true
   } finally {
     ctx.migrating = false
@@ -306,8 +309,7 @@ export async function doRemoveAttachment(ctx: StandaloneContext, cardId: string,
     const updated = await ctx.sdk.removeAttachment(cardId, attachment, ctx.currentBoardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return updated
   } finally {
     ctx.migrating = false
@@ -321,8 +323,7 @@ export async function doAddComment(ctx: StandaloneContext, cardId: string, autho
     ctx.lastWrittenContent = serializeCard(updated)
     const comment = updated.comments[updated.comments.length - 1]
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return comment
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -339,8 +340,7 @@ export async function doUpdateComment(ctx: StandaloneContext, cardId: string, co
     ctx.lastWrittenContent = serializeCard(updated)
     const comment = (updated.comments || []).find(c => c.id === commentId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return comment ?? null
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -361,8 +361,7 @@ export async function doDeleteComment(ctx: StandaloneContext, cardId: string, co
     const updated = await ctx.sdk.deleteComment(cardId, commentId, ctx.currentBoardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return true
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -376,8 +375,7 @@ export async function doAddLog(ctx: StandaloneContext, cardId: string, text: str
   ctx.migrating = true
   try {
     const entry = await ctx.sdk.addLog(cardId, text, { source, timestamp, object }, ctx.currentBoardId)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return entry
   } catch (err) {
     if (getAuthErrorLike(err)) throw err
@@ -391,8 +389,7 @@ export async function doClearLogs(ctx: StandaloneContext, cardId: string): Promi
   ctx.migrating = true
   try {
     await ctx.sdk.clearLogs(cardId, ctx.currentBoardId)
-    await loadCards(ctx)
-    broadcast(ctx, buildInitMessage(ctx))
+    await reloadAndBroadcast(ctx)
     return true
   } catch (err) {
     if (getAuthErrorLike(err)) throw err

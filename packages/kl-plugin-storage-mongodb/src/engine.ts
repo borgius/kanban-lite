@@ -291,6 +291,27 @@ export class MongodbStorageEngine implements StorageEngine {
     return cardDocs.map((doc) => this._docToCard(doc, commentsByCardId.get(doc.id) ?? []))
   }
 
+  async getCardById(_boardDir: string, boardId: string, cardId: string): Promise<Card | null> {
+    const db = await this.getDb()
+    const cardDoc = await db.collection<CardDoc>(this.cardsCollectionName)
+      .findOne({ board_id: boardId, id: cardId })
+
+    if (!cardDoc) return null
+
+    const commentDocs = await db.collection<CommentDoc>(this.commentsCollectionName)
+      .find({ board_id: boardId, card_id: cardId })
+      .toArray()
+
+    const comments = commentDocs.map(doc => ({
+      id: doc.id,
+      author: doc.author,
+      created: doc.created,
+      content: doc.content,
+    }))
+
+    return this._docToCard(cardDoc, comments)
+  }
+
   async writeCard(card: Card): Promise<void> {
     const db = await this.getDb()
     const boardId = card.boardId ?? 'default'

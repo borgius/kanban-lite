@@ -177,6 +177,16 @@ class CloudflareStorageEngine implements StorageEngine {
       .filter((card): card is Card => card !== null)
   }
 
+  async getCardById(_boardDir: string, boardId: string, cardId: string): Promise<Card | null> {
+    const database = await this.ensureReady()
+    const row = await database
+      .prepare('SELECT board_id, card_id, status, card_json FROM cards WHERE board_id = ? AND card_id = ?')
+      .bind(boardId, cardId)
+      .first<CardRow>()
+
+    return row ? parseStoredCard(row) : null
+  }
+
   async writeCard(card: Card): Promise<void> {
     const normalized = normalizeCard(card)
     const database = await this.ensureReady()

@@ -231,6 +231,29 @@ export class PostgresqlStorageEngine implements StorageEngine {
     return cardRows.map((row) => this._rowToCard(row, commentsByCardId.get(row.id) ?? []))
   }
 
+  async getCardById(_boardDir: string, boardId: string, cardId: string): Promise<Card | null> {
+    const { rows: cardRows } = await this.pool.query(
+      'SELECT * FROM kanban_cards WHERE board_id = $1 AND id = $2',
+      [boardId, cardId],
+    ) as { rows: CardRow[] }
+
+    if (cardRows.length === 0) return null
+
+    const { rows: commentRows } = await this.pool.query(
+      'SELECT * FROM kanban_comments WHERE board_id = $1 AND card_id = $2',
+      [boardId, cardId],
+    ) as { rows: CommentRow[] }
+
+    const comments = commentRows.map(row => ({
+      id: row.id,
+      author: row.author,
+      created: row.created,
+      content: row.content,
+    }))
+
+    return this._rowToCard(cardRows[0], comments)
+  }
+
   async writeCard(card: Card): Promise<void> {
     const boardId = card.boardId ?? 'default'
     const hasMetadata = Boolean(card.metadata && Object.keys(card.metadata).length > 0)

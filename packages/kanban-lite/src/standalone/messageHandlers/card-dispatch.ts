@@ -8,6 +8,8 @@ import {
   broadcastCardContentToEditingClients,
   broadcastLogsUpdatedToEditingClients,
   buildInitMessage,
+  clearScanCardsCache,
+  enableScanCardsCache,
   sendCardContent,
   sendCardStates,
   sendLogsUpdated,
@@ -54,11 +56,13 @@ export async function dispatchCardMessage(
   switch (msg.type) {
     case 'ready':
       ctx.migrating = true
+      enableScanCardsCache(ctx)
       try {
         await loadCards(ctx)
         await sendInitMessage(ctx, ws)
       } finally {
         ctx.migrating = false
+        clearScanCardsCache(ctx)
       }
       break
 
@@ -118,19 +122,25 @@ export async function dispatchCardMessage(
         cleanupTempFile(ctx)
       }
 
-      try {
-        await runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId, boardId))
-      } catch (err) {
-        if (!(err instanceof CardStateError)) {
-          throw err
-        }
-      }
-
-      await runWithScopedAuth(() => ctx.sdk.setActiveCard(cardId, boardId))
+      // markCardOpened (card_state write) and setActiveCard (active card
+      // state write) are independent operations — run them in parallel to
+      // reduce sequential D1 round-trips.
+      const markOpened = runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId, boardId))
+        .catch((err) => {
+          if (!(err instanceof CardStateError)) throw err
+        })
+      const setActive = runWithScopedAuth(() => ctx.sdk.setActiveCard(cardId, boardId))
+      await Promise.all([markOpened, setActive])
       ctx.currentEditingCardId = cardId
       setClientEditingCard(ctx, ws, cardId)
-      await sendCardStates(ctx, ws, [cardId], authContext)
-      await sendCardContent(ctx, ws, card, authContext)
+      // Pass the pre-fetched card to avoid redundant D1 full-board scans.
+      // Without this, both sendCardStates and sendCardContent would each
+      // call listCards → scanCards again (3 scans total → 1 scan).
+      // Both sends are independent WebSocket writes — parallelize them.
+      await Promise.all([
+        sendCardStates(ctx, ws, [cardId], authContext, [card]),
+        sendCardContent(ctx, ws, card, authContext, { skipResolve: true }),
+      ])
       break
     }
 

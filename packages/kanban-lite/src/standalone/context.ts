@@ -23,4 +23,15 @@ export interface StandaloneContext {
   tempFileAuthContext: AuthContext | undefined
   tempFileWatcher: ReturnType<typeof chokidar.watch> | undefined
   tempFileWriting: boolean
+  /**
+   * When `true`, mutations skip `loadCards` + `broadcast` after SDK calls.
+   * Used by the HTTP sync path where broadcasts target no real WebSocket
+   * clients and the post-sync rebuild handles state refresh instead.
+   */
+  skipMutationBroadcast?: boolean
+  /**
+   * Per-request cache for `scanCards` results keyed by `boardDir:boardId`.
+   * Set by `enableScanCardsCache()` and cleared by `clearScanCardsCache()`.
+   */
+  _scanCardsCache?: Map<string, Card[]>
 }

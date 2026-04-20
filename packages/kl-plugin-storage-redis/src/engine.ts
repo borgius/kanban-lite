@@ -324,6 +324,21 @@ export class RedisStorageEngine implements StorageEngine {
     return cards
   }
 
+  async getCardById(_boardDir: string, boardId: string, cardId: string): Promise<Card | null> {
+    const client = this.getClient()
+    const json = await client.hget(this.cardsKey(boardId), cardId)
+    if (!json) return null
+
+    const doc: CardDoc = JSON.parse(json)
+    const commentData = await client.hgetall(this.commentsKey(boardId, cardId))
+    const comments: Comment[] = Object.values(commentData).map((cJson) => {
+      const cDoc: CommentDoc = JSON.parse(cJson)
+      return { id: cDoc.id, author: cDoc.author, created: cDoc.created, content: cDoc.content }
+    })
+
+    return this._docToCard(doc, comments)
+  }
+
   async writeCard(card: Card): Promise<void> {
     const client = this.getClient()
     const boardId = card.boardId ?? 'default'

@@ -1,11 +1,65 @@
-import { WebSocket } from 'ws'
+import type { WebSocket } from 'ws'
 import type { Card, LogEntry } from '../shared/types'
 import { readConfig } from '../shared/config'
 import { resolveCurrentUserName } from '../sdk/resolveCurrentUserName'
 import type { AuthContext } from '../sdk/types'
+import type { StorageEngine } from '../sdk/plugins/types'
 import { decorateCardsForWebview } from '../extension/cardStateUi'
 import type { StandaloneContext } from './context'
 import { buildCardFrontmatter } from './cardHelpers'
+
+// Use a numeric constant instead of WebSocket.OPEN.  The `ws` package
+// import is unavailable in Cloudflare Worker fetch handlers, making
+// the static property access throw.  The value 1 is mandated by the
+// WebSocket spec and is identical across all runtimes.
+const WS_OPEN = 1
+
+// --- Request-scoped scanCards cache ---
+
+/** Stores the real StorageEngine before proxy wrapping. */
+const realStorageByCtx = new WeakMap<StandaloneContext, StorageEngine>()
+
+/**
+ * Installs a request-scoped cache around `ctx.sdk._storage.scanCards` so
+ * that repeated full-board scans within the same HTTP request (e.g. the
+ * `ready` handler's `loadCards` + `sendInitMessage` path) hit memory
+ * instead of D1 twice.
+ *
+ * Call `clearScanCardsCache` in a `finally` block to restore the original
+ * storage engine and free the cached data.
+ */
+export function enableScanCardsCache(ctx: StandaloneContext): void {
+  if (ctx._scanCardsCache) return
+  const cache = new Map<string, Card[]>()
+  ctx._scanCardsCache = cache
+  const real = ctx.sdk._storage
+  realStorageByCtx.set(ctx, real)
+
+  ctx.sdk._storage = new Proxy(real, {
+    get(target, prop, receiver) {
+      if (prop === 'scanCards') {
+        return async (boardDir: string, boardId: string): Promise<Card[]> => {
+          const key = `${boardDir}\0${boardId}`
+          const cached = cache.get(key)
+          if (cached) return cached
+          const result = await target.scanCards(boardDir, boardId)
+          cache.set(key, result)
+          return result
+        }
+      }
+      return Reflect.get(target, prop, receiver)
+    },
+  }) as StorageEngine
+}
+
+export function clearScanCardsCache(ctx: StandaloneContext): void {
+  const real = realStorageByCtx.get(ctx)
+  if (real) {
+    ctx.sdk._storage = real
+    realStorageByCtx.delete(ctx)
+  }
+  ctx._scanCardsCache = undefined
+}
 
 export async function loadCards(ctx: StandaloneContext): Promise<void> {
   const columnIds = ctx.sdk.listColumns(ctx.currentBoardId).map(c => c.id)
@@ -28,7 +82,7 @@ export function broadcast(ctx: StandaloneContext, message: unknown): void {
 
   const json = JSON.stringify(message)
   for (const client of ctx.wss.clients) {
-    if (client.readyState === WebSocket.OPEN) {
+    if (client.readyState === WS_OPEN) {
       client.send(json)
     }
   }
@@ -57,7 +111,7 @@ export function isClientEditingCard(ctx: StandaloneContext, ws: WebSocket, cardI
 export function getClientsEditingCard(ctx: StandaloneContext, cardId: string): WebSocket[] {
   const matches: WebSocket[] = []
   for (const [client, editingCardId] of ctx.clientEditingCardIds.entries()) {
-    if (client.readyState === WebSocket.OPEN && editingCardId === cardId) {
+    if (client.readyState === WS_OPEN && editingCardId === cardId) {
       matches.push(client)
     }
   }
@@ -174,7 +228,7 @@ async function buildClientCardsUpdatedMessage(ctx: StandaloneContext, authContex
 
 async function broadcastPerClient(ctx: StandaloneContext, type: 'init' | 'cardsUpdated'): Promise<void> {
   for (const client of ctx.wss.clients) {
-    if (client.readyState !== WebSocket.OPEN) continue
+    if (client.readyState !== WS_OPEN) continue
     const authContext = ctx.clientAuthContexts.get(client)
     const payload = type === 'init'
       ? await buildClientInitMessage(ctx, authContext)
@@ -200,9 +254,15 @@ export async function sendCardStates(
   ws: WebSocket,
   cardIds: string[],
   authContext?: AuthContext,
+  preloadedCards?: Card[],
 ): Promise<void> {
-  const ids = new Set(cardIds)
-  const targetCards = (await listVisibleCards(ctx, authContext)).filter(c => ids.has(c.id))
+  let targetCards: Card[]
+  if (preloadedCards) {
+    targetCards = preloadedCards
+  } else {
+    const ids = new Set(cardIds)
+    targetCards = (await listVisibleCards(ctx, authContext)).filter(c => ids.has(c.id))
+  }
   if (targetCards.length === 0) {
     ws.send(JSON.stringify({ type: 'cardStates', states: {} }))
     return
@@ -221,11 +281,17 @@ export async function sendCardContent(
   ws: WebSocket,
   card: Card | string,
   authContext?: AuthContext,
+  options?: { skipResolve?: boolean },
 ): Promise<boolean> {
   const scopedAuth = authContext ?? ctx.clientAuthContexts.get(ws)
   const cardId = typeof card === 'string' ? card : card.id
   const boardId = typeof card === 'string' ? ctx.currentBoardId : card.boardId ?? ctx.currentBoardId
-  const visibleCard = await resolveVisibleCard(ctx, cardId, scopedAuth, boardId)
+  // When the caller already verified the card via sdk.getCard (which applies
+  // auth-visibility filtering), skip the redundant resolveVisibleCard call
+  // that would trigger another full-board scanCards.
+  const visibleCard = options?.skipResolve && typeof card !== 'string'
+    ? card
+    : await resolveVisibleCard(ctx, cardId, scopedAuth, boardId)
   if (!visibleCard) return false
 
   const logs = await resolveVisibleCardLogs(ctx, visibleCard.id, scopedAuth, visibleCard.boardId)

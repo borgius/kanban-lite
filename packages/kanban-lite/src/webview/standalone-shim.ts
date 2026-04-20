@@ -26,6 +26,8 @@ let httpFallbackActive = false
 let httpFallbackActivation: Promise<boolean> | null = null
 let syncTransportMode: SyncTransportMode = 'websocket'
 let openCardAbortController: AbortController | null = null
+let syncRequiredDebounceTimer: number | null = null
+const SYNC_REQUIRED_DEBOUNCE_MS = 150
 
 function getDisconnectedSubmitErrorMessage(): string {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -73,31 +75,51 @@ function parseCachedMessage(json: string | null): Record<string, unknown> | null
   }
 }
 
+// Card-scoped mutations that only affect the currently-open card.
+// These can skip the switchBoard + openCard replays and instead embed
+// boardId directly, eliminating 2 wasted D1 full-board scans per mutation.
+const CARD_SCOPED_MUTATION_TYPES = new Set([
+  'saveCardContent',
+  'addComment',
+  'updateComment',
+  'deleteComment',
+  'addLog',
+  'clearLogs',
+  'addChecklistItem',
+  'editChecklistItem',
+  'deleteChecklistItem',
+  'checkChecklistItem',
+  'uncheckChecklistItem',
+  'removeAttachment',
+])
+
 function buildHttpSyncMessages(message: unknown): unknown[] {
   const msg = message as { type?: unknown; boardId?: unknown } | null
   const replayedSwitchBoardMessage = parseCachedMessage(latestSwitchBoardMessage)
   const replayedOpenCardMessage = parseCachedMessage(latestOpenCardMessage)
   const messages: unknown[] = []
 
-  // When the primary message is openCard, skip the switchBoard replay.
-  // Instead embed the board context directly on the openCard message so the
-  // handler can resolve the card without a full loadCards + broadcast(init)
-  // round-trip that switchBoard triggers.  This eliminates a wasted D1 scan
-  // on every card open.
-  if (msg?.type === 'openCard' && replayedSwitchBoardMessage && !msg.boardId) {
+  const msgType = typeof msg?.type === 'string' ? msg.type : ''
+  const isCardScoped = msgType === 'openCard' || CARD_SCOPED_MUTATION_TYPES.has(msgType)
+
+  // Card-scoped messages (openCard, save, comment, checklist, etc.) skip
+  // both the switchBoard and openCard replays.  Instead we embed boardId
+  // directly on the message so the server can resolve context without the
+  // heavyweight switchBoard handler (loadCards + broadcast(init)).
+  if (isCardScoped && replayedSwitchBoardMessage && !msg!.boardId) {
     const boardId = replayedSwitchBoardMessage.boardId
     if (typeof boardId === 'string') {
       ;(msg as Record<string, unknown>).boardId = boardId
     }
-  } else if (replayedSwitchBoardMessage && msg?.type !== 'switchBoard') {
+  } else if (replayedSwitchBoardMessage && msgType !== 'switchBoard') {
     messages.push(replayedSwitchBoardMessage)
   }
 
   if (
     replayedOpenCardMessage
-    && msg?.type !== 'openCard'
-    && msg?.type !== 'switchBoard'
-    && msg?.type !== 'createBoard'
+    && !isCardScoped
+    && msgType !== 'switchBoard'
+    && msgType !== 'createBoard'
   ) {
     messages.push(replayedOpenCardMessage)
   }
@@ -289,9 +311,17 @@ function connect() {
         return
       }
       if (data.type === 'syncRequired' && syncTransportMode === 'http-sync-websocket-notify') {
-        void syncCurrentStateOverHttp().catch((err) => {
-          console.error('Standalone HTTP resync failed:', err)
-        })
+        // Debounce: bulk operations (e.g. cleanupColumn, purgeDeletedCards)
+        // fire one syncRequired per card; coalesce into a single HTTP sync.
+        if (syncRequiredDebounceTimer !== null) {
+          window.clearTimeout(syncRequiredDebounceTimer)
+        }
+        syncRequiredDebounceTimer = window.setTimeout(() => {
+          syncRequiredDebounceTimer = null
+          void syncCurrentStateOverHttp().catch((err) => {
+            console.error('Standalone HTTP resync failed:', err)
+          })
+        }, SYNC_REQUIRED_DEBOUNCE_MS)
         return
       }
       window.postMessage(data, '*')

@@ -165,6 +165,8 @@ function App(): React.JSX.Element {
     canUpdateMetadata?: boolean
   } | null>(null)
   const editingCardIdRef = useRef<string | null>(null)
+  const [cardLoadingId, setCardLoadingId] = useState<string | null>(null)
+  const cardLoadingIdRef = useRef<string | null>(null)
 
   // Board logs panel state
   const [boardLogsOpen, setBoardLogsOpen] = useState(false)
@@ -209,10 +211,18 @@ function App(): React.JSX.Element {
       if (!nextCard) return prev
 
       const nextFrontmatter = buildCardFrontmatter(nextCard)
-      const nextComments = nextCard.comments || []
+      // Comments are not shipped on the board-level payload (init /
+      // cardsUpdated strip them to keep payloads small); the authoritative
+      // source for the open editor is the per-card `cardContent` message.
+      // Preserve whatever we already have on `prev` unless `nextCard`
+      // actually provides a non-empty comments array.
+      const nextComments = nextCard.comments && nextCard.comments.length > 0
+        ? nextCard.comments
+        : prev.comments
       const contentChanged = prev.content !== nextCard.content
       const frontmatterChanged = JSON.stringify(prev.frontmatter) !== JSON.stringify(nextFrontmatter)
-      const commentsChanged = JSON.stringify(prev.comments) !== JSON.stringify(nextComments)
+      const commentsChanged = nextComments !== prev.comments
+        && JSON.stringify(prev.comments) !== JSON.stringify(nextComments)
 
       if (!contentChanged && !frontmatterChanged && !commentsChanged) {
         return prev
@@ -517,6 +527,8 @@ function App(): React.JSX.Element {
         case 'cardContent': {
           const { cardSettings } = useStore.getState()
           if (cardSettings.markdownEditorMode) break
+          // Discard stale responses when the user has already opened a different card
+          if (cardLoadingIdRef.current !== null && message.cardId !== cardLoadingIdRef.current) break
           setActiveCardId(message.cardId)
           contentVersionRef.current += 1
           setEditingCard(prev => ({
@@ -529,6 +541,10 @@ function App(): React.JSX.Element {
             contentVersion: contentVersionRef.current,
             canUpdateMetadata: message.canUpdateMetadata !== false,
           }))
+          if (cardLoadingIdRef.current === message.cardId) {
+            cardLoadingIdRef.current = null
+            setCardLoadingId(null)
+          }
           break
         }
         case 'actionResult': {
@@ -668,6 +684,8 @@ function App(): React.JSX.Element {
       })
     }
     // Request fresh card content from backend (updates logs, comments, etc.)
+    cardLoadingIdRef.current = card.id
+    setCardLoadingId(card.id)
     vscode.postMessage({
       type: 'openCard',
       cardId: card.id
@@ -699,6 +717,8 @@ function App(): React.JSX.Element {
   const handleCloseEditor = (): void => {
     setEditingCard(null)
     setActiveCardId(null)
+    cardLoadingIdRef.current = null
+    setCardLoadingId(null)
     vscode.postMessage({ type: 'closeCard' })
   }
 
@@ -1209,6 +1229,7 @@ function App(): React.JSX.Element {
                     frontmatter={editingCard.frontmatter}
                     comments={editingCard.comments}
                     contentVersion={editingCard.contentVersion}
+                    isLoading={cardLoadingId !== null && cardLoadingId === editingCard.id}
                     onSave={handleSaveCard}
                     onClose={handleCloseEditor}
                     onDelete={handleDeleteFromEditor}

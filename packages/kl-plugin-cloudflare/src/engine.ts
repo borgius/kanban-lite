@@ -381,6 +381,59 @@ export function createCardStateProvider(context: CardStateModuleContext): CardSt
         ? record.value as CardStateCursor
         : null
     },
+    async batchGetCardStates(input): Promise<CardStateRecord[]> {
+      if (input.cardIds.length === 0 || input.domains.length === 0) return []
+      const database = await ensureReady()
+      // D1 caps bound parameters per prepared statement (~100 on free,
+      // documented safe ceiling well under 1000). Chunk card ids so one
+      // call covers all 644+ cards on large boards without hitting the
+      // "too many SQL variables" D1 error.
+      const domainCount = input.domains.length
+      // Reserve 2 slots for actor_id + board_id, so max cards per chunk =
+      // floor((LIMIT - 2 - domainCount) / 1). Use a conservative cap.
+      const BIND_LIMIT = 60
+      const perChunk = Math.max(1, BIND_LIMIT - 2 - domainCount)
+      const records: CardStateRecord[] = []
+      const domainPlaceholders = input.domains.map(() => '?').join(',')
+
+      const chunks: string[][] = []
+      for (let i = 0; i < input.cardIds.length; i += perChunk) {
+        chunks.push(input.cardIds.slice(i, i + perChunk) as string[])
+      }
+
+      // Run all chunk queries concurrently. D1 can serialize under
+      // contention, but firing them together lets the platform pipeline
+      // where possible and is still much faster than N per-card reads.
+      const results = await Promise.all(chunks.map(async (chunk) => {
+        const cardPlaceholders = chunk.map(() => '?').join(',')
+        const stmt = database
+          .prepare(`
+            SELECT card_id, domain, value_json, updated_at
+            FROM card_state
+            WHERE actor_id = ? AND board_id = ?
+              AND card_id IN (${cardPlaceholders})
+              AND domain IN (${domainPlaceholders})
+          `)
+          .bind(input.actorId, input.boardId, ...chunk, ...input.domains)
+        return stmt.all<{ card_id: string; domain: string; value_json: string; updated_at: string }>()
+      }))
+
+      for (const chunkResult of results) {
+        for (const row of chunkResult.results ?? []) {
+          const value = parseCardStateValue(row.value_json)
+          if (!value) continue
+          records.push({
+            actorId: input.actorId,
+            boardId: input.boardId,
+            cardId: row.card_id,
+            domain: row.domain,
+            value,
+            updatedAt: row.updated_at,
+          })
+        }
+      }
+      return records
+    },
     async markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>> {
       const updatedAt = getUpdatedAt(input.cursor.updatedAt)
       const value: CardStateCursor = {

@@ -25,6 +25,7 @@ let allowReconnect = true
 let httpFallbackActive = false
 let httpFallbackActivation: Promise<boolean> | null = null
 let syncTransportMode: SyncTransportMode = 'websocket'
+let openCardAbortController: AbortController | null = null
 
 function getDisconnectedSubmitErrorMessage(): string {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -73,12 +74,22 @@ function parseCachedMessage(json: string | null): Record<string, unknown> | null
 }
 
 function buildHttpSyncMessages(message: unknown): unknown[] {
-  const msg = message as { type?: unknown } | null
+  const msg = message as { type?: unknown; boardId?: unknown } | null
   const replayedSwitchBoardMessage = parseCachedMessage(latestSwitchBoardMessage)
   const replayedOpenCardMessage = parseCachedMessage(latestOpenCardMessage)
   const messages: unknown[] = []
 
-  if (replayedSwitchBoardMessage && msg?.type !== 'switchBoard') {
+  // When the primary message is openCard, skip the switchBoard replay.
+  // Instead embed the board context directly on the openCard message so the
+  // handler can resolve the card without a full loadCards + broadcast(init)
+  // round-trip that switchBoard triggers.  This eliminates a wasted D1 scan
+  // on every card open.
+  if (msg?.type === 'openCard' && replayedSwitchBoardMessage && !msg.boardId) {
+    const boardId = replayedSwitchBoardMessage.boardId
+    if (typeof boardId === 'string') {
+      ;(msg as Record<string, unknown>).boardId = boardId
+    }
+  } else if (replayedSwitchBoardMessage && msg?.type !== 'switchBoard') {
     messages.push(replayedSwitchBoardMessage)
   }
 
@@ -95,11 +106,12 @@ function buildHttpSyncMessages(message: unknown): unknown[] {
   return messages
 }
 
-async function syncMessagesOverHttp(messages: unknown[]): Promise<void> {
+async function syncMessagesOverHttp(messages: unknown[], signal?: AbortSignal): Promise<void> {
   const response = await fetch(HTTP_SYNC_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages }),
+    signal,
   })
 
   const payload = await response.json() as {
@@ -535,9 +547,22 @@ function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, c
 
     if (msg.type === 'switchBoard' || msg.type === 'openCard' || msg.type === 'closeCard') {
       if (shouldUseHttpSyncTransport()) {
-        void syncMessagesOverHttp(syncMessages).catch((err) => {
-          console.error('Standalone HTTP fallback failed:', err)
-        })
+        if (msg.type === 'openCard') {
+          // Cancel any in-flight openCard request before starting a new one
+          openCardAbortController?.abort()
+          openCardAbortController = new AbortController()
+          const { signal } = openCardAbortController
+          void syncMessagesOverHttp(syncMessages, signal).then(() => {
+            if (openCardAbortController?.signal === signal) openCardAbortController = null
+          }).catch((err: unknown) => {
+            if (err instanceof DOMException && err.name === 'AbortError') return
+            console.error('Standalone HTTP fallback failed:', err)
+          })
+        } else {
+          void syncMessagesOverHttp(syncMessages).catch((err) => {
+            console.error('Standalone HTTP fallback failed:', err)
+          })
+        }
         return
       }
       if (isSocketOpen()) {

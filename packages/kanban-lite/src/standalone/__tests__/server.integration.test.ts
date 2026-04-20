@@ -491,6 +491,16 @@ describe('Standalone broadcastService visibility scoping', () => {
         },
         open: null,
       })),
+      getCardStateReadModelForCards: vi.fn(async (cards: ReadonlyArray<{ id: string }>) => {
+        const map = new Map<string, unknown>()
+        for (const c of cards) {
+          map.set(c.id, {
+            unread: { actorId: activeAuthToken ?? 'anonymous', cardId: c.id, unread: false },
+            open: null,
+          })
+        }
+        return map
+      }),
       runWithAuth: vi.fn(async (auth: { token?: string }, fn: () => Promise<unknown>) => {
         const previous = activeAuthToken
         activeAuthToken = auth.token
@@ -589,6 +599,16 @@ describe('Standalone broadcastService visibility scoping', () => {
         },
         open: null,
       })),
+      getCardStateReadModelForCards: vi.fn(async (cards: ReadonlyArray<{ id: string }>) => {
+        const map = new Map<string, unknown>()
+        for (const c of cards) {
+          map.set(c.id, {
+            unread: { actorId: activeAuthToken ?? 'anonymous', cardId: c.id, unread: false },
+            open: null,
+          })
+        }
+        return map
+      }),
       capabilities: {
         authIdentity: {
           resolveIdentity: vi.fn(async (auth: { token?: string }) => {
@@ -1095,15 +1115,18 @@ describe('Standalone Server Integration', () => {
           const bobUpdate = await bobUpdatePromise
           const aliceUpdatedCard = (aliceUpdate.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
           const bobUpdatedCard = (bobUpdate.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+          // Board-level broadcasts defer per-card activity log reads to avoid
+          // fetching every card's attachment-backed log during list/init. The
+          // accurate unread value lands when the card is opened (see below).
           expect(aliceUpdatedCard?.cardState?.unread).toMatchObject({
             actorId: 'user-alice',
             cardId,
-            unread: true,
+            unread: false,
           })
           expect(bobUpdatedCard?.cardState?.unread).toMatchObject({
             actorId: 'user-bob',
             cardId,
-            unread: true,
+            unread: false,
           })
 
           const openResponse = await sendAndReceive(wsAlice, { type: 'openCard', cardId }, 'cardContent')
@@ -3478,11 +3501,13 @@ describe('Standalone Server Integration', () => {
 
       const updatedInit = await updatePromise
       const updatedCard = (updatedInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+      // Board-level broadcasts defer per-card activity log reads; unread
+      // only flips to true on explicit open/detail fetches.
       expect(updatedCard?.cardState?.unread).toMatchObject({
         actorId: defaultActorId,
         boardId: 'default',
         cardId,
-        unread: true,
+        unread: false,
       })
 
       const openResponse = await sendAndReceive(ws, { type: 'openCard', cardId }, 'cardContent')
@@ -6210,10 +6235,12 @@ describe('Standalone Server Integration', () => {
 
         const updatedInit = await updatePromise
         const updatedCard = (updatedInit.cards as StandaloneInitCardPayload[]).find((card) => card.id === cardId)
+        // Board-level broadcasts defer per-card activity log reads; unread
+        // only flips to true on explicit open/detail fetches.
         expect(updatedCard?.cardState?.unread).toMatchObject({
           actorId: 'alice',
           cardId,
-          unread: true,
+          unread: false,
         })
 
         const openResponse = await sendAndReceive(localWs, { type: 'openCard', cardId }, 'cardContent')

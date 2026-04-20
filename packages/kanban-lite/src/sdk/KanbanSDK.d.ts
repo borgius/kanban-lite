@@ -527,6 +527,19 @@ export declare class KanbanSDK {
         open: CardStateRecord<CardOpenStateValue> | null;
     }>;
     /**
+     * Batch variant of {@link getCardStateReadModelForCard} that returns read
+     * models for every supplied card in a single pass. Providers with
+     * `batchGetCardStates` support (e.g. Cloudflare D1) collapse per-card
+     * round-trips into one per board.
+     */
+    getCardStateReadModelForCards(
+        cards: readonly Card[],
+        fallbackBoardId?: string,
+    ): Promise<Map<string, {
+        unread: CardUnreadSummary;
+        open: CardStateRecord<CardOpenStateValue> | null;
+    }>>;
+    /**
       * Derives unread state for the current actor from persisted activity logs without mutating card state.
       *
       * Unread derivation is SDK-owned for both the built-in file-backed backend and

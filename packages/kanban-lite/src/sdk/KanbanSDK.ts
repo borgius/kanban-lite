@@ -1593,6 +1593,101 @@ export class KanbanSDK {
   }
 
   /**
+   * Batch variant of {@link getCardStateReadModelForCard} that returns read
+   * models for every supplied card in a single pass.
+   *
+   * Performance characteristics:
+   * - Resolves the actor identity and capabilities exactly once for the batch.
+   * - When the configured `card.state` provider implements `batchGetCardStates`,
+   *   all unread-cursor and open-domain rows are fetched in a single
+   *   round-trip per board, reducing `2 × N` per-card queries to `1` per board.
+   * - Falls back to parallel per-card `getUnreadCursor` + `getCardState` calls
+   *   when the provider does not implement the batch hook.
+   * - Log reads stay per-card and parallel because attachment storage is the
+   *   authoritative activity source and remains outside the card-state plugin.
+   *
+   * Use this during board init, broadcast, and webview decoration to avoid
+   * serialized per-card round-trips against high-latency backends (D1, remote
+   * SQL, managed Redis).
+   */
+  async getCardStateReadModelForCards(
+    cards: readonly Card[],
+    fallbackBoardId?: string,
+  ): Promise<Map<string, { unread: CardUnreadSummary; open: CardStateRecord<CardOpenStateValue> | null }>> {
+    const results = new Map<string, { unread: CardUnreadSummary; open: CardStateRecord<CardOpenStateValue> | null }>()
+    if (cards.length === 0) return results
+
+    const capabilities = this._requireCardStateCapabilities()
+    const actorId = await this._resolveCardStateActorId()
+
+    // Group cards by resolved boardId so one batch query covers a whole board.
+    const cardsByBoard = new Map<string, Card[]>()
+    for (const card of cards) {
+      const boardId = card.boardId || this._resolveBoardId(fallbackBoardId)
+      const group = cardsByBoard.get(boardId)
+      if (group) group.push(card)
+      else cardsByBoard.set(boardId, [card])
+    }
+
+    const batchSupported = typeof capabilities.cardState.batchGetCardStates === 'function'
+    type StateMap = Map<string, { unread: CardStateCursor | null; open: CardStateRecord<CardOpenStateValue> | null }>
+
+    const prefetchStates = async (boardId: string, boardCards: Card[]): Promise<StateMap> => {
+      const stateMap: StateMap = new Map()
+      for (const c of boardCards) stateMap.set(c.id, { unread: null, open: null })
+      if (!batchSupported) return stateMap
+      const records = await capabilities.cardState.batchGetCardStates!({
+        actorId,
+        boardId,
+        cardIds: boardCards.map(c => c.id),
+        domains: [CARD_STATE_UNREAD_DOMAIN, CARD_STATE_OPEN_DOMAIN],
+      })
+      for (const record of records) {
+        const bucket = stateMap.get(record.cardId)
+        if (!bucket) continue
+        if (record.domain === CARD_STATE_UNREAD_DOMAIN) {
+          if (_isPlainObject(record.value) && typeof (record.value as { cursor?: unknown }).cursor === 'string') {
+            bucket.unread = record.value as CardStateCursor
+          }
+        } else if (record.domain === CARD_STATE_OPEN_DOMAIN) {
+          bucket.open = record as CardStateRecord<CardOpenStateValue>
+        }
+      }
+      return stateMap
+    }
+
+    await Promise.all(Array.from(cardsByBoard.entries()).map(async ([boardId, boardCards]) => {
+      const stateMap = await prefetchStates(boardId, boardCards)
+      await Promise.all(boardCards.map(async (card) => {
+        const target = this._resolveCardStateTargetDirect(card, fallbackBoardId)
+        const prefetched = stateMap.get(card.id) ?? { unread: null, open: null }
+        // NOTE: we intentionally do NOT read per-card activity logs (which
+        // live in attachment storage, e.g. R2 on Cloudflare) during the
+        // batch/board-level decoration pass. On large boards that means
+        // hundreds of attachment fetches just to compute an "unread" dot
+        // that only matters once a card is opened. We therefore defer
+        // the latest-activity read until the card is explicitly opened
+        // via getCardStateReadModelForCard / sendCardContent. The unread
+        // summary here reports `unread: false` (no known activity), and
+        // the accurate value lands on open.
+        const [unreadCursor, open] = await Promise.all([
+          batchSupported
+            ? Promise.resolve(prefetched.unread)
+            : capabilities.cardState.getUnreadCursor({ actorId, boardId: target.boardId, cardId: target.cardId }),
+          batchSupported
+            ? Promise.resolve(prefetched.open)
+            : capabilities.cardState.getCardState({ actorId, boardId: target.boardId, cardId: target.cardId, domain: CARD_STATE_OPEN_DOMAIN }) as Promise<CardStateRecord<CardOpenStateValue> | null>,
+        ])
+
+        const unread = this._createUnreadSummary(actorId, target, null, unreadCursor)
+        results.set(card.id, { unread, open })
+      }))
+    }))
+
+    return results
+  }
+
+  /**
     * Derives unread state for the current actor from persisted activity logs without mutating card state.
     *
     * Unread derivation is SDK-owned for both the built-in file-backed backend and

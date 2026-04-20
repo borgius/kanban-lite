@@ -55,6 +55,24 @@ function parseListEnv(value) {
     .filter(Boolean)
 }
 
+/**
+ * Normalize a worker name into a safe slug for resource defaults (D1, R2, Queue).
+ * Cloudflare worker names already use [a-z0-9-], so this is mostly a safety net
+ * for trimmed input or unexpected casing.
+ * @param {unknown} name
+ * @returns {string}
+ */
+function deriveResourceSlug(name) {
+  if (typeof name !== 'string') return ''
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+  return slug
+}
+
 function inferCustomDomainZoneName(customDomains) {
   const firstDomain = Array.isArray(customDomains) ? customDomains.find((domain) => typeof domain === 'string' && domain.trim()) : ''
   if (!firstDomain) {
@@ -358,23 +376,28 @@ export async function runDeployInteractive(options) {
     const needsR2 = cfCaps.includes('attachment.storage')
     const needsQueue = cfCaps.includes('callback.runtime')
 
+    // Derive resource defaults from the worker name so two workers (e.g.
+    // `kanban-lite` and `tsf-kanban-lite`) don't silently share the same D1
+    // database, R2 bucket, or Queue when the user accepts defaults.
+    const resourceSlug = deriveResourceSlug(result.name) || 'kanban-lite'
+
     if (needsD1 && Object.keys(result.d1Bindings).length === 0) {
       const envVar = await ask('D1 binding name (Worker env var)', 'KANBAN_DB')
-      const dbName = await ask('D1 database name', 'kanban-lite-db')
+      const dbName = await ask('D1 database name', `${resourceSlug}-db`)
       result.d1Bindings[envVar] = dbName
       result.configStorageBindingHandles.database ??= envVar
     }
 
     if (needsR2 && Object.keys(result.r2Bindings).length === 0) {
       const envVar = await ask('R2 binding name (Worker env var)', 'KANBAN_BUCKET')
-      const bucketName = await ask('R2 bucket name', 'kanban-lite-attachments')
+      const bucketName = await ask('R2 bucket name', `${resourceSlug}-attachments`)
       result.r2Bindings[envVar] = bucketName
       result.configStorageBindingHandles.attachments ??= envVar
     }
 
     if (needsQueue) {
       if (!result.callbackQueue) {
-        result.callbackQueue = await ask('Callback queue name', 'kanban-lite-callbacks')
+        result.callbackQueue = await ask('Callback queue name', `${resourceSlug}-callbacks`)
       }
       if (!result.configStorageBindingHandles.callbacks) {
         const envVar = await ask('Queue binding name (Worker env var)', 'KANBAN_QUEUE')

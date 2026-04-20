@@ -57,6 +57,23 @@ function createSdkStub() {
       },
       open: null,
     })),
+    getCardStateReadModelForCards: vi.fn(async (cards: ReadonlyArray<{ id: string; boardId?: string }>, boardId?: string) => {
+      const out = new Map<string, { unread: { actorId: string; cardId: string; boardId: string; latestActivity: { cursor: string; updatedAt: string }; readThrough: null; unread: boolean }; open: null }>()
+      for (const card of cards) {
+        out.set(card.id, {
+          unread: {
+            actorId: 'default-user',
+            cardId: card.id,
+            boardId: card.boardId ?? boardId ?? 'default',
+            latestActivity: { cursor: `card:${card.boardId ?? boardId ?? 'default'}:${card.id}:1`, updatedAt: '2026-03-24T00:00:00.000Z' },
+            readThrough: null,
+            unread: true,
+          },
+          open: null,
+        })
+      }
+      return out as unknown as Map<string, { unread: import('../sdk/types').CardUnreadSummary; open: null }>
+    }),
     markCardOpened: vi.fn(async (cardId: string, boardId?: string) => ({
       actorId: 'default-user',
       cardId,

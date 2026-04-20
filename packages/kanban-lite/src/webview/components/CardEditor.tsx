@@ -1,5 +1,5 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react'
-import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, HelpCircle, Undo2, FileUp, PanelRight, PanelLeft, PanelTop, PanelBottom } from 'lucide-react'
+import { X, User, ChevronDown, Wand2, Tag, Plus, Check, CircleDot, Signal, Calendar, Trash2, Paperclip, Clock, Download, ExternalLink, Filter, HelpCircle, Undo2, FileUp, PanelRight, PanelLeft, PanelTop, PanelBottom, Loader2 } from 'lucide-react'
 import type { Comment, CardFrontmatter, Priority, CardStatus, LogEntry, SubmitFormTransportResult } from '../../shared/types'
 import { DELETED_STATUS_ID, getDisplayTitleFromContent } from '../../shared/types'
 import { cn, formatAbsoluteDate, formatRelativeCompact, formatVerboseRelative } from '../lib/utils'
@@ -47,6 +47,7 @@ interface CardEditorProps {
   logsFilter?: import('../../shared/types').CardDisplaySettings['logsFilter']
   onLogsFilterChange?: (filter: NonNullable<import('../../shared/types').CardDisplaySettings['logsFilter']>) => void
   canUpdateMetadata?: boolean
+  isLoading?: boolean
 }
 
 const priorityLabels: Record<Priority, string> = {
@@ -869,7 +870,7 @@ function LabelEditor({ labels, onChange }: { labels: string[]; onChange: (labels
   )
 }
 
-export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange, canUpdateMetadata = true }: CardEditorProps) {
+export function CardEditor({ cardId, content, frontmatter, comments, contentVersion, onSave, onClose, onDelete, onPermanentDelete, onRestore, onOpenFile, onOpenMetadataFile, onDownloadCard, onStartWithAI, onAddAttachment, onOpenAttachment, onRemoveAttachment, onAddComment, onUpdateComment, onDeleteComment, onTransferToBoard, onAddChecklistItem, onEditChecklistItem, onDeleteChecklistItem, onCheckChecklistItem, onUncheckChecklistItem, onTriggerAction, logs, onClearLogs, logsFilter, onLogsFilterChange, canUpdateMetadata = true, isLoading = false }: CardEditorProps) {
   const { cardSettings, boards, currentBoard, setCardSettings } = useStore()
   const pinnedMetadataKeys = useMemo(() => {
     const boardMetaDefs = boards.find(b => b.id === currentBoard)?.metadata
@@ -1001,7 +1002,10 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
                 <span className="card-editor-hero-separator" aria-hidden="true" />
                 <span title={formatVerboseRelative(currentFrontmatter.modified)}>{formatRelativeCompact(currentFrontmatter.modified)}</span>
               </div>
-              <h1 className="card-editor-title">{cardTitle}</h1>
+              <h1 className="card-editor-title">
+                {cardTitle}
+                {isLoading && <Loader2 size={13} className="inline-block ml-2 animate-spin opacity-50 align-middle" />}
+              </h1>
             </div>
             <div className="card-editor-hero-actions">
               {currentFrontmatter.actions && (Array.isArray(currentFrontmatter.actions) ? currentFrontmatter.actions.length > 0 : Object.keys(currentFrontmatter.actions).length > 0) && onTriggerAction && (

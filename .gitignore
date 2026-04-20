@@ -26,3 +26,4 @@ graphify-out/
 **/graphify-out/
 **/graphify-out/cache
 .wrangler/
+.hypergrep/

@@ -99,9 +99,19 @@ export async function dispatchCardMessage(
 
     case 'openCard': {
       const cardId = msg.cardId as string
-      const card = await runWithScopedAuth(() => ctx.sdk.getCard(cardId, ctx.currentBoardId))
+      // Accept an optional boardId from the message so the HTTP sync shim
+      // can embed the board context directly without a separate switchBoard
+      // replay (which would trigger a full loadCards + broadcast(init)).
+      const requestBoardId = typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId
+      // Ensure ctx.currentBoardId is set so downstream helpers
+      // (sendCardStates, sendCardContent) resolve the correct board even
+      // when no separate switchBoard message was processed.
+      if (requestBoardId && !ctx.currentBoardId) {
+        ctx.currentBoardId = requestBoardId
+      }
+      const card = await runWithScopedAuth(() => ctx.sdk.getCard(cardId, requestBoardId))
       if (!card) break
-      const boardId = card.boardId ?? ctx.currentBoardId
+      const boardId = card.boardId ?? requestBoardId
 
       // Clean up any temp file from a previously-opened card
       if (ctx.tempFileCardId && ctx.tempFileCardId !== cardId) {

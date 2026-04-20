@@ -2,7 +2,7 @@ import type { Card, CardStateErrorTransport, CardStateReadModelTransport, CardSt
 import type { KanbanSDK } from '../sdk/KanbanSDK'
 import { CardStateError } from '../sdk/types'
 
-type CardStateAwareSDK = Pick<KanbanSDK, 'getCardStateStatus' | 'getUnreadSummary' | 'getCardState' | 'markCardOpened' | 'setActiveCard' | 'getCardStateReadModelForCard'>
+type CardStateAwareSDK = Pick<KanbanSDK, 'getCardStateStatus' | 'getUnreadSummary' | 'getCardState' | 'markCardOpened' | 'setActiveCard' | 'getCardStateReadModelForCard' | 'getCardStateReadModelForCards'>
 export type CardStateAuthRunner = <T>(fn: () => Promise<T>) => Promise<T>
 
 function toCardStateStatus(status: ReturnType<CardStateAwareSDK['getCardStateStatus']>): CardStateStatusTransport {
@@ -70,10 +70,59 @@ export async function decorateCardsForWebview(
   cards: Card[],
   fallbackBoardId?: string,
 ): Promise<Card[]> {
-  return Promise.all(cards.map(async (card) => ({
-    ...card,
-    cardState: await buildCardStateReadModelForCard(sdk, runWithAuth, card, fallbackBoardId),
-  })))
+  if (cards.length === 0) return []
+
+  const status = toCardStateStatus(sdk.getCardStateStatus())
+
+  // Strip comments from the board-level payload. Comments are only needed
+  // when a card is opened, and the per-card `sendCardContent` / REST detail
+  // paths re-fetch the full card via `sdk.getCard(...)`. Stripping here
+  // avoids shipping every card's comment thread with every board init /
+  // cardsUpdated broadcast, which can dominate payload size on active
+  // boards (and costs us R2/attachment round-trips on remote backends).
+  const stripComments = (card: Card): Card => card.comments && card.comments.length > 0
+    ? { ...card, comments: [] }
+    : card
+
+  // Batch-fetch every card's read model in a single pass. The SDK coalesces
+  // card-state provider I/O into one round-trip per board when the provider
+  // supports it (e.g. Cloudflare D1), reducing `2 × N` per-card queries to
+  // `1` per board. Fall back to per-card decoration when the batch call
+  // fails with a card-state error so we still render sensible UI state.
+  let readModels: Awaited<ReturnType<CardStateAwareSDK['getCardStateReadModelForCards']>> | null = null
+  let batchError: CardStateErrorTransport | null = null
+  try {
+    readModels = await runWithAuth(() => sdk.getCardStateReadModelForCards(cards, fallbackBoardId))
+  } catch (error) {
+    batchError = toCardStateError(error)
+    if (!batchError) throw error
+  }
+
+  if (readModels) {
+    return cards.map((card) => {
+      const entry = readModels!.get(card.id)
+      const stripped = stripComments(card)
+      return {
+        ...stripped,
+        cardState: entry
+          ? { unread: entry.unread, open: entry.open, status }
+          : { unread: null, open: null, status },
+      }
+    })
+  }
+
+  const fallbackStatus: CardStateStatusTransport = batchError
+    ? { ...status, availability: batchError.availability, errorCode: batchError.code }
+    : status
+  return cards.map((card) => ({
+    ...stripComments(card),
+    cardState: {
+      unread: null,
+      open: null,
+      status: fallbackStatus,
+      ...(batchError ? { error: batchError } : {}),
+    },
+  }))
 }
 
 export async function performExplicitCardOpen(

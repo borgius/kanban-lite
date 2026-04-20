@@ -157,6 +157,15 @@ export interface CardStateUnreadKey {
     boardId: string;
     cardId: string;
 }
+/**
+ * Batch lookup key for reading many card-state rows in a single round-trip.
+ */
+export interface CardStateBatchKey {
+    actorId: string;
+    boardId: string;
+    cardIds: readonly string[];
+    domains: readonly string[];
+}
 /** Mutation input for marking unread state through a cursor. */
 export interface CardStateReadThroughInput extends CardStateUnreadKey {
     cursor: CardStateCursor;
@@ -183,6 +192,12 @@ export interface CardStateProvider {
     setCardState(input: CardStateWriteInput): Promise<CardStateRecord>;
     getUnreadCursor(input: CardStateUnreadKey): Promise<CardStateCursor | null>;
     markUnreadReadThrough(input: CardStateReadThroughInput): Promise<CardStateRecord<CardStateCursor>>;
+    /**
+     * Optional batch read for all card-state rows matching a set of card ids
+     * and domains. When implemented, the SDK uses this to coalesce per-card
+     * round-trips into one per board during webview decoration.
+     */
+    batchGetCardStates?(input: CardStateBatchKey): Promise<CardStateRecord[]>;
 }
 /**
  * Principal entry in the runtime-owned RBAC principal registry.

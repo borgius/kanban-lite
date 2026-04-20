@@ -31,15 +31,38 @@ function decodeSearchTokenValue(value: string): string {
   return value.replace(/\\([\\"'])/g, '$1')
 }
 
+// Bounded LRU cache for parseSearchQuery. The function is called per-card
+// inside hot filter loops (listCards + getFilteredCardsByStatus), and the
+// input domain is tiny — one string per user keystroke. Caching eliminates
+// redundant regex work without unbounded memory growth.
+const PARSE_SEARCH_QUERY_CACHE_MAX = 32
+const parseSearchQueryCache = new Map<string, ParsedSearchQuery>()
+
+function cloneParsedSearchQuery(parsed: ParsedSearchQuery): ParsedSearchQuery {
+  return { metaFilter: { ...parsed.metaFilter }, plainText: parsed.plainText }
+}
+
 /**
  * Parses `meta.field: value` tokens out of a free-text query string.
  * The returned metadata filter uses dot-notation paths and preserves the
  * existing token syntax used by the webview search bar.
  *
+ * Results are cached in a small LRU keyed by the raw query string. Each call
+ * returns a fresh clone so callers can safely mutate the returned metadata
+ * filter without poisoning the cache.
+ *
  * @param query - Raw search query containing optional `meta.field: value` tokens.
  * @returns Extracted metadata filters plus the remaining plain-text query.
  */
 export function parseSearchQuery(query: string): ParsedSearchQuery {
+  const cached = parseSearchQueryCache.get(query)
+  if (cached) {
+    // Refresh LRU recency
+    parseSearchQueryCache.delete(query)
+    parseSearchQueryCache.set(query, cached)
+    return cloneParsedSearchQuery(cached)
+  }
+
   const metaFilter: Record<string, string> = {}
   const plainText = query
     .replace(/meta\.([a-zA-Z0-9_.]+):\s*(?:"((?:\\.|[^"])*)"|'((?:\\.|[^'])*)'|(\S+))/g, (_full, key, doubleQuoted, singleQuoted, bareValue) => {
@@ -49,7 +72,14 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
     })
     .replace(/\s{2,}/g, ' ')
     .trim()
-  return { metaFilter, plainText }
+  const parsed: ParsedSearchQuery = { metaFilter, plainText }
+
+  if (parseSearchQueryCache.size >= PARSE_SEARCH_QUERY_CACHE_MAX) {
+    const firstKey = parseSearchQueryCache.keys().next().value
+    if (firstKey !== undefined) parseSearchQueryCache.delete(firstKey)
+  }
+  parseSearchQueryCache.set(query, parsed)
+  return cloneParsedSearchQuery(parsed)
 }
 
 function collectMetadataValues(value: unknown): string[] {
@@ -215,13 +245,53 @@ export function matchesCardSearch(
   metaFilter: Record<string, string> = {},
   fuzzy = false
 ): boolean {
-  const { metaFilter: parsedMetaFilter, plainText } = parseSearchQuery(searchQuery || '')
-  const combinedMetaFilter = { ...metaFilter, ...parsedMetaFilter }
+  return createCardSearchPredicate({ searchQuery, metaFilter, fuzzy })(card)
+}
 
-  if (!matchesMetaFilter(card.metadata, combinedMetaFilter, fuzzy)) return false
-  if (!plainText) return true
+export type CardSearchable = Pick<Card, 'content' | 'id' | 'assignee' | 'labels' | 'metadata'>
 
-  return fuzzy
-    ? matchesFuzzyTextSearch(card, plainText)
-    : matchesExactTextSearch(card, plainText)
+/**
+ * Builds a reusable predicate for card search/filter operations.
+ *
+ * The `searchQuery` is parsed and merged with `metaFilter` exactly once, and
+ * the returned predicate is then called per-card. This avoids re-parsing the
+ * query string N times inside filter loops (e.g. `listCards` in the SDK and
+ * `getFilteredCardsByStatus` in the webview store), which dominates CPU cost
+ * on large boards.
+ *
+ * A no-op predicate that always returns `true` is returned when no filtering
+ * is requested, so callers can use the predicate unconditionally without
+ * losing the fast path.
+ */
+export function createCardSearchPredicate(
+  options: {
+    searchQuery?: string
+    metaFilter?: Record<string, string>
+    fuzzy?: boolean
+  } = {}
+): (card: CardSearchable) => boolean {
+  const { searchQuery, metaFilter = {}, fuzzy = false } = options
+  const hasQuery = typeof searchQuery === 'string' && searchQuery.length > 0
+  const hasMetaFilter = Object.keys(metaFilter).length > 0
+  if (!hasQuery && !hasMetaFilter) {
+    return () => true
+  }
+
+  const { metaFilter: parsedMetaFilter, plainText } = hasQuery
+    ? parseSearchQuery(searchQuery as string)
+    : { metaFilter: {}, plainText: '' }
+  const combinedMetaFilter = hasMetaFilter
+    ? { ...metaFilter, ...parsedMetaFilter }
+    : parsedMetaFilter
+
+  const needsMetaMatch = Object.keys(combinedMetaFilter).length > 0
+  const needsTextMatch = plainText.length > 0
+
+  return (card) => {
+    if (needsMetaMatch && !matchesMetaFilter(card.metadata, combinedMetaFilter, fuzzy)) return false
+    if (!needsTextMatch) return true
+    return fuzzy
+      ? matchesFuzzyTextSearch(card, plainText)
+      : matchesExactTextSearch(card, plainText)
+  }
 }

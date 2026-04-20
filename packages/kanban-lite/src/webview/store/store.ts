@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Card, CardViewMode } from '../../shared/types'
-import { matchesCardSearch, parseSearchQuery } from '../../sdk/metaUtils'
+import { createCardSearchPredicate, parseSearchQuery } from '../../sdk/metaUtils'
 import { normalizeBoardBackgroundSettings } from '../../shared/types'
 import { clampDrawerWidthPercent } from '../drawerResize'
 import type { BoardSubTab, SettingsTab } from '../settingsTabs'
@@ -351,6 +351,12 @@ export const useStore = create<KanbanState>((set, get) => ({
     } = get()
     const sortOrder: SortOrder = columnSorts[status] || 'order'
 
+    // Build the search predicate once per filter pass so `parseSearchQuery`
+    // and fuzzy-match setup don't run per-card on large boards.
+    const searchPredicate = searchQuery
+      ? createCardSearchPredicate({ searchQuery, fuzzy: fuzzySearch })
+      : null
+
     return cards
       .filter((f) => {
         if (f.status !== status) return false
@@ -390,7 +396,7 @@ export const useStore = create<KanbanState>((set, get) => ({
           }
         }
 
-        if (searchQuery && !matchesCardSearch(f, searchQuery, {}, fuzzySearch)) {
+        if (searchPredicate && !searchPredicate(f)) {
           return false
         }
 

@@ -53,7 +53,6 @@ const allInternalPluginPackages = [
   'kl-plugin-auth-visibility',
   'kl-plugin-rbac',
   'kl-plugin-openauth',
-  'kl-plugin-webhook',
   'kl-plugin-callback',
   'kl-plugin-attachment-s3',
   'kl-plugin-storage-mysql',

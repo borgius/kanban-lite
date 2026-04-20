@@ -5,7 +5,7 @@ import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_ST
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../../shared/config'
 import { buildCardInterpolationContext, prepareFormData } from '../../../shared/formDataPreparation'
 import { getCardFilePath } from '../../fileUtils'
-import { matchesCardSearch } from '../../metaUtils'
+import { createCardSearchPredicate } from '../../metaUtils'
 import type { AuthIdentity, AuthVisibilityFilterInput } from '../../plugins'
 import { sanitizeCard } from '../../types'
 import type { AuthContext, CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../../types'
@@ -40,9 +40,15 @@ export async function listCards(
 
   const hasSearch = Boolean(searchQuery && searchQuery.trim().length > 0)
   const hasMetaFilter = Boolean(metaFilter && Object.keys(metaFilter).length > 0)
-  const filtered = hasMetaFilter || hasSearch
-    ? visibleCards.filter(c => matchesCardSearch(c, searchQuery, metaFilter, fuzzy))
-    : visibleCards
+  let filtered: Card[]
+  if (hasMetaFilter || hasSearch) {
+    // Parse `searchQuery` once and reuse the predicate for every card so
+    // large boards don't pay the regex/metadata-merge cost per-card.
+    const predicate = createCardSearchPredicate({ searchQuery, metaFilter, fuzzy })
+    filtered = visibleCards.filter(predicate)
+  } else {
+    filtered = visibleCards
+  }
   if (sort) {
     const [field, dir] = sort.split(':')
     return filtered.sort((a, b) => {

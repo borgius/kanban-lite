@@ -30,9 +30,13 @@ const realStorageByCtx = new WeakMap<StandaloneContext, StorageEngine>()
  */
 export function enableScanCardsCache(ctx: StandaloneContext): void {
   if (ctx._scanCardsCache) return
+  const real = ctx.sdk._storage
+  // Tests (and some runtime hosts) may supply a stripped-down SDK without a
+  // storage engine. Skip the proxy wrap in that case — callers that don't
+  // use `scanCards` don't benefit from caching anyway.
+  if (!real) return
   const cache = new Map<string, Card[]>()
   ctx._scanCardsCache = cache
-  const real = ctx.sdk._storage
   realStorageByCtx.set(ctx, real)
 
   ctx.sdk._storage = new Proxy(real, {
@@ -227,16 +231,27 @@ async function buildClientCardsUpdatedMessage(ctx: StandaloneContext, authContex
 }
 
 async function broadcastPerClient(ctx: StandaloneContext, type: 'init' | 'cardsUpdated'): Promise<void> {
-  for (const client of ctx.wss.clients) {
-    if (client.readyState !== WS_OPEN) continue
-    const authContext = ctx.clientAuthContexts.get(client)
-    // Coalesce repeated `readConfig()` calls inside the per-client build
-    // (getSettings, listColumns, listBoards, getLabels, …) into a single
-    // provider round-trip per client.
-    const payload = await withConfigReadCache(() => type === 'init'
-      ? buildClientInitMessage(ctx, authContext)
-      : buildClientCardsUpdatedMessage(ctx, authContext))
-    client.send(JSON.stringify(payload))
+  // `scanCards` is board-scoped (not auth-scoped), so every client in this
+  // broadcast sees the same raw card set. Install the request-scoped cache
+  // around the whole fanout so large broadcasts hit the storage engine once
+  // instead of once per connected client. Only install it when it isn't
+  // already active (e.g. the `ready` handler wraps a single-client send).
+  const ownsCache = !ctx._scanCardsCache
+  if (ownsCache) enableScanCardsCache(ctx)
+  try {
+    for (const client of ctx.wss.clients) {
+      if (client.readyState !== WS_OPEN) continue
+      const authContext = ctx.clientAuthContexts.get(client)
+      // Coalesce repeated `readConfig()` calls inside the per-client build
+      // (getSettings, listColumns, listBoards, getLabels, …) into a single
+      // provider round-trip per client.
+      const payload = await withConfigReadCache(() => type === 'init'
+        ? buildClientInitMessage(ctx, authContext)
+        : buildClientCardsUpdatedMessage(ctx, authContext))
+      client.send(JSON.stringify(payload))
+    }
+  } finally {
+    if (ownsCache) clearScanCardsCache(ctx)
   }
 }
 

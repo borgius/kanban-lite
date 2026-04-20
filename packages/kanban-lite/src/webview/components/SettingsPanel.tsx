@@ -30,6 +30,7 @@ import { DrawerResizeHandle } from './DrawerResizeHandle'
 import { drawerContainerClass, drawerPanelStyle, getSlideInClass, isHorizontalDrawer } from '../drawerPositionHelpers'
 import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
 import { JsonFormsEnumArrayControl, jsonFormsEnumArrayTester } from './JsonFormsEnumArrayControl'
+import { JsonFormsStringListControl, jsonFormsStringListTester } from './JsonFormsStringListControl'
 import { ActionsBuilderSection } from './ActionsBuilderSection'
 import { MetaBuilderSection } from './MetaBuilderSection'
 import { TitleBuilderSection } from './TitleBuilderSection'
@@ -40,6 +41,7 @@ const pluginOptionsJsonFormsConfig = { showUnfocusedDescription: true }
 const pluginOptionsJsonFormsRenderers = [
   { tester: jsonFormsCodeEditorTester, renderer: JsonFormsCodeEditorControl },
   { tester: jsonFormsEnumArrayTester, renderer: JsonFormsEnumArrayControl },
+  { tester: jsonFormsStringListTester, renderer: JsonFormsStringListControl },
   ...vanillaRenderers,
 ]
 

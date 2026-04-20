@@ -791,11 +791,11 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(authMarkup).toContain('Stored secret values reopen masked')
     expect(authMarkup).toContain('card-jsonforms')
     expect(authMarkup).toContain('data-testid="plugin-options-form-auth.identity-local"')
-    expect(authMarkup).toContain('array-table-layout')
-    expect(authMarkup).toContain('Add to Roles')
+    // Roles is a plain string array (no enum) — rendered by the string-list editor, not the default table.
+    expect(authMarkup).toContain('kl-jsonforms-string-list')
+    expect(authMarkup).toContain('Add role')
+    // The object-array users[] still uses the default JSON Forms array layout.
     expect(authMarkup).toContain('button-add')
-    expect(authMarkup).toContain('button-up')
-    expect(authMarkup).toContain('button-down')
     expect(authMarkup).toContain('button-delete')
     expect(authMarkup).toContain('Delete')
 
@@ -1083,5 +1083,148 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('aria-pressed="true"')
     expect(markup).toContain('aria-pressed="false"')
     expect(markup).not.toContain('Add to Allowed events')
+  })
+
+  it('renders free-form string arrays with a clean stacked list editor instead of a table', () => {
+    const STRING_LIST_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          tags: {
+            type: 'array',
+            title: 'Tags',
+            description: 'Labels to propagate to every new card.',
+            items: { type: 'string', title: 'Tag', minLength: 1 },
+          },
+        },
+      },
+      secrets: [],
+    }
+    const STRING_LIST_PROVIDER: PluginSettingsProviderTransport = {
+      capability: 'callback.runtime',
+      providerId: 'tags',
+      packageName: 'kl-plugin-callback',
+      discoverySource: 'workspace',
+      selected: { capability: 'callback.runtime', providerId: 'tags', source: 'config' },
+      optionsSchema: STRING_LIST_SCHEMA,
+      options: {
+        values: { tags: ['urgent', ''] },
+        redactedPaths: [],
+        redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      },
+    }
+    const STRING_LIST_PAYLOAD: PluginSettingsPayload = {
+      redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      capabilities: [
+        {
+          capability: 'callback.runtime',
+          selected: { capability: 'callback.runtime', providerId: 'tags', source: 'config' },
+          providers: [
+            {
+              capability: 'callback.runtime',
+              providerId: 'tags',
+              packageName: 'kl-plugin-callback',
+              discoverySource: 'workspace',
+              isSelected: true,
+              optionsSchema: STRING_LIST_SCHEMA,
+            },
+          ],
+        },
+      ],
+    }
+
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={STRING_LIST_PAYLOAD}
+        pluginSettingsProvider={STRING_LIST_PROVIDER}
+        initialTab="pluginOptions"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('kl-jsonforms-string-list')
+    expect(markup).toContain('kl-jsonforms-string-list__add')
+    expect(markup).toContain('Add tag')
+    expect(markup).toContain('kl-jsonforms-string-list__row')
+    expect(markup).toContain('2 tags')
+    expect(markup).toContain('Labels to propagate to every new card.')
+    // Row 2 has empty value, so inline row-level error should appear instead of a global "must NOT have fewer than" blurb
+    expect(markup).toContain('kl-jsonforms-string-list__row--error')
+    expect(markup).toContain('kl-jsonforms-string-list__row-error')
+    expect(markup).toContain('Value is required')
+    // Should not fall back to JSON Forms' generic table layout for this control
+    expect(markup).not.toContain('Add to Tags')
+  })
+
+  it('renders an inviting empty state instead of "No data" for free-form string arrays', () => {
+    const EMPTY_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          assignees: {
+            type: 'array',
+            title: 'Assignees',
+            items: { type: 'string', title: 'Assignee', minLength: 1 },
+          },
+        },
+      },
+      secrets: [],
+    }
+    const provider: PluginSettingsProviderTransport = {
+      capability: 'callback.runtime',
+      providerId: 'empty',
+      packageName: 'kl-plugin-callback',
+      discoverySource: 'workspace',
+      selected: { capability: 'callback.runtime', providerId: 'empty', source: 'config' },
+      optionsSchema: EMPTY_SCHEMA,
+      options: {
+        values: { assignees: [] },
+        redactedPaths: [],
+        redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      },
+    }
+    const payload: PluginSettingsPayload = {
+      redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      capabilities: [
+        {
+          capability: 'callback.runtime',
+          selected: { capability: 'callback.runtime', providerId: 'empty', source: 'config' },
+          providers: [
+            {
+              capability: 'callback.runtime',
+              providerId: 'empty',
+              packageName: 'kl-plugin-callback',
+              discoverySource: 'workspace',
+              isSelected: true,
+              optionsSchema: EMPTY_SCHEMA,
+            },
+          ],
+        },
+      ],
+    }
+
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={payload}
+        pluginSettingsProvider={provider}
+        initialTab="pluginOptions"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('kl-jsonforms-string-list__empty')
+    expect(markup).toContain('Add your first assignee')
+    expect(markup).toContain('No assignees yet')
+    expect(markup).not.toContain('>No data<')
   })
 })

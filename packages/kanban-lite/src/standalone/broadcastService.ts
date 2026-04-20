@@ -239,17 +239,22 @@ async function broadcastPerClient(ctx: StandaloneContext, type: 'init' | 'cardsU
   const ownsCache = !ctx._scanCardsCache
   if (ownsCache) enableScanCardsCache(ctx)
   try {
-    for (const client of ctx.wss.clients) {
-      if (client.readyState !== WS_OPEN) continue
-      const authContext = ctx.clientAuthContexts.get(client)
-      // Coalesce repeated `readConfig()` calls inside the per-client build
-      // (getSettings, listColumns, listBoards, getLabels, …) into a single
-      // provider round-trip per client.
-      const payload = await withConfigReadCache(() => type === 'init'
-        ? buildClientInitMessage(ctx, authContext)
-        : buildClientCardsUpdatedMessage(ctx, authContext))
-      client.send(JSON.stringify(payload))
-    }
+    // Hoist the request-scoped `readConfig()` cache across the whole fanout.
+    // The config is identical for every client in this broadcast, so wrapping
+    // once collapses N×readConfig provider round-trips (each client's
+    // getSettings/listColumns/listBoards/getLabels/buildBaseInitMessage path)
+    // down to one per broadcast. Wrapping per-client would still fire N reads
+    // on high-latency backends like Cloudflare KV.
+    await withConfigReadCache(async () => {
+      for (const client of ctx.wss.clients) {
+        if (client.readyState !== WS_OPEN) continue
+        const authContext = ctx.clientAuthContexts.get(client)
+        const payload = type === 'init'
+          ? await buildClientInitMessage(ctx, authContext)
+          : await buildClientCardsUpdatedMessage(ctx, authContext)
+        client.send(JSON.stringify(payload))
+      }
+    })
   } finally {
     if (ownsCache) clearScanCardsCache(ctx)
   }

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **SDK bootstrap reads config once**: `new KanbanSDK()` previously triggered five `readBootstrapConfig` → provider round-trips during construction (one per capability resolver: storage, auth, webhooks, card-state, callbacks). Bootstrap reads intentionally bypass the request-scoped cache (fail-closed), so each call was a separate round-trip on remote `config.storage` backends (Cloudflare KV, MySQL, PostgreSQL). The SDK constructor now reads the bootstrap config once and reuses it across all five normalize calls, cutting SDK construction cost by ~5× on remote backends.
+
+- **Broadcast fanout shares one config read**: `broadcastPerClient` previously opened a new `withConfigReadCache` scope per client in the broadcast loop, so an N-client fanout performed N `readConfig` provider round-trips for a config that is identical for every client. The cache scope is now hoisted across the entire fanout, collapsing N round-trips into one per broadcast. Large multi-client boards served by Cloudflare KV or remote `config.storage` backends see proportional latency wins on every `init` / `cardsUpdated` broadcast.
+
 ### Added
 
 - **Request-scoped `readConfig()` cache**: Added a `withConfigReadCache()` scope in `shared/config` that coalesces the ~6 `readConfig(workspaceRoot)` calls a single init/broadcast triggers (`getSettings`, `listColumns`, `listBoards`, `getLabels`, `getMinimizedColumns`, base-message builder, per-handler default-board lookups, webhook dispatch, …) into one provider round-trip per request. The standalone `syncWebviewMessages`, `broadcastPerClient`, and `sendInitMessage` paths now run inside this scope, cutting Cloudflare KV / remote `config.storage` round-trips on active boards by 5–6× and eliminating redundant `.env` loading and `${VAR}` placeholder resolution within each scope. The cache is invalidated automatically on `writeConfig`, and unscoped callers keep the existing fresh-object mutation contract.

@@ -18,8 +18,7 @@ import type {
 } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
 import { DEFAULT_CONFIG, readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, normalizeConfigStorageSelection } from '../shared/config'
-import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook, ConfigStorageCapabilityResolution, ConfigStorageFailure } from '../shared/config'
-import type { ResolvedAuthCapabilities } from '../shared/config'
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, Webhook, ConfigStorageCapabilityResolution, ConfigStorageFailure } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 import { EventBus } from './eventBus'
@@ -590,13 +589,7 @@ function readBootstrapConfig(kanbanDir: string): KanbanConfig {
   }
 }
 
-function resolveConfiguredAuthCapabilities(kanbanDir: string): ResolvedAuthCapabilities {
-  const config = readBootstrapConfig(kanbanDir)
-  return normalizeAuthCapabilities(config)
-}
-
-function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions): ResolvedCapabilities {
-  const config = readBootstrapConfig(kanbanDir)
+function resolveConfiguredCapabilitiesFrom(config: KanbanConfig, options?: SDKOptions): ResolvedCapabilities {
   const capabilities = normalizeStorageCapabilities(config)
 
   if (options?.storageEngine === 'sqlite') {
@@ -616,21 +609,6 @@ function resolveConfiguredCapabilities(kanbanDir: string, options?: SDKOptions):
   }
 
   return capabilities
-}
-
-function resolveConfiguredWebhookCapabilities(kanbanDir: string): ResolvedWebhookCapabilities {
-  const config = readBootstrapConfig(kanbanDir)
-  return normalizeWebhookCapabilities(config)
-}
-
-function resolveConfiguredCallbackCapabilities(kanbanDir: string): ResolvedCallbackCapabilities {
-  const config = readBootstrapConfig(kanbanDir)
-  return normalizeCallbackCapabilities(config)
-}
-
-function resolveConfiguredCardStateCapabilities(kanbanDir: string): ResolvedCardStateCapabilities {
-  const config = readBootstrapConfig(kanbanDir)
-  return normalizeCardStateCapabilities(config)
 }
 
 /**
@@ -735,13 +713,17 @@ export class KanbanSDK {
       return
     }
 
+    // Read bootstrap config once and reuse it across all capability resolvers.
+    // Bootstrap reads bypass the request-scoped cache (fail-closed), so each
+    // resolver call would otherwise trigger its own provider round-trip.
+    const bootstrapConfig = readBootstrapConfig(this.kanbanDir)
     const capabilityBag = resolveCapabilityBag(
-      resolveConfiguredCapabilities(this.kanbanDir, options),
+      resolveConfiguredCapabilitiesFrom(bootstrapConfig, options),
       this.kanbanDir,
-      resolveConfiguredAuthCapabilities(this.kanbanDir),
-      resolveConfiguredWebhookCapabilities(this.kanbanDir),
-      resolveConfiguredCardStateCapabilities(this.kanbanDir),
-      resolveConfiguredCallbackCapabilities(this.kanbanDir),
+      normalizeAuthCapabilities(bootstrapConfig),
+      normalizeWebhookCapabilities(bootstrapConfig),
+      normalizeCardStateCapabilities(bootstrapConfig),
+      normalizeCallbackCapabilities(bootstrapConfig),
     )
     this._capabilities = {
       ...capabilityBag,

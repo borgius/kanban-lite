@@ -29,6 +29,7 @@ import type { SettingsTab, BoardSubTab } from '../settingsTabs'
 import { DrawerResizeHandle } from './DrawerResizeHandle'
 import { drawerContainerClass, drawerPanelStyle, getSlideInClass, isHorizontalDrawer } from '../drawerPositionHelpers'
 import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
+import { JsonFormsEnumArrayControl, jsonFormsEnumArrayTester } from './JsonFormsEnumArrayControl'
 import { ActionsBuilderSection } from './ActionsBuilderSection'
 import { MetaBuilderSection } from './MetaBuilderSection'
 import { TitleBuilderSection } from './TitleBuilderSection'
@@ -38,6 +39,7 @@ const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the mas
 const pluginOptionsJsonFormsConfig = { showUnfocusedDescription: true }
 const pluginOptionsJsonFormsRenderers = [
   { tester: jsonFormsCodeEditorTester, renderer: JsonFormsCodeEditorControl },
+  { tester: jsonFormsEnumArrayTester, renderer: JsonFormsEnumArrayControl },
   ...vanillaRenderers,
 ]
 

@@ -5,6 +5,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { KanbanSDK } from '../sdk/KanbanSDK'
 import type { AuthContext } from '../sdk/types'
 import { createMcpServerInstance } from '../mcp-server/mcp-main'
+import { withConfigReadCache } from '../shared/config'
 import type { CloudflareWorkerRuntimeEnv } from './worker-types'
 import { getWorkerPaths } from './worker-utils'
 import type { CloudflareWorkerFetchHandlerOptions } from './worker-types'
@@ -56,7 +57,7 @@ export async function handleMcpRequest(
   await workerRuntimeHost.refreshCommittedConfig()
   installWorkerRuntimeHost(workerRuntimeHost.runtimeHost)
 
-  return workerRuntimeHost.runWithRequestScope(async () => {
+  return workerRuntimeHost.runWithRequestScope(() => withConfigReadCache(async () => {
     const absoluteKanbanDir = path.resolve(kanbanDir)
     const sdk = new KanbanSDK(absoluteKanbanDir)
     const token = extractBearerToken(request)
@@ -80,5 +81,5 @@ export async function handleMcpRequest(
     } finally {
       sdk.close()
     }
-  })
+  }))
 }

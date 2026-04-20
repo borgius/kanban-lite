@@ -1006,4 +1006,82 @@ describe('SettingsPanel drawer resize integration', () => {
     expect(markup).toContain('Use an exact package name like kl-plugin-auth.')
     expect(markup).not.toContain('--ignore-scripts')
   })
+
+  it('renders arrays of string enums as toggle chips instead of a row-per-item table', () => {
+    const ENUM_ARRAY_SCHEMA: PluginSettingsOptionsSchemaMetadata = {
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          events: {
+            type: 'array',
+            title: 'Allowed events',
+            uniqueItems: true,
+            items: {
+              type: 'string',
+              title: 'Event',
+              enum: ['task.created', 'task.updated', 'task.deleted'],
+            },
+          },
+        },
+      },
+      secrets: [],
+    }
+    const ENUM_ARRAY_PROVIDER: PluginSettingsProviderTransport = {
+      capability: 'callback.runtime',
+      providerId: 'chips',
+      packageName: 'kl-plugin-callback',
+      discoverySource: 'workspace',
+      selected: { capability: 'callback.runtime', providerId: 'chips', source: 'config' },
+      optionsSchema: ENUM_ARRAY_SCHEMA,
+      options: {
+        values: { events: ['task.created', 'task.updated'] },
+        redactedPaths: [],
+        redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      },
+    }
+    const ENUM_ARRAY_PAYLOAD: PluginSettingsPayload = {
+      redaction: PLUGIN_SETTINGS_FIXTURE.redaction,
+      capabilities: [
+        {
+          capability: 'callback.runtime',
+          selected: { capability: 'callback.runtime', providerId: 'chips', source: 'config' },
+          providers: [
+            {
+              capability: 'callback.runtime',
+              providerId: 'chips',
+              packageName: 'kl-plugin-callback',
+              discoverySource: 'workspace',
+              isSelected: true,
+              optionsSchema: ENUM_ARRAY_SCHEMA,
+            },
+          ],
+        },
+      ],
+    }
+
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        isOpen
+        settings={{ ...DEFAULT_CARD_SETTINGS }}
+        workspace={null}
+        pluginSettings={ENUM_ARRAY_PAYLOAD}
+        pluginSettingsProvider={ENUM_ARRAY_PROVIDER}
+        initialTab="pluginOptions"
+        onClose={() => {}}
+        onSave={() => {}}
+      />
+    )
+
+    expect(markup).toContain('kl-jsonforms-enum-array')
+    expect(markup).toContain('kl-jsonforms-enum-array__chip')
+    expect(markup).toContain('kl-jsonforms-enum-array__chip--selected')
+    expect(markup).toContain('task.created')
+    expect(markup).toContain('task.updated')
+    expect(markup).toContain('task.deleted')
+    expect(markup).toContain('2 of 3')
+    expect(markup).toContain('aria-pressed="true"')
+    expect(markup).toContain('aria-pressed="false"')
+    expect(markup).not.toContain('Add to Allowed events')
+  })
 })

@@ -295,6 +295,38 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     expect(entrySource).toMatch(/"kl-plugin-auth": moduleRegistryEntry\d+/)
   })
 
+  it('resolves Cloudflare Access auth.identity to the Worker provider package without duplicate imports', async () => {
+    const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
+    const tempDir = createTempDir()
+    const workspaceDir = path.join(tempDir, 'workspace')
+    const configPath = path.join(workspaceDir, '.kanban.json')
+
+    fs.mkdirSync(workspaceDir, { recursive: true })
+    fs.writeFileSync(configPath, '{}\n', 'utf8')
+
+    const entryPath = await createGeneratedWorker(tempDir, {
+      name: 'kanban-test-worker',
+      configPath,
+      config: {
+        version: 2,
+        defaultBoard: 'default',
+        boards: { default: { columns: [] } },
+        plugins: {
+          'auth.identity': {
+            provider: 'cloudflare',
+            options: { teamName: 'example', audience: 'aud' },
+          },
+        },
+      },
+      plugins: [],
+      kanbanDir: '.kanban',
+      compatibilityDate: '2026-04-05',
+    })
+
+    const entrySource = fs.readFileSync(entryPath, 'utf8')
+    expect(entrySource).not.toContain('packages/kl-plugin-cloudflare/src/index.ts')
+  })
+
   it('bundles kl-plugin-webhook for the default webhook.delivery provider when Cloudflare config omits it', async () => {
     const { createGeneratedWorker } = await loadDeployCloudflareWorkerScript()
     const tempDir = createTempDir()

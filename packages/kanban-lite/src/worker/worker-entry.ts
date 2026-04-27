@@ -33,6 +33,7 @@ import {
 } from './worker-utils'
 import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './worker-runtime'
 import { handleMcpRequest } from './mcp-handler'
+import { withCloudflareAccessAuthorizationFallback } from './worker-auth'
 
 const CLOUDFLARE_ACTIVE_CARD_STATE_BINDING = 'KANBAN_ACTIVE_CARD_STATE'
 const LIVE_SYNC_OBJECT_NAME_PREFIX = 'live-sync:'
@@ -206,13 +207,14 @@ function createNodeLikeResponse(): { response: NodeLikeResponse; toResponse: () 
 }
 
 async function toIncomingMessage(request: Request): Promise<IncomingMessageWithRawBody> {
+  const headers = withCloudflareAccessAuthorizationFallback(request.headers)
   const body = request.method === 'GET' || request.method === 'HEAD'
     ? undefined
     : Buffer.from(await request.arrayBuffer())
   return {
     method: request.method,
     url: request.url,
-    headers: Object.fromEntries([...request.headers.entries()].map(([key, value]) => [key.toLowerCase(), value])),
+    headers: Object.fromEntries([...headers.entries()].map(([key, value]) => [key.toLowerCase(), value])),
     _rawBody: body,
   } as IncomingMessageWithRawBody
 }

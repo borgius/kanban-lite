@@ -95,6 +95,12 @@ On Cloudflare, the recommended path is different:
 
 That is what the deployment script scaffolds for you.
 
+### 6. Cloudflare Access identity
+
+The first-party `kl-plugin-cloudflare` package can provide `auth.identity` with provider id `cloudflare`. Configure `plugins["auth.identity"]` with either `teamName` or an exact `issuer`, plus the Cloudflare Access application `audience`.
+
+On Workers, REST, MCP, and WebSocket auth context extraction keeps normal `Authorization: Bearer ...` tokens authoritative. When that header is absent, the Worker copies `CF-Access-Jwt-Assertion` into the same bearer-token auth context so the identity plugin can validate the JWT. The email header from Access is treated only as non-authoritative request metadata; authorization depends on JWT issuer, audience, lifetime, key id, and RS256 signature validation against Access JWKS.
+
 ---
 
 ## Current support level
@@ -106,6 +112,7 @@ That is what the deployment script scaffolds for you.
 - Durable Object-backed `/ws` upgrades for Worker live-sync invalidations
 - event-driven latest-state resync over `/api/webview-sync` after committed mutations
 - statically bundled plugin module injection
+- Cloudflare Access JWT assertions as Worker-safe `auth.identity` bearer-token input
 - custom config injection
 - explicit deployment workflow for a Worker wrapper
 

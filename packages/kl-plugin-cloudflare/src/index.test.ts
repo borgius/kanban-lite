@@ -11,11 +11,14 @@ import type {
 import type { ConfigStorageModuleContext } from '../../kanban-lite/src/sdk/plugins/index'
 
 import {
+  authIdentityPlugins,
   createAttachmentStoragePlugin,
+  createAuthIdentityPlugin,
   createCallbackListenerPlugin,
   createCardStateProvider,
   createCardStoragePlugin,
   createConfigStorageProvider,
+  createCloudflareAccessOptionsSchema,
   createWorkerConfigRepositoryBridge,
   optionsSchemas,
   pluginManifest,
@@ -26,6 +29,8 @@ interface SchemaNode {
   const?: string
   default?: unknown
   enum?: string[]
+  anyOf?: SchemaNode[]
+  required?: string[]
   properties?: Record<string, SchemaNode>
   items?: SchemaNode
 }
@@ -51,6 +56,14 @@ interface CloudflareCallbackRuntimeTestGlobal {
 
 const callbackRuntimeGlobal = globalThis as typeof globalThis & CloudflareCallbackRuntimeTestGlobal
 let virtualWorkspaceCounter = 0
+
+interface AccessJwtFixture {
+  token: string
+  jwk: JsonWebKey
+  privateKey: CryptoKey
+  issuer: string
+  audience: string
+}
 
 type FakeD1CardRow = {
   boardId: string
@@ -356,6 +369,7 @@ describe('kl-plugin-cloudflare', () => {
         'card.state': ['cloudflare'],
         'config.storage': ['cloudflare'],
         'callback.runtime': ['cloudflare'],
+        'auth.identity': ['cloudflare'],
       },
       integrations: ['event.listener'],
     })
@@ -386,6 +400,64 @@ describe('kl-plugin-cloudflare', () => {
       '#/properties/module',
       '#/properties/handler',
     ])
+  })
+
+  it('advertises Cloudflare Access auth.identity with schema metadata and no secrets', () => {
+    const metadata = createCloudflareAccessOptionsSchema()
+    const properties = metadata.schema.properties as Record<string, SchemaNode>
+    const groups = (metadata.uiSchema as UiSchemaNode).elements ?? []
+
+    expect(pluginManifest.capabilities['auth.identity']).toEqual(['cloudflare'])
+    expect(authIdentityPlugins.cloudflare.manifest).toEqual({
+      id: 'cloudflare',
+      provides: ['auth.identity'],
+    })
+    expect(optionsSchemas['auth.identity:cloudflare']).toBe(createCloudflareAccessOptionsSchema)
+    expect(metadata.secrets).toEqual([])
+    expect(metadata.schema.required).toEqual(['audience'])
+    expect(properties.teamName.type).toBe('string')
+    expect(properties.issuer.type).toBe('string')
+    expect(properties.audience.anyOf?.map((node) => node.type)).toEqual(['string', 'array'])
+    expect(properties.defaultRoles.items?.type).toBe('string')
+    expect(properties.roleMappings.type).toBe('object')
+    expect(groups.map((element) => element.scope ?? element.elements?.[0]?.scope)).toContain('#/properties/teamName')
+    expect(groups.map((element) => element.scope ?? element.elements?.[0]?.scope)).toContain('#/properties/subjectClaim')
+  })
+
+  it('resolves valid Cloudflare Access JWTs and maps groups to roles', async () => {
+    const fixture = await createAccessJwtFixture({
+      groups: ['ops'],
+      email: 'user@example.com',
+      roles: ['developer'],
+    })
+    const plugin = createAuthIdentityPlugin({
+      issuer: fixture.issuer,
+      audience: fixture.audience,
+      jwks: [fixture.jwk],
+      defaultRoles: ['reader'],
+      roleMappings: { ops: ['admin'], developer: ['writer'] },
+    })
+
+    await expect(plugin.resolveIdentity({ token: fixture.token })).resolves.toEqual({
+      subject: 'user-123',
+      groups: ['ops'],
+      roles: ['reader', 'developer', 'admin', 'writer'],
+    })
+  })
+
+  it('rejects invalid Cloudflare Access JWTs and fails closed', async () => {
+    const fixture = await createAccessJwtFixture()
+    const plugin = createAuthIdentityPlugin({
+      issuer: fixture.issuer,
+      audience: fixture.audience,
+      jwks: [fixture.jwk],
+    })
+
+    await expect(plugin.resolveIdentity({ token: await createAccessJwt(fixture, { issuer: 'https://evil.example.com' }) })).resolves.toBeNull()
+    await expect(plugin.resolveIdentity({ token: await createAccessJwt(fixture, { audience: 'wrong-audience' }) })).resolves.toBeNull()
+    await expect(plugin.resolveIdentity({ token: await createAccessJwt(fixture, { header: { alg: 'HS256' } }) })).resolves.toBeNull()
+    await expect(plugin.resolveIdentity({ token: await createAccessJwt(fixture, { expiresInSeconds: -60 }) })).resolves.toBeNull()
+    await expect(plugin.resolveIdentity({ token: `${fixture.token.split('.').slice(0, 2).join('.')}.invalid-signature` })).resolves.toBeNull()
   })
 
   it('round-trips cards through D1 and keeps move/rename behavior minimal', async () => {
@@ -1043,6 +1115,76 @@ function toUint8Array(value: string | Uint8Array | ArrayBuffer): Uint8Array {
   if (typeof value === 'string') return new Uint8Array(Buffer.from(value))
   if (value instanceof Uint8Array) return value
   return new Uint8Array(value)
+}
+
+function base64UrlEncode(value: unknown): string {
+  const bytes = typeof value === 'string'
+    ? Buffer.from(value)
+    : Buffer.from(JSON.stringify(value))
+  return bytes.toString('base64url')
+}
+
+async function createAccessJwtFixture(
+  claims: Record<string, unknown> = {},
+): Promise<AccessJwtFixture> {
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: 'RSASSA-PKCS1-v1_5',
+      modulusLength: 2048,
+      publicExponent: new Uint8Array([1, 0, 1]),
+      hash: 'SHA-256',
+    },
+    true,
+    ['sign', 'verify'],
+  )
+  const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey)
+  const jwk = { ...publicJwk, kid: 'test-key', alg: 'RS256', use: 'sig' }
+  const fixture: AccessJwtFixture = {
+    token: '',
+    jwk,
+    privateKey: keyPair.privateKey,
+    issuer: 'https://example.cloudflareaccess.com',
+    audience: 'kanban-lite',
+  }
+  fixture.token = await createAccessJwt(fixture, { privateKey: keyPair.privateKey, claims })
+  return fixture
+}
+
+async function createAccessJwt(
+  fixture: AccessJwtFixture,
+  options: {
+    issuer?: string
+    audience?: string | string[]
+    expiresInSeconds?: number
+    header?: Record<string, unknown>
+    claims?: Record<string, unknown>
+    privateKey?: CryptoKey
+  } = {},
+): Promise<string> {
+  const now = Math.floor(Date.now() / 1000)
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT',
+    kid: fixture.jwk.kid,
+    ...options.header,
+  }
+  const payload = {
+    iss: options.issuer ?? fixture.issuer,
+    aud: options.audience ?? fixture.audience,
+    sub: 'user-123',
+    iat: now,
+    nbf: now - 5,
+    exp: now + (options.expiresInSeconds ?? 300),
+    ...options.claims,
+  }
+  const signingInput = `${base64UrlEncode(header)}.${base64UrlEncode(payload)}`
+  const key = options.privateKey ?? fixture.privateKey
+  const signature = await crypto.subtle.sign(
+    { name: 'RSASSA-PKCS1-v1_5' },
+    key,
+    new TextEncoder().encode(signingInput),
+  )
+  return `${signingInput}.${Buffer.from(signature).toString('base64url')}`
 }
 
 function createWorkerContext(

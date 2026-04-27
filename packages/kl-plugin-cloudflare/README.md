@@ -9,6 +9,7 @@ Worker-safe first-party Cloudflare bundle for kanban-lite.
 - `card.state` via D1
 - `config.storage` via D1
 - `callback.runtime` via D1 + Cloudflare Queues
+- `auth.identity` via Cloudflare Access JWT validation
 
 Provider id: `cloudflare`
 
@@ -48,10 +49,27 @@ This package reads Cloudflare services only through the shared Worker provider c
           }
         ]
       }
+    },
+    "auth.identity": {
+      "provider": "cloudflare",
+      "options": {
+        "teamName": "example",
+        "audience": "YOUR_ACCESS_AUD_TAG",
+        "defaultRoles": ["user"],
+        "roleMappings": {
+          "kanban-admins": ["admin"]
+        }
+      }
     }
   }
 }
 ```
+
+## Cloudflare Access identity
+
+The `auth.identity` provider validates the `CF-Access-Jwt-Assertion` JWT, or a normal bearer token when one is supplied by another host. It verifies RS256 signatures against Cloudflare Access JWKS, requires the exact issuer (`https://<team>.cloudflareaccess.com` unless `issuer` is configured), checks audience, `exp`, `nbf`, and `iat`, and never trusts `CF-Access-Authenticated-User-Email` by itself.
+
+Options are schema-driven for the shared Plugin Options UI. Configure `teamName` or `issuer`, plus `audience`; optional claim names, default roles, and role mappings control the returned kanban-lite identity.
 
 ## Notes
 

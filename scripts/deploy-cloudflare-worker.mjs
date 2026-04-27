@@ -36,6 +36,7 @@ const authProviderPackages = new Map([
   ['kl-plugin-rbac', 'kl-plugin-rbac'],
   ['openauth', 'kl-plugin-openauth'],
   ['kl-plugin-openauth', 'kl-plugin-openauth'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 const webhookProviderPackages = new Map([
   ['webhooks', 'kl-plugin-webhook'],

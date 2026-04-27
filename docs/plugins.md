@@ -271,12 +271,16 @@ Compatibility/default provider ids:
 - `noop` (default) — always returns `null` (anonymous); preserves current open-access behavior.
 - `rbac` — validates opaque tokens against a runtime-owned principal registry and returns `{ subject, roles, groups? }` for registered principals.
 - `local` — trusts host-validated standalone session identity, or the shared `KANBAN_LITE_TOKEN` / `KANBAN_TOKEN` API token for CLI, MCP, and bearer-authenticated HTTP calls.
+- `cloudflare` — validates Cloudflare Access JWT assertions with RS256 JWKS signature checks, exact issuer/audience validation, and configurable claim-to-role mapping.
 
 External package:
 
 - `kl-plugin-auth`
+- `kl-plugin-cloudflare` for Cloudflare Access / Worker deployments
 
 Important nuance: the exported `RBAC_IDENTITY_PLUGIN` singleton is backed by an empty registry, so hosts that want live token validation must construct a runtime-backed plugin via `createRbacIdentityPlugin(principals)` and wire it in through custom capability wiring. Unknown or absent tokens resolve to `null`, and roles are never inferred from token text.
+
+Cloudflare Access identity options are schema-driven and intentionally contain no secrets. Configure `teamName` or `issuer` plus `audience`; optional claim names, `defaultRoles`, and `roleMappings` determine the returned `{ subject, roles, groups }` after the JWT has been validated.
 
 ### `auth.policy`
 

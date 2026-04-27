@@ -460,6 +460,31 @@ describe('kl-plugin-cloudflare', () => {
     await expect(plugin.resolveIdentity({ token: `${fixture.token.split('.').slice(0, 2).join('.')}.invalid-signature` })).resolves.toBeNull()
   })
 
+  it('fails closed when Cloudflare Access JWKS cannot be loaded', async () => {
+    const fixture = await createAccessJwtFixture()
+    const originalFetch = globalThis.fetch
+
+    try {
+      for (const fetchImpl of [
+        vi.fn(async () => { throw new Error('network unavailable') }),
+        vi.fn(async () => ({ ok: false, json: async () => ({ keys: [fixture.jwk] }) } as Response)),
+        vi.fn(async () => ({ ok: true, json: async () => { throw new Error('invalid json') } } as Response)),
+      ]) {
+        globalThis.fetch = fetchImpl as unknown as typeof fetch
+        const plugin = createAuthIdentityPlugin({
+          issuer: fixture.issuer,
+          audience: fixture.audience,
+          jwksUrl: `${fixture.issuer}/cdn-cgi/access/certs`,
+          jwksTtlSeconds: 0,
+        })
+
+        await expect(plugin.resolveIdentity({ token: fixture.token })).resolves.toBeNull()
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('round-trips cards through D1 and keeps move/rename behavior minimal', async () => {
     const database = new FakeD1Database()
     const bucket = new FakeR2Bucket()

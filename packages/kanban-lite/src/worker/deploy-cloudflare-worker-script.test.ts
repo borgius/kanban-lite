@@ -324,7 +324,8 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     })
 
     const entrySource = fs.readFileSync(entryPath, 'utf8')
-    expect(entrySource).not.toContain('packages/kl-plugin-cloudflare/src/index.ts')
+    expect(entrySource).toMatch(/"kl-plugin-cloudflare": moduleRegistryEntry\d+/)
+    expect(entrySource.match(/packages\/kl-plugin-cloudflare\/src\/index\.ts/g) ?? []).toHaveLength(1)
   })
 
   it('bundles kl-plugin-webhook for the default webhook.delivery provider when Cloudflare config omits it', async () => {

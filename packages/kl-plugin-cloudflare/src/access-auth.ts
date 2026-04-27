@@ -392,17 +392,21 @@ export function createAuthIdentityPlugin(
     if (!forceRefresh && cache && cache.expiresAt > now) return cache.keys
     if (options.jwks && options.jwks.length > 0) return options.jwks
 
-    const response = await fetch(resolveJwksUrl(issuer, options.jwksUrl))
-    if (!response.ok) return []
-    const payload = await response.json() as unknown
-    const keys = isRecord(payload) && Array.isArray(payload.keys)
-      ? payload.keys.filter((entry): entry is AccessJwk => isRecord(entry))
-      : []
-    cache = {
-      keys,
-      expiresAt: now + options.jwksTtlSeconds * 1000,
+    try {
+      const response = await fetch(resolveJwksUrl(issuer, options.jwksUrl))
+      if (!response.ok) return []
+      const payload = await response.json() as unknown
+      const keys = isRecord(payload) && Array.isArray(payload.keys)
+        ? payload.keys.filter((entry): entry is AccessJwk => isRecord(entry))
+        : []
+      cache = {
+        keys,
+        expiresAt: now + options.jwksTtlSeconds * 1000,
+      }
+      return keys
+    } catch {
+      return []
     }
-    return keys
   }
 
   async function verifyWithKeys(

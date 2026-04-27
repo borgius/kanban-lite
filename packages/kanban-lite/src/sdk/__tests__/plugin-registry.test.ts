@@ -3466,6 +3466,10 @@ describe('AUTH_PROVIDER_ALIASES', () => {
     expect(AUTH_PROVIDER_ALIASES.get('rbac')).toBe('kl-plugin-auth')
   })
 
+  it('maps "cloudflare" to "kl-plugin-cloudflare"', () => {
+    expect(AUTH_PROVIDER_ALIASES.get('cloudflare')).toBe('kl-plugin-cloudflare')
+  })
+
   it('does not contain unknown aliases', () => {
     expect(AUTH_PROVIDER_ALIASES.has('unknown-provider')).toBe(false)
   })

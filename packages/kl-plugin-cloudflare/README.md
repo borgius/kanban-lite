@@ -60,6 +60,9 @@ This package reads Cloudflare services only through the shared Worker provider c
           "kanban-admins": ["admin"]
         }
       }
+    },
+    "auth.policy": {
+      "provider": "rbac"
     }
   }
 }
@@ -68,6 +71,8 @@ This package reads Cloudflare services only through the shared Worker provider c
 ## Cloudflare Access identity
 
 The `auth.identity` provider validates the `CF-Access-Jwt-Assertion` JWT, or a normal bearer token when one is supplied by another host. It verifies RS256 signatures against Cloudflare Access JWKS, requires the exact issuer (`https://<team>.cloudflareaccess.com` unless `issuer` is configured), checks audience, `exp`, `nbf`, and `iat`, and never trusts `CF-Access-Authenticated-User-Email` by itself.
+
+`auth.identity` only resolves who the caller is. Pair it with an enforcing `auth.policy` provider such as `rbac`, or rely on a Cloudflare Access perimeter that blocks unauthenticated traffic before it reaches the Worker.
 
 Options are schema-driven for the shared Plugin Options UI. Configure `teamName` or `issuer`, plus `audience`; optional claim names, default roles, and role mappings control the returned kanban-lite identity.
 

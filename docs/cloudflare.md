@@ -97,7 +97,7 @@ That is what the deployment script scaffolds for you.
 
 ### 6. Cloudflare Access identity
 
-The first-party `kl-plugin-cloudflare` package can provide `auth.identity` with provider id `cloudflare`. Configure `plugins["auth.identity"]` with either `teamName` or an exact `issuer`, plus the Cloudflare Access application `audience`.
+The first-party `kl-plugin-cloudflare` package can provide `auth.identity` with provider id `cloudflare`. Configure `plugins["auth.identity"]` with either `teamName` or an exact `issuer`, plus the Cloudflare Access application `audience`. Pair this identity provider with an enforcing `auth.policy` provider such as `rbac`, or ensure Cloudflare Access itself is the perimeter that blocks unauthenticated traffic before it reaches the Worker.
 
 On Workers, REST, MCP, and WebSocket auth context extraction keeps normal `Authorization: Bearer ...` tokens authoritative. When that header is absent, the Worker copies `CF-Access-Jwt-Assertion` into the same bearer-token auth context so the identity plugin can validate the JWT. The email header from Access is treated only as non-authoritative request metadata; authorization depends on JWT issuer, audience, lifetime, key id, and RS256 signature validation against Access JWKS.
 

@@ -270,6 +270,65 @@ describe('WebhookListenerPlugin', () => {
     expect(mockBus.onAny).toHaveBeenCalledOnce()
   })
 
+  it('accepts dynamic discovered after-events through attached SDK context', async () => {
+    const received: string[] = []
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        received.push((JSON.parse(body) as { event: string }).event)
+        res.writeHead(200)
+        res.end()
+      })
+    })
+
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as { port: number }).port
+
+    webhookProviderPlugin.createWebhook(workspaceDir, {
+      url: `http://127.0.0.1:${port}/hook`,
+      events: ['schedule.nightly'],
+    })
+
+    let capturedHandler: ((event: string, payload: { data: unknown }) => void) | undefined
+    const mockBus = {
+      onAny: vi.fn().mockImplementation((handler: (event: string, payload: { data: unknown }) => void) => {
+        capturedHandler = handler
+        return () => {}
+      }),
+    }
+
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.attachRuntimeContext({
+      sdk: {
+        listAvailableEvents: () => [{
+          event: 'schedule.nightly',
+          phase: 'after',
+          source: 'plugin',
+          sdkBefore: false,
+          sdkAfter: true,
+          apiAfter: true,
+          pluginIds: ['kl-plugin-cron'],
+        }],
+      } as never,
+    })
+    listener.register(mockBus as never)
+
+    capturedHandler!('schedule.nightly', {
+      data: {
+        event: 'schedule.nightly',
+        timestamp: '2026-04-01T00:00:00.000Z',
+        data: { name: 'Nightly' },
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    listener.unregister()
+
+    expect(received).toEqual(['schedule.nightly'])
+  })
+
   it('unregister calls the unsubscribe function returned by onAny', () => {
     const unsubscribeSpy = vi.fn()
     const mockBus = { onAny: vi.fn().mockReturnValue(unsubscribeSpy) }

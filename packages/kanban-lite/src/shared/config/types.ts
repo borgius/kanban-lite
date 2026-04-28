@@ -52,6 +52,15 @@ export type CallbackCapabilitySelections = Partial<Record<CallbackCapabilityName
 /** Fully normalized callback capability selections used at runtime. */
 export type ResolvedCallbackCapabilities = Record<CallbackCapabilityNamespace, ProviderRef>
 
+/** Capability namespace for scheduled cron event providers. */
+export type CronCapabilityNamespace = 'cron.runtime'
+
+/** Partial cron capability selections from config or constructor overrides. */
+export type CronCapabilitySelections = Partial<Record<CronCapabilityNamespace, ProviderRef>>
+
+/** Fully normalized cron capability selections used at runtime. */
+export type ResolvedCronCapabilities = Record<CronCapabilityNamespace, ProviderRef>
+
 /** Capability namespace for workspace config storage providers. */
 export type ConfigStorageCapabilityNamespace = 'config.storage'
 
@@ -108,6 +117,7 @@ export type PluginCapabilityNamespace =
   | AuthCapabilityNamespace
   | WebhookCapabilityNamespace
   | CallbackCapabilityNamespace
+  | CronCapabilityNamespace
 
 /** Stable ordered capability list reused by plugin settings hosts and tests. */
 export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] = [
@@ -120,6 +130,7 @@ export const PLUGIN_CAPABILITY_NAMESPACES: readonly PluginCapabilityNamespace[] 
   'auth.visibility',
   'webhook.delivery',
   'callback.runtime',
+  'cron.runtime',
 ]
 
 /** Partial plugin capability selections keyed by the full plugin settings namespace set. */
@@ -432,4 +443,3 @@ export interface KanbanConfig {
    */
   logLevel?: 'debug' | 'info' | 'warn' | 'error' | 'silent'
 }
-

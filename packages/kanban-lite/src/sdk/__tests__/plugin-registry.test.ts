@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, CARD_STATE_PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, CALLBACK_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT, canUseDefaultCardStateActor } from '../plugins'
+import { resolveCapabilityBag, collectActiveExternalPackageNames, BUILTIN_ATTACHMENT_IDS, PROVIDER_ALIASES, CARD_STATE_PROVIDER_ALIASES, WEBHOOK_PROVIDER_ALIASES, CALLBACK_PROVIDER_ALIASES, CRON_PROVIDER_ALIASES, AUTH_PROVIDER_ALIASES, NOOP_IDENTITY_PLUGIN, NOOP_POLICY_PLUGIN, RBAC_IDENTITY_PLUGIN, RBAC_POLICY_PLUGIN, RBAC_USER_ACTIONS, RBAC_MANAGER_ACTIONS, RBAC_ADMIN_ACTIONS, RBAC_ROLE_MATRIX, createRbacIdentityPlugin, WORKSPACE_ROOT, canUseDefaultCardStateActor } from '../plugins'
 import type { RbacRole, WebhookProviderPlugin } from '../plugins'
 import type { ResolvedCapabilityBag } from '../plugins'
 import type { SDKExtensionPlugin, SDKExtensionLoaderResult } from '../types'
@@ -875,6 +875,80 @@ describe('KanbanSDK capability resolution', () => {
     const sdk = new KanbanSDK(kanbanDir)
     expect(sdk.storageEngine.type).toBe('markdown')
     sdk.close()
+  })
+
+  it('includes configured cron.runtime event names in the available-events catalog', () => {
+    const cleanup = installTempPackage(
+      'temp-cron-runtime-plugin',
+      `const fs = require('node:fs')
+const path = require('node:path')
+
+class CronListenerPlugin {
+  constructor() {}
+  get manifest() {
+    return { id: 'temp-cron-runtime-plugin', provides: ['event.listener'] }
+  }
+  register() {}
+  unregister() {}
+}
+
+module.exports = {
+  pluginManifest: {
+    id: 'temp-cron-runtime-plugin',
+    capabilities: { 'cron.runtime': ['temp-cron-runtime-plugin'] },
+  },
+  CronListenerPlugin,
+  getCronRuntimeEventDeclarations(workspaceRoot) {
+    const config = JSON.parse(fs.readFileSync(path.join(workspaceRoot, '.kanban.json'), 'utf-8'))
+    return (config.plugins?.['cron.runtime']?.options?.events ?? []).map((entry) => ({
+      event: entry.event,
+      phase: 'after',
+      resource: 'cron',
+      label: entry.name,
+      apiAfter: true,
+    }))
+  },
+}
+`,
+    )
+
+    try {
+      fs.writeFileSync(
+        path.join(workspaceDir, '.kanban.json'),
+        JSON.stringify({
+          version: 2,
+          plugins: {
+            'cron.runtime': {
+              provider: 'temp-cron-runtime-plugin',
+              options: {
+                events: [{ name: 'Nightly sync', schedule: '0 0 * * *', event: 'schedule.nightly' }],
+              },
+            },
+          },
+        }),
+        'utf-8',
+      )
+
+      const sdk = new KanbanSDK(kanbanDir)
+
+      try {
+        expect(sdk.listAvailableEvents({ mask: 'schedule.*' })).toContainEqual({
+          event: 'schedule.nightly',
+          phase: 'after',
+          source: 'plugin',
+          resource: 'cron',
+          label: 'Nightly sync',
+          sdkBefore: false,
+          sdkAfter: true,
+          apiAfter: true,
+          pluginIds: ['temp-cron-runtime-plugin'],
+        })
+      } finally {
+        sdk.close()
+      }
+    } finally {
+      cleanup()
+    }
   })
 })
 
@@ -3518,6 +3592,15 @@ describe('collectActiveExternalPackageNames', () => {
       plugins: { 'callback.runtime': { provider: 'callbacks' } },
     })
     expect(result).toContain('kl-plugin-callback')
+  })
+
+  it('includes kl-plugin-cron via plugins["cron.runtime"] override', () => {
+    expect(CRON_PROVIDER_ALIASES.get('cron')).toBe('kl-plugin-cron')
+
+    const result = collectActiveExternalPackageNames({
+      plugins: { 'cron.runtime': { provider: 'cron' } },
+    })
+    expect(result).toContain('kl-plugin-cron')
   })
 })
 

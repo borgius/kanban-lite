@@ -4,6 +4,7 @@ import type {
   ResolvedAuthCapabilities,
   ResolvedCallbackCapabilities,
   ResolvedCapabilities,
+  ResolvedCronCapabilities,
   ResolvedCardStateCapabilities,
   ResolvedWebhookCapabilities,
   ProviderRef,
@@ -30,6 +31,9 @@ import {
 } from './mcp-sdk-plugins'
 import type { StandaloneHttpPlugin } from './mcp-sdk-plugins'
 import {
+  resolveCronRuntimeFeatures,
+} from './cron-plugins'
+import {
   isRecoverableAttachmentPluginError,
   loadExternalAttachmentPlugin,
   materializeAttachmentFromDir,
@@ -47,6 +51,7 @@ import {
 } from './webhook-callback-plugins'
 import type { WebhookProviderPlugin } from './webhook-callback-plugins'
 import type {
+  SDKPluginEventDeclaration,
   SDKExtensionLoaderResult,
   SDKEventListenerPlugin,
 } from '../types'
@@ -76,6 +81,12 @@ export interface ResolvedCapabilityBag {
   readonly webhookListener: SDKEventListenerPlugin | null
   readonly callbackProviders: ResolvedCallbackCapabilities | null
   readonly callbackListener: SDKEventListenerPlugin | null
+  readonly cronProviders: ResolvedCronCapabilities | null
+  readonly cronListener: SDKEventListenerPlugin | null
+  readonly runtimePluginEvents: readonly Array<{
+    readonly id: string
+    readonly events: readonly SDKPluginEventDeclaration[]
+  }>
   readonly standaloneHttpPlugins: readonly StandaloneHttpPlugin[]
   readonly sdkExtensions: readonly SDKExtensionLoaderResult[]
   readonly authListener: SDKEventListenerPlugin
@@ -157,6 +168,7 @@ export function resolveCapabilityBag(
   webhookCapabilities?: ResolvedWebhookCapabilities,
   cardStateCapabilities?: ResolvedCardStateCapabilities,
   callbackCapabilities?: ResolvedCallbackCapabilities,
+  cronCapabilities?: ResolvedCronCapabilities,
 ): ResolvedCapabilityBag {
   const normalizedCapabilities = normalizeCardStorageCapabilities(capabilities)
   const cardRef = normalizedCapabilities['card.storage']
@@ -187,6 +199,9 @@ export function resolveCapabilityBag(
     : null
   const callbackListener = callbackCapabilities
     ? resolveCallbackRuntimeListener(callbackCapabilities['callback.runtime'], workspaceRoot)
+    : null
+  const cronFeatures = cronCapabilities
+    ? resolveCronRuntimeFeatures(cronCapabilities['cron.runtime'], workspaceRoot)
     : null
   const standaloneHttpPlugins = resolveStandaloneHttpPlugins({
     workspaceRoot,
@@ -237,6 +252,11 @@ export function resolveCapabilityBag(
     webhookListener: webhookPlugins?.listener ?? null,
     callbackProviders: callbackCapabilities ?? null,
     callbackListener,
+    cronProviders: cronCapabilities ?? null,
+    cronListener: cronFeatures?.listener ?? null,
+    runtimePluginEvents: cronFeatures
+      ? [{ id: cronFeatures.id, events: cronFeatures.events }]
+      : [],
     standaloneHttpPlugins,
     sdkExtensions,
     authListener: createBuiltinAuthListenerPlugin(authIdentity, authPolicy),

@@ -54,7 +54,11 @@ export class WebhookListenerPlugin implements SDKEventListenerPlugin {
     )
     this._unsubscribe = bus.onAny((event, payload) => {
       if (availableAfterEvents.size > 0 && !availableAfterEvents.has(event)) return
-      if (!isAfterEventPayload(payload.data) || payload.data.event !== event) return
+      if (isAfterEventPayload(payload.data)) {
+        if (payload.data.event !== event) return
+        fireWebhooks(this._workspaceRoot, event, payload.data)
+        return
+      }
       fireWebhooks(this._workspaceRoot, event, payload.data)
     })
   }

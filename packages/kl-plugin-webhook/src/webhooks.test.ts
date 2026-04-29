@@ -722,8 +722,8 @@ describe('HMAC signing', () => {
 
     const parsed = JSON.parse(receivedBody) as { event: string; timestamp: string; data: unknown }
     expect(parsed.event).toBe('task.created')
-    expect(typeof parsed.timestamp).toBe('string')
-    expect(parsed.data).toEqual(afterPayload)
+    expect(parsed.timestamp).toBe(afterPayload.timestamp)
+    expect(parsed.data).toEqual(afterPayload.data)
   })
 })
 

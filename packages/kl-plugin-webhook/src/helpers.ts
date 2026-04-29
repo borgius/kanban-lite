@@ -124,6 +124,7 @@ function writeWebhooks(workspaceRoot: string, webhooks: Webhook[]): void {
     // File absent — start from a blank config object.
   }
 
+  config.webhooks = webhooks
   const plugins = (config.plugins ?? {}) as PersistedWebhookPlugins
   const webhookPlugin = plugins['webhook.delivery'] ?? { provider: 'webhooks' }
   const options = (webhookPlugin.options ?? {}) as Record<string, unknown>

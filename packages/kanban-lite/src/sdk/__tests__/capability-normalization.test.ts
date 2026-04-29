@@ -5,6 +5,7 @@ import {
   normalizeWebhookCapabilities,
   normalizeCardStateCapabilities,
   normalizeCallbackCapabilities,
+  normalizeCronCapabilities,
   normalizeConfigStorageSelection,
   PLUGIN_CAPABILITY_NAMESPACES,
 } from '../../shared/config'
@@ -322,6 +323,37 @@ describe('normalizeCallbackCapabilities', () => {
   it('accepts a plain object with only plugins field', () => {
     const result = normalizeCallbackCapabilities({})
     expect(result['callback.runtime']).toEqual({ provider: 'none' })
+  })
+})
+
+describe('normalizeCronCapabilities', () => {
+  it('defaults cron.runtime to none when config is absent', () => {
+    const result = normalizeCronCapabilities(makeConfig())
+    expect(result['cron.runtime']).toEqual({ provider: 'none' })
+  })
+
+  it('passes through an explicit cron.runtime provider with options', () => {
+    const result = normalizeCronCapabilities(
+      makeConfig({
+        plugins: {
+          'cron.runtime': {
+            provider: 'cron',
+            options: { events: [{ name: 'nightly', schedule: '0 0 * * *', event: 'schedule.nightly' }] },
+          },
+        },
+      })
+    )
+
+    expect(result['cron.runtime']).toEqual({
+      provider: 'cron',
+      options: { events: [{ name: 'nightly', schedule: '0 0 * * *', event: 'schedule.nightly' }] },
+    })
+  })
+
+  it('cron.runtime namespace is always present in output and plugin settings namespace list', () => {
+    const result = normalizeCronCapabilities(makeConfig())
+    expect(result).toHaveProperty('cron.runtime')
+    expect(PLUGIN_CAPABILITY_NAMESPACES).toContain('cron.runtime')
   })
 })
 

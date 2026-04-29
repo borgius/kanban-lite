@@ -1,6 +1,6 @@
 import type { KanbanConfig, ProviderRef, ConfigStorageCapabilityResolution, ConfigStorageFailure,
   ResolvedCapabilities, ResolvedCardStateCapabilities, ResolvedAuthCapabilities,
-  ResolvedWebhookCapabilities, ResolvedCallbackCapabilities,
+  ResolvedWebhookCapabilities, ResolvedCallbackCapabilities, ResolvedCronCapabilities,
 } from './types'
 
 function cloneProviderRef(ref: ProviderRef): ProviderRef {
@@ -265,3 +265,20 @@ export function normalizeCallbackCapabilities(
   }
 }
 
+/**
+ * Normalizes cron runtime capability selections into a complete runtime capability map.
+ *
+ * `cron.runtime` is first-class but disabled by default until a provider is
+ * explicitly selected through the shared plugin settings flow.
+ *
+ * The input object is never mutated.
+ */
+export function normalizeCronCapabilities(
+  config: Pick<KanbanConfig, 'plugins'>,
+): ResolvedCronCapabilities {
+  return {
+    'cron.runtime': config.plugins?.['cron.runtime']
+      ? cloneProviderRef(config.plugins['cron.runtime'])
+      : { provider: 'none' },
+  }
+}

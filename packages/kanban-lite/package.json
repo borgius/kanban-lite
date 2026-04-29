@@ -137,6 +137,7 @@
   "devDependencies": {
     "kl-plugin-auth": "workspace:*",
     "kl-plugin-callback": "workspace:*",
+    "kl-plugin-cron": "workspace:*",
     "kl-plugin-webhook": "workspace:*"
   },
   "dependencies": {

@@ -17,8 +17,8 @@ import type {
   Priority,
 } from '../shared/types'
 import { DELETED_STATUS_ID } from '../shared/types'
-import { DEFAULT_CONFIG, readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, normalizeConfigStorageSelection } from '../shared/config'
-import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, Webhook, ConfigStorageCapabilityResolution, ConfigStorageFailure } from '../shared/config'
+import { DEFAULT_CONFIG, readConfig, normalizeStorageCapabilities, normalizeAuthCapabilities, normalizeWebhookCapabilities, normalizeCardStateCapabilities, normalizeCallbackCapabilities, normalizeCronCapabilities, normalizeConfigStorageSelection } from '../shared/config'
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ProviderRef, ResolvedCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities, ResolvedCallbackCapabilities, ResolvedCronCapabilities, Webhook, ConfigStorageCapabilityResolution, ConfigStorageFailure } from '../shared/config'
 import type { ResolvedAuthCapabilities } from '../shared/config'
 import type { CreateCardInput, SDKEvent, SDKEventHandler, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKEventListenerPlugin, BeforeEventPayload, AfterEventPayload, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, SDKAvailableEventDescriptor, SDKAvailableEventsOptions, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types'
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus'
@@ -628,6 +628,11 @@ function resolveConfiguredCallbackCapabilities(kanbanDir: string): ResolvedCallb
   return normalizeCallbackCapabilities(config)
 }
 
+function resolveConfiguredCronCapabilities(kanbanDir: string): ResolvedCronCapabilities {
+  const config = readBootstrapConfig(kanbanDir)
+  return normalizeCronCapabilities(config)
+}
+
 function resolveConfiguredCardStateCapabilities(kanbanDir: string): ResolvedCardStateCapabilities {
   const config = readBootstrapConfig(kanbanDir)
   return normalizeCardStateCapabilities(config)
@@ -659,6 +664,7 @@ export class KanbanSDK {
   private readonly _eventBus: EventBus
   private _webhookPlugin: SDKEventListenerPlugin | null = null
   private _callbackPlugin: SDKEventListenerPlugin | null = null
+  private _cronPlugin: SDKEventListenerPlugin | null = null
   private _pluginInstallRunner = runPluginSettingsInstallCommand
   /** @internal */ _storage: StorageEngine
   private _capabilities: ResolvedCapabilityBag | null = null
@@ -742,6 +748,7 @@ export class KanbanSDK {
       resolveConfiguredWebhookCapabilities(this.kanbanDir),
       resolveConfiguredCardStateCapabilities(this.kanbanDir),
       resolveConfiguredCallbackCapabilities(this.kanbanDir),
+      resolveConfiguredCronCapabilities(this.kanbanDir),
     )
     this._capabilities = {
       ...capabilityBag,
@@ -757,6 +764,10 @@ export class KanbanSDK {
     if (webhookListener) {
       // Provider-supplied listener from the external webhook package.
       this._webhookPlugin = webhookListener
+      ;(this._webhookPlugin as CallbackRuntimeContextAwareListener).attachRuntimeContext?.({
+        workspaceRoot: this.workspaceRoot,
+        sdk: this,
+      })
       this._webhookPlugin.register(this._eventBus)
     }
     // When no listener is provided, _webhookPlugin stays null. No delivery listener is
@@ -773,6 +784,12 @@ export class KanbanSDK {
     }
     // When no listener is provided, _callbackPlugin stays null. The shared SDK
     // lifecycle remains the only runtime registration point for same-runtime callbacks.
+
+    const cronListener = this._capabilities.cronListener
+    if (cronListener) {
+      this._cronPlugin = cronListener
+      this._cronPlugin.register(this._eventBus)
+    }
 
     // Register the built-in auth listener plugin.
     this._capabilities.authListener.register(this._eventBus)
@@ -1129,6 +1146,40 @@ export class KanbanSDK {
         const key = `${pluginEvent.phase}:${pluginEvent.event}`
         const existing = descriptors.get(key)
         const pluginIds = Array.from(new Set([...(existing?.pluginIds ?? []), extension.id]))
+
+        if (!existing) {
+          descriptors.set(key, {
+            event: pluginEvent.event,
+            phase: pluginEvent.phase,
+            source: 'plugin',
+            resource: pluginEvent.resource,
+            label: pluginEvent.label,
+            sdkBefore: pluginEvent.phase === 'before',
+            sdkAfter: pluginEvent.phase === 'after',
+            apiAfter: pluginEvent.phase === 'after' ? pluginEvent.apiAfter ?? false : false,
+            pluginIds,
+          })
+          continue
+        }
+
+        descriptors.set(key, {
+          ...existing,
+          resource: existing.resource ?? pluginEvent.resource,
+          label: existing.label ?? pluginEvent.label,
+          apiAfter: existing.apiAfter || (pluginEvent.phase === 'after' ? pluginEvent.apiAfter ?? false : false),
+          pluginIds,
+        })
+      }
+    }
+
+    for (const runtimePlugin of this._capabilities?.runtimePluginEvents ?? []) {
+      for (const pluginEvent of runtimePlugin.events) {
+        if (type !== 'all' && pluginEvent.phase !== type) continue
+        if (!matchesEventMask(pluginEvent.event, options.mask)) continue
+
+        const key = `${pluginEvent.phase}:${pluginEvent.event}`
+        const existing = descriptors.get(key)
+        const pluginIds = Array.from(new Set([...(existing?.pluginIds ?? []), runtimePlugin.id]))
 
         if (!existing) {
           descriptors.set(key, {
@@ -2208,6 +2259,7 @@ export class KanbanSDK {
     this._storage.close()
     this._webhookPlugin?.unregister()
     this._callbackPlugin?.unregister()
+    this._cronPlugin?.unregister()
     this._capabilities?.authListener.unregister()
     this._eventBus.destroy()
   }

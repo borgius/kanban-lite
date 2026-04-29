@@ -11,6 +11,7 @@ import type {
   PluginSettingsSelectedState,
 } from '../../../shared/types'
 import {
+  normalizeCronCapabilities,
   PLUGIN_CAPABILITY_NAMESPACES,
   normalizeCallbackCapabilities,
   normalizeAuthCapabilities,
@@ -74,6 +75,9 @@ import {
 } from '../card-state-plugins'
 import type { CardStateModuleContext } from '../card-state-plugins'
 import {
+  CRON_PROVIDER_ALIASES,
+} from '../cron-plugins'
+import {
   WEBHOOK_PROVIDER_ALIASES,
   CALLBACK_PROVIDER_ALIASES,
   isValidSDKEventListenerPlugin,
@@ -130,6 +134,7 @@ function collectPluginSettingsPackageRequests(config: PluginSettingsConfigSnapsh
   for (const request of AUTH_POLICY_PROVIDER_ALIASES.values()) add(request)
   for (const request of WEBHOOK_PROVIDER_ALIASES.values()) add(request)
   for (const request of CALLBACK_PROVIDER_ALIASES.values()) add(request)
+  for (const request of CRON_PROVIDER_ALIASES.values()) add(request)
 
   for (const capability of PLUGIN_CAPABILITY_NAMESPACES) {
     const providerRef = config.plugins?.[capability]
@@ -325,6 +330,18 @@ function getCapabilitySelectedState(
         capability,
         providerId: selected.provider === 'none' ? null : selected.provider,
         source: config.plugins?.['callback.runtime']
+          ? selected.provider === 'none'
+            ? 'none'
+            : 'config'
+          : 'default',
+      }
+    }
+    case 'cron.runtime': {
+      const selected = normalizeCronCapabilities(config)['cron.runtime']
+      return {
+        capability,
+        providerId: selected.provider === 'none' ? null : selected.provider,
+        source: config.plugins?.['cron.runtime']
           ? selected.provider === 'none'
             ? 'none'
             : 'config'
@@ -566,6 +583,5 @@ export async function persistPluginSettingsProviderOptions(
     options: inactiveOptions,
   }
 }
-
 
 

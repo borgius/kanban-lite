@@ -74,6 +74,14 @@ export type {
 } from './storage-plugins'
 
 export {
+  CRON_PROVIDER_ALIASES,
+  resolveCronRuntimeFeatures,
+} from './cron-plugins'
+export type {
+  CronRuntimeFeatures,
+} from './cron-plugins'
+
+export {
   CALLBACK_PROVIDER_ALIASES,
   WEBHOOK_PROVIDER_ALIASES,
 } from './webhook-callback-plugins'

@@ -34,6 +34,7 @@ export class WebhookListenerPlugin implements SDKEventListenerPlugin {
   }
 
   private _unsubscribe: (() => void) | null = null
+  private _sdk: KanbanSDK | null = null
 
   constructor(private readonly _workspaceRoot: string) {
     debugLog(
@@ -46,14 +47,24 @@ export class WebhookListenerPlugin implements SDKEventListenerPlugin {
       debugLog('[kl-plugin-webhook] WebhookListenerPlugin already registered, skipping')
       return
     }
+    const availableAfterEvents = new Set(getAvailableWebhookEventNames(this._sdk ?? undefined))
     const webhooks = readWebhooks(this._workspaceRoot)
     debugLog(
       `[kl-plugin-webhook] WebhookListenerPlugin.register() | ${webhooks.length} webhook(s) configured: ${webhooks.map((w) => `${w.id}(${w.active ? 'active' : 'inactive'}) → ${w.url}`).join(', ') || 'none'}`
     )
     this._unsubscribe = bus.onAny((event, payload) => {
-      if (!SDK_AFTER_EVENT_NAMES.has(event)) return
+      if (availableAfterEvents.size > 0 && !availableAfterEvents.has(event)) return
+      if (isAfterEventPayload(payload.data)) {
+        if (payload.data.event !== event) return
+        fireWebhooks(this._workspaceRoot, event, payload.data)
+        return
+      }
       fireWebhooks(this._workspaceRoot, event, payload.data)
     })
+  }
+
+  attachRuntimeContext(context: { sdk: KanbanSDK }): void {
+    this._sdk = context.sdk
   }
 
   unregister(): void {
@@ -150,6 +161,31 @@ export const sdkExtensionPlugin: SDKExtensionPlugin<WebhookSdkExtensions> = {
     updateWebhook,
     deleteWebhook
   }
+}
+
+function isAfterEventPayload(value: unknown): value is {
+  event: string
+  data: unknown
+  timestamp: string
+} {
+  return typeof value === 'object'
+    && value !== null
+    && typeof (value as { event?: unknown }).event === 'string'
+    && 'data' in (value as object)
+    && typeof (value as { timestamp?: unknown }).timestamp === 'string'
+}
+
+function getAvailableWebhookEventNames(sdk?: KanbanSDK): string[] {
+  const events = typeof sdk?.listAvailableEvents === 'function'
+    ? sdk.listAvailableEvents({ type: 'after' })
+    : undefined
+  const configuredEvents = events
+    ?.filter((event) => event.phase === 'after')
+    .map((event) => event.event)
+  const names = configuredEvents && configuredEvents.length > 0
+    ? configuredEvents
+    : [...SDK_AFTER_EVENT_NAMES]
+  return [...new Set(names)].sort((left, right) => left.localeCompare(right))
 }
 
 // ---------------------------------------------------------------------------

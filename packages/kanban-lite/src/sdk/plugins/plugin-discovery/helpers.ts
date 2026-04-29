@@ -11,6 +11,7 @@ import type {
   PluginSettingsSelectedState,
 } from '../../../shared/types'
 import {
+  normalizeCronCapabilities,
   PLUGIN_CAPABILITY_NAMESPACES,
   normalizeCallbackCapabilities,
   normalizeAuthCapabilities,
@@ -73,6 +74,9 @@ import {
   isValidCardStateProvider,
 } from '../card-state-plugins'
 import type { CardStateModuleContext } from '../card-state-plugins'
+import {
+  CRON_PROVIDER_ALIASES,
+} from '../cron-plugins'
 import {
   WEBHOOK_PROVIDER_ALIASES,
   CALLBACK_PROVIDER_ALIASES,
@@ -205,6 +209,7 @@ export function resolveExternalPackageName(capability: PluginCapabilityNamespace
     case 'auth.visibility': return AUTH_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'webhook.delivery': return WEBHOOK_PROVIDER_ALIASES.get(providerId) ?? providerId
     case 'callback.runtime': return CALLBACK_PROVIDER_ALIASES.get(providerId) ?? providerId
+    case 'cron.runtime': return CRON_PROVIDER_ALIASES.get(providerId) ?? providerId
   }
 }
 
@@ -216,6 +221,7 @@ export function isPluginSettingsCapabilityDisabled(
     (capability === 'auth.visibility' && config.plugins?.['auth.visibility']?.provider === 'none')
     || (capability === 'webhook.delivery' && config.plugins?.['webhook.delivery']?.provider === 'none')
     || (capability === 'callback.runtime' && config.plugins?.['callback.runtime']?.provider === 'none')
+    || (capability === 'cron.runtime' && config.plugins?.['cron.runtime']?.provider === 'none')
   )
 }
 
@@ -420,6 +426,22 @@ export async function inspectExternalPluginModule(
           }
           break
         }
+        case 'cron.runtime': {
+          const directListener = isValidSDKEventListenerPlugin(mod.cronListenerPlugin)
+            ? mod.cronListenerPlugin
+            : isSDKEventListenerPluginConstructor(mod.CronListenerPlugin)
+              ? new (mod.CronListenerPlugin as new (workspaceRoot: string) => import('../../types').SDKEventListenerPlugin)(process.cwd())
+              : isValidSDKEventListenerPlugin(mod.default)
+                ? mod.default
+                : null
+          if (directListener) {
+            add({
+              capability, providerId, packageName: request, discoverySource: resolved.source,
+              optionsSchema: await getProviderOptionsSchemaCandidate(mod, providerId, directListener, sdk),
+            })
+          }
+          break
+        }
         case 'card.state': {
           const shouldExposeOptionsSchema = !storageBackedCardStateProviderIds.has(providerId)
           if (isRecord(mod.cardStateProviders)) {
@@ -464,5 +486,4 @@ export async function inspectExternalPluginModule(
   }
   return discovered
 }
-
 

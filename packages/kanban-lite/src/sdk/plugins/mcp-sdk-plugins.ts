@@ -24,6 +24,9 @@ import {
 } from './card-state-plugins'
 import { AUTH_PROVIDER_ALIASES, AUTH_POLICY_PROVIDER_ALIASES } from './auth-plugins'
 import {
+  CRON_PROVIDER_ALIASES,
+} from './cron-plugins'
+import {
   CALLBACK_PROVIDER_ALIASES,
   WEBHOOK_PROVIDER_ALIASES,
 } from './webhook-callback-plugins'
@@ -411,6 +414,11 @@ export function collectActiveExternalPackageNames(config: {
   const callbackProvider = config.plugins?.['callback.runtime']?.provider ?? 'none'
   if (callbackProvider !== 'none') {
     add(CALLBACK_PROVIDER_ALIASES.get(callbackProvider) ?? callbackProvider)
+  }
+
+  const cronProvider = config.plugins?.['cron.runtime']?.provider ?? 'none'
+  if (cronProvider !== 'none') {
+    add(CRON_PROVIDER_ALIASES.get(cronProvider) ?? cronProvider)
   }
 
   return [...packageNames]

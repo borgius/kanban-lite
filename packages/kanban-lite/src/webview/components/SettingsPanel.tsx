@@ -766,8 +766,17 @@ function PluginOptionsSection({
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const requestedProviderKeysRef = useRef<Set<string>>(new Set())
   const [showInstall, setShowInstall] = useState(false)
+  const [pluginFilter, setPluginFilter] = useState('')
   const preferredPluginKey = activePluginId ?? localPreferredPluginKey
   const isInstallVisible = showInstall && !activePluginId
+  const filteredPlugins = useMemo(() => {
+    const q = pluginFilter.trim().toLowerCase()
+    if (!q) return plugins
+    return plugins.filter(p =>
+      p.key.toLowerCase().includes(q) ||
+      p.capabilities.some(c => c.capability.toLowerCase().includes(q)),
+    )
+  }, [plugins, pluginFilter])
 
   const handleActivePluginIdChange = useCallback((pluginId: string | null) => {
     setLocalPreferredPluginKey(pluginId)
@@ -910,7 +919,24 @@ function PluginOptionsSection({
 
       <div ref={splitContainerRef} className="flex items-stretch gap-0" style={{ minHeight: '300px' }}>
         {/* Left panel: flat plugin list */}
-        <div className="overflow-y-auto pr-1" style={{ width: `${leftPanelPct}%`, minWidth: 0 }}>
+        <div className="flex flex-col pr-1" style={{ width: `${leftPanelPct}%`, minWidth: 0 }}>
+          <div className="pb-2">
+            <input
+              type="search"
+              placeholder="Filter plugins…"
+              value={pluginFilter}
+              onChange={e => setPluginFilter(e.target.value)}
+              className="w-full rounded-md border px-2 py-1 text-xs"
+              style={{
+                background: 'var(--vscode-input-background)',
+                color: 'var(--vscode-input-foreground)',
+                borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+                outline: 'none',
+              }}
+              aria-label="Filter plugins"
+            />
+          </div>
+          <div className="overflow-y-auto flex-1">
           <div
             className="rounded-xl border overflow-hidden"
             style={{
@@ -925,7 +951,14 @@ function PluginOptionsSection({
               >
                 No plugins discovered yet.
               </div>
-            ) : plugins.map((plugin, idx) => (
+            ) : filteredPlugins.length === 0 ? (
+              <div
+                className="px-3 py-3 text-sm"
+                style={{ color: 'var(--vscode-descriptionForeground)' }}
+              >
+                No plugins match &ldquo;{pluginFilter}&rdquo;.
+              </div>
+            ) : filteredPlugins.map((plugin, idx) => (
               <div
                 key={plugin.key}
                 data-testid={`plugin-package-${plugin.key}`}
@@ -971,7 +1004,7 @@ function PluginOptionsSection({
             <div
               className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
               style={{
-                borderTop: plugins.length > 0 ? '1px solid var(--vscode-panel-border)' : undefined,
+                borderTop: filteredPlugins.length > 0 ? '1px solid var(--vscode-panel-border)' : undefined,
                 ...(isInstallVisible
                   ? {
                       background: 'var(--vscode-list-activeSelectionBackground)',
@@ -994,6 +1027,7 @@ function PluginOptionsSection({
                 Install package
               </span>
             </div>
+          </div>
           </div>
         </div>
 

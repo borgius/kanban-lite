@@ -129,6 +129,11 @@ export class KanbanSDKCore {
   public readonly kanbanDir: string
 
   constructor(kanbanDir?: string, options?: SDKOptions) {
+    if (options?.remoteUrl) {
+      throw new Error(
+        'Use RemoteKanbanSDK({ remoteUrl, token }) instead of KanbanSDK when connecting to a remote API.',
+      )
+    }
     this.kanbanDir = kanbanDir ?? resolveKanbanDir()
     loadWorkspaceEnv(path.dirname(this.kanbanDir))
     this._onEvent = options?.onEvent

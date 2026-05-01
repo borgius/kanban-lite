@@ -39,6 +39,7 @@ import {
 import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './worker-runtime'
 import { handleMcpRequest } from './mcp-handler'
 import { withCloudflareAccessAuthorizationFallback } from './worker-auth'
+import { verifyCfAccessJwt } from './lib/cf-access'
 
 const CLOUDFLARE_ACTIVE_CARD_STATE_BINDING = 'KANBAN_ACTIVE_CARD_STATE'
 const LIVE_SYNC_OBJECT_NAME_PREFIX = 'live-sync:'
@@ -480,10 +481,29 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
 
 const { fetch: workerFetch, queue: workerQueue, scheduled: workerScheduled } = createCloudflareWorkerEntrypoint()
 
+/**
+ * Wraps the inner fetch handler with Cloudflare Access JWT validation.
+ * No-op when CF_ACCESS_TEAM_DOMAIN or CF_ACCESS_AUD_KANBAN are absent (local dev).
+ */
+async function fetchWithCfAccess(request: Request, env?: CloudflareWorkerRuntimeEnv): Promise<Response> {
+  const teamDomain = env?.CF_ACCESS_TEAM_DOMAIN as string | undefined
+  const audience = env?.CF_ACCESS_AUD_KANBAN as string | undefined
+  if (teamDomain && audience) {
+    const valid = await verifyCfAccessJwt(request, teamDomain, audience)
+    if (!valid) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+  }
+  return workerFetch(request, env)
+}
+
 export { workerQueue as queue }
 
 export default {
-  fetch: workerFetch,
+  fetch: fetchWithCfAccess,
   queue: workerQueue,
   scheduled: workerScheduled,
 }

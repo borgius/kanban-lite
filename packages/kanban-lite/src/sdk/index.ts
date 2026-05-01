@@ -11,6 +11,7 @@ export {
   PluginSettingsValidationError,
   validatePluginSettingsInstallRequest,
 } from './KanbanSDK'
+export { RemoteKanbanSDK } from './remote'
 export { parseCardFile, serializeCard } from './parser'
 export { getCardFilePath, ensureDirectories, ensureStatusSubfolders, moveCardFile, renameCardFile, getStatusFromPath } from './fileUtils'
 export { migrateFileSystemToMultiBoard } from './migration'

@@ -412,6 +412,21 @@ export interface SDKOptions {
    * Any omitted namespace falls back to `.kanban.json` and legacy defaults.
    */
   capabilities?: CapabilitySelections
+  /**
+   * Remote kanban-lite REST API base URL (e.g. `"http://localhost:3000"`).
+   *
+   * When set, the `KanbanSDK` constructor will throw and direct you to use
+   * `RemoteKanbanSDK` instead, since remote mode requires a different class
+   * to avoid local filesystem initialization.
+   *
+   * @see RemoteKanbanSDK
+   */
+  remoteUrl?: string
+  /**
+   * Bearer token for remote API authentication.
+   * Only relevant when `remoteUrl` is set — pass to `RemoteKanbanSDK` instead.
+   */
+  token?: string
   /** @internal Testing seam for guarded plugin install subprocess execution. */
   pluginInstallRunner?: (command: {
     command: 'npm'

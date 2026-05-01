@@ -5799,6 +5799,37 @@ describe('Standalone Server Integration', () => {
       expect(persistedConfig.plugins['card.storage']).not.toHaveProperty('enabled')
     })
 
+    it('PUT options for an inactive provider switches the provider and persists options to disk', async () => {
+      // Arrange: noop is the active auth.identity provider; local is inactive.
+      writeWorkspaceConfig(path.dirname(tempDir), {
+        plugins: {
+          'auth.identity': { provider: 'noop' },
+          'card.storage': { provider: 'localfs' },
+        },
+      })
+
+      // Act: save roles for the inactive 'local' provider.
+      const res = await httpRequest('PUT', `http://localhost:${port}/api/plugin-settings/auth.identity/local/options`, {
+        options: { roles: ['user', 'manager', 'admin', 'testrole'] },
+      })
+
+      // Assert: request succeeds and returned data reflects the new active provider.
+      expect(res.status).toBe(200)
+      const json = JSON.parse(res.body)
+      expect(json.ok).toBe(true)
+      expect(json.data.providerId).toBe('local')
+      expect(json.data.selected).toMatchObject({ providerId: 'local', source: 'config' })
+
+      // Assert: .kanban.json now has provider switched to 'local' with roles persisted.
+      const persisted = JSON.parse(fs.readFileSync(path.join(path.dirname(tempDir), '.kanban.json'), 'utf-8')) as {
+        plugins: Record<string, { provider: string; options?: Record<string, unknown> }>
+      }
+      expect(persisted.plugins['auth.identity']).toMatchObject({
+        provider: 'local',
+        options: { roles: expect.arrayContaining(['testrole']) },
+      })
+    })
+
     it('PUT /api/plugin-settings/:capability/:providerId/select maps AuthError to HTTP 403', async () => {
       const { AuthError } = await import('../../sdk/types')
       const spy = vi.spyOn(KanbanSDK.prototype, 'selectPluginSettingsProvider').mockRejectedValue(

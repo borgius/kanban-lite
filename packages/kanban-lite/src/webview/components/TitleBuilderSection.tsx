@@ -84,7 +84,7 @@ function TitleBuilderSectionContent({
       <div className="rounded-xl border px-3 py-3 space-y-2" style={sectionStyle}>
         <div>
           <h3 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-            Title Fields
+            Title Template
           </h3>
           <p className="mt-1 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
             Choose which metadata keys prefix card titles in board views, toasts, and other user-facing surfaces.

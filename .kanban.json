@@ -233,96 +233,10 @@
       }
     },
     "auth.identity": {
-      "provider": "openauth",
-      "options": {
-        "issuer": "http://localhost:2954",
-        "clientId": "kanban-lite-local",
-        "embeddedIssuer": {
-          "google": {
-            "clientId": "${GOOGLE_CLIENT_ID}",
-            "clientSecret": "${GOOGLE_CLIENT_SECRET}",
-            "roleMatrix": {
-              "admin@example.com": "admin",
-              "user@example.com": "user"
-            }
-          },
-          "password": {
-            "users": [
-              {
-                "email": "admin@example.com",
-                "passwordHash": {
-                  "hash": "mlicN1rKrXiDxtRq7W3RO/pzs7HacbYAMSpCsqifi/A=",
-                  "salt": "oKnLB27M8bT+b5aG4+spPg==",
-                  "N": 16384,
-                  "r": 8,
-                  "p": 1
-                },
-                "role": "admin"
-              },
-              {
-                "email": "user@example.com",
-                "passwordHash": {
-                  "hash": "0SBZNtPh9Y3TkwQwNGk728L98DN6sWxfXwUXNFd9R/o=",
-                  "salt": "3XHI3MyZhLc7AHKA2R0qDg==",
-                  "N": 16384,
-                  "r": 8,
-                  "p": 1
-                },
-                "role": "user"
-              }
-            ]
-          }
-        }
-      }
+      "provider": "noop"
     },
     "auth.policy": {
-      "provider": "kl-plugin-auth",
-      "options": {
-        "permissions": [
-          {
-            "role": "user",
-            "actions": [
-              "form.submit",
-              "comment.create",
-              "comment.update",
-              "comment.delete",
-              "attachment.add",
-              "attachment.remove",
-              "card.action.trigger",
-              "log.add",
-              "card.checklist.show"
-            ]
-          },
-          {
-            "role": "manager",
-            "actions": [
-              "form.submit",
-              "comment.create",
-              "comment.update",
-              "comment.delete",
-              "attachment.add",
-              "attachment.remove",
-              "card.action.trigger",
-              "log.add",
-              "card.create",
-              "card.update",
-              "card.move",
-              "card.transfer",
-              "card.delete",
-              "board.action.trigger",
-              "log.clear",
-              "board.log.add",
-              "card.checklist.show"
-            ]
-          },
-          {
-            "role": "admin",
-            "actions": [
-              "*"
-            ]
-          }
-        ]
-      }
+      "provider": "noop"
     },
     "card.storage": {
       "provider": "localfs"

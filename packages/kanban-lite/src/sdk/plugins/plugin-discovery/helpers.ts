@@ -194,7 +194,8 @@ export function isBuiltinProviderForCapability(capability: PluginCapabilityNames
     case 'auth.policy': return BUILTIN_AUTH_PROVIDER_IDS.has(normalizedProviderId)
     case 'auth.visibility': return normalizedProviderId === 'none'
     case 'webhook.delivery':
-    case 'callback.runtime': return false
+    case 'callback.runtime':
+    case 'cron.runtime': return false
   }
 }
 

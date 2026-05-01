@@ -429,17 +429,25 @@ export function readConfigRepositoryDocument(
   const filePath = getConfigRepositoryFilePath(workspaceRoot)
   const documentId = getConfigRepositoryDocumentId()
   const runtimeHostResult = readConfigRepositoryDocumentFromRuntimeHost(workspaceRoot, filePath)
-  const seedResult = runtimeHostResult && !options?.allowSeedFallbackOnProviderError
-    ? readFileConfigRepositoryDocument(filePath)
-    : readSeedConfigRepositoryDocument(workspaceRoot, filePath)
 
+  // When the runtime host provides an authoritative config, we only need the
+  // seed result for two reasons:
+  //   1. Provider-error fallback when the caller explicitly opted in via
+  //      `allowSeedFallbackOnProviderError`.
+  //   2. Nothing else — seedResult is unused when runtime host succeeds.
+  // Computing the seed unconditionally (previous behavior) meant an extra
+  // `fs.readFileSync` + `JSON.parse` on every runtime-hosted readConfig call,
+  // which shows up on every Cloudflare Worker request and every standalone
+  // request once a runtime host is installed.
   if (runtimeHostResult) {
-    if (runtimeHostResult.status === 'error' && seedResult.status === 'ok' && options?.allowSeedFallbackOnProviderError) {
-      return seedResult
+    if (runtimeHostResult.status === 'error' && options?.allowSeedFallbackOnProviderError) {
+      const seedResult = readSeedConfigRepositoryDocument(workspaceRoot, filePath)
+      if (seedResult.status === 'ok') return seedResult
     }
-
     return runtimeHostResult
   }
+
+  const seedResult = readSeedConfigRepositoryDocument(workspaceRoot, filePath)
 
   const explicitConfigStorage = seedResult.status === 'ok'
     ? normalizeExplicitConfigStorageProviderRef(seedResult.value)

@@ -15,6 +15,7 @@ const expectedWaveOneScenarios = [
   { name: 'plugin-options', templateDirName: 'plugin-options', port: 4177 },
   { name: 'card-drawer', templateDirName: 'card-drawer', port: 4178 },
   { name: 'board-settings', templateDirName: 'board-settings', port: 4179 },
+  { name: 'openauth', templateDirName: 'openauth', port: 4180, healthPath: '/auth/openauth/login' },
 ] as const
 
 async function loadFixtureModule(): Promise<typeof import('../../../e2e/fixture')> {
@@ -72,7 +73,8 @@ describe('Playwright standalone scenario bootstrap', () => {
       expect(resolved.kanbanDir).toBe(path.join(resolved.workspaceDir, '.kanban'))
       expect(resolved.configPath).toBe(path.join(resolved.workspaceDir, '.kanban.json'))
       expect(resolved.baseURL).toBe(`http://127.0.0.1:${expectedScenario.port}`)
-      expect(resolved.healthURL).toBe(`http://127.0.0.1:${expectedScenario.port}/api/health`)
+      const expectedHealthPath = 'healthPath' in expectedScenario ? expectedScenario.healthPath : '/api/health'
+      expect(resolved.healthURL).toBe(`http://127.0.0.1:${expectedScenario.port}${expectedHealthPath}`)
       expect(resolved.startupArguments).toEqual([
         '--config',
         resolved.configPath,

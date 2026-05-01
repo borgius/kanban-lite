@@ -1,5 +1,6 @@
 import * as http from 'http'
 import type { StandaloneHttpHandler, StandaloneHttpPlugin } from '../sdk'
+import { withConfigReadCache } from '../shared/config'
 import { extractAuthContext, getRequestAuthContext, mergeRequestAuthContext, setRequestAuthContext } from './authUtils'
 import type { StandaloneContext } from './context'
 import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
@@ -26,9 +27,8 @@ function isPageRequest(method: string, pathname: string): boolean {
 }
 
 function collectStandaloneHttpHandlers(
-  requestType: 'middleware' | 'routes',
   ctx: StandaloneContext,
-): StandaloneHttpHandler[] {
+): { middleware: StandaloneHttpHandler[]; routes: StandaloneHttpHandler[] } {
   const plugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
   const registrationOptions = {
     sdk: ctx.sdk,
@@ -46,12 +46,15 @@ function collectStandaloneHttpHandlers(
     webhookCapabilities: ctx.sdk.capabilities?.webhookProviders ?? null,
   } as const
 
-  return plugins.flatMap((plugin: StandaloneHttpPlugin) => {
-    const handlers = requestType === 'middleware'
-      ? plugin.registerMiddleware?.(registrationOptions)
-      : plugin.registerRoutes?.(registrationOptions)
-    return handlers ? [...handlers] : []
-  })
+  const middleware: StandaloneHttpHandler[] = []
+  const routes: StandaloneHttpHandler[] = []
+  for (const plugin of plugins as StandaloneHttpPlugin[]) {
+    const mw = plugin.registerMiddleware?.(registrationOptions)
+    if (mw) middleware.push(...mw)
+    const rts = plugin.registerRoutes?.(registrationOptions)
+    if (rts) routes.push(...rts)
+  }
+  return { middleware, routes }
 }
 
 function normalizeRequestUrl(req: IncomingMessageWithRawBody, basePath: string): void {
@@ -110,8 +113,11 @@ export function createStandaloneRouteDispatcher(
   resolvedIndexHtml: string,
   basePath = '',
 ): StandaloneRouteDispatcher {
-  const middlewareHandlers = collectStandaloneHttpHandlers('middleware', ctx) as StandaloneRouteHandler[]
-  const pluginRouteHandlers = collectStandaloneHttpHandlers('routes', ctx) as StandaloneRouteHandler[]
+  const { middleware: middlewareHandlers, routes: pluginRouteHandlers } =
+    collectStandaloneHttpHandlers(ctx) as {
+      middleware: StandaloneRouteHandler[]
+      routes: StandaloneRouteHandler[]
+    }
   const routeHandlers: StandaloneRouteHandler[] = [
     ...pluginRouteHandlers,
     handleMobileRoutes,
@@ -126,11 +132,20 @@ export function createStandaloneRouteDispatcher(
     routeHandlers,
     async handle(req, res) {
       normalizeRequestUrl(req, basePath)
-      const requestContext = createRequestContext(ctx, req, res, resolvedWebviewDir, resolvedIndexHtml)
-      await dispatchRequest(requestContext, middlewareHandlers)
-      if (!res.writableEnded) {
-        await dispatchRequest(requestContext, routeHandlers)
-      }
+      // Coalesce repeated `readConfig()` calls made by middleware, route
+      // handlers, and SDK method calls during a single HTTP request into one
+      // provider round-trip. This mirrors the wrap used by webview-sync and
+      // WS broadcasts, but covers every other transport-level request
+      // (REST, mobile, MCP-over-HTTP, etc.). `writeConfig` invalidates the
+      // cache, and nested `withConfigReadCache` scopes (e.g. the inner
+      // `syncWebviewMessages` wrap) are documented as safe.
+      await withConfigReadCache(async () => {
+        const requestContext = createRequestContext(ctx, req, res, resolvedWebviewDir, resolvedIndexHtml)
+        await dispatchRequest(requestContext, middlewareHandlers)
+        if (!res.writableEnded) {
+          await dispatchRequest(requestContext, routeHandlers)
+        }
+      })
     },
     async resolveWsAuthContext(req) {
       const silentRes = (() => {
@@ -148,11 +163,13 @@ export function createStandaloneRouteDispatcher(
       })()
       const reqWithBody = req as IncomingMessageWithRawBody
       normalizeRequestUrl(reqWithBody, basePath)
-      const requestContext = createRequestContext(ctx, reqWithBody, silentRes, resolvedWebviewDir, resolvedIndexHtml)
-      for (const handler of middlewareHandlers) {
-        if (await handler(requestContext)) break
-      }
-      return extractAuthContext(req)
+      return withConfigReadCache(async () => {
+        const requestContext = createRequestContext(ctx, reqWithBody, silentRes, resolvedWebviewDir, resolvedIndexHtml)
+        for (const handler of middlewareHandlers) {
+          if (await handler(requestContext)) break
+        }
+        return extractAuthContext(req)
+      })
     },
   }
 }

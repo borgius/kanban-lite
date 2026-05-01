@@ -43,7 +43,6 @@ const webhookProviderPackages = new Map([
 ])
 const callbackProviderPackages = new Map([
   ['callbacks', 'kl-plugin-callback'],
-  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 // First-party plugins that are bundled by default for Cloudflare Workers.
 // Capability-specific packages such as kl-plugin-cloudflare and kl-plugin-webhook are

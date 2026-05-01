@@ -11,7 +11,7 @@ function seededCard(page: Page): Locator {
 }
 
 function pluginListEntry(page: Page): Locator {
-  return page.getByTestId(`plugin-package-${providerCacheKey}`)
+  return page.getByTestId(`plugin-package-${providerId}`)
 }
 
 function pluginOptionsSection(page: Page): Locator {
@@ -59,22 +59,22 @@ describeStandaloneScenario('standalone plugin options smoke', 'plugin-options', 
     const section = await openProviderOptions(page)
 
     // The seeded fixture has 1 matching role in the first rule ("viewer").
-    // String arrays render as array-table-layout with editable rows.
-    const rolesTable = section.locator('.array-table-layout').filter({ hasText: 'Matching roles' }).first()
-    await expect(rolesTable).toBeVisible()
-    const rowsBefore = await rolesTable.locator('tbody tr').count()
+    // Plain string arrays render through the JsonFormsStringListControl chip-free editor.
+    const rolesList = section.locator('.kl-jsonforms-string-list').filter({ hasText: 'Matching roles' }).first()
+    await expect(rolesList).toBeVisible()
+    const rowsBefore = await rolesList.locator('.kl-jsonforms-string-list__row').count()
     expect(rowsBefore).toBe(1)
 
-    // Add a second matching role
-    const addRoleButton = section.getByRole('button', { name: /Add to Matching roles/i }).first()
+    // Add a second matching role via the header "Add role" button
+    const addRoleButton = rolesList.locator('.kl-jsonforms-string-list__add').first()
     await addRoleButton.click()
 
     // Fill in a valid role name so the form is not in error state
-    const newRoleInput = rolesTable.locator('tbody tr').last().locator('input')
+    const newRoleInput = rolesList.locator('.kl-jsonforms-string-list__row').last().locator('input')
     await newRoleInput.fill('admin')
 
     // Verify the count increased
-    await expect(rolesTable.locator('tbody tr')).toHaveCount(rowsBefore + 1)
+    await expect(rolesList.locator('.kl-jsonforms-string-list__row')).toHaveCount(rowsBefore + 1)
 
     // Save
     await section.getByRole('button', { name: 'Save options', exact: true }).click()
@@ -91,10 +91,10 @@ describeStandaloneScenario('standalone plugin options smoke', 'plugin-options', 
     await openPluginOptions(page)
 
     const reopenedSection = await openProviderOptions(page)
-    const reopenedRolesTable = reopenedSection
-      .locator('.array-table-layout')
+    const reopenedRolesList = reopenedSection
+      .locator('.kl-jsonforms-string-list')
       .filter({ hasText: 'Matching roles' })
       .first()
-    await expect(reopenedRolesTable.locator('tbody tr')).toHaveCount(rowsBefore + 1)
+    await expect(reopenedRolesList.locator('.kl-jsonforms-string-list__row')).toHaveCount(rowsBefore + 1)
   })
 })

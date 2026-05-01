@@ -10,6 +10,7 @@ import {
   DEFAULT_CONFIG,
   normalizeAuthCapabilities,
   normalizeCallbackCapabilities,
+  normalizeCronCapabilities,
   normalizeCardStateCapabilities,
   normalizeConfigStorageSelection,
   normalizeStorageCapabilities,
@@ -467,6 +468,10 @@ export function getSelectedProviderRef(
       return normalizeWebhookCapabilities(config)['webhook.delivery']
     case 'callback.runtime': {
       const selected = normalizeCallbackCapabilities(config)['callback.runtime']
+      return selected.provider === 'none' ? null : selected
+    }
+    case 'cron.runtime': {
+      const selected = normalizeCronCapabilities(config)['cron.runtime']
       return selected.provider === 'none' ? null : selected
     }
   }

@@ -83,7 +83,7 @@ export interface ResolvedCapabilityBag {
   readonly callbackListener: SDKEventListenerPlugin | null
   readonly cronProviders: ResolvedCronCapabilities | null
   readonly cronListener: SDKEventListenerPlugin | null
-  readonly runtimePluginEvents: readonly Array<{
+  readonly runtimePluginEvents: ReadonlyArray<{
     readonly id: string
     readonly events: readonly SDKPluginEventDeclaration[]
   }>

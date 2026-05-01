@@ -753,6 +753,7 @@ describe('plugin settings contract helpers', () => {
       'auth.visibility',
       'webhook.delivery',
       'callback.runtime',
+      'cron.runtime',
     ])
   })
 

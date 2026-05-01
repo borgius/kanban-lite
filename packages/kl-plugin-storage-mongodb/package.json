@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-storage-mongodb",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "kanban-lite card.storage and attachment.storage plugin for MongoDB",
   "license": "MIT",
   "type": "commonjs",

@@ -1,6 +1,6 @@
 {
   "name": "kl-adapter-vercel-ai",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Vercel AI Chat SDK adapter for kanban-lite – pre-built tool definitions, REST client, and streaming comment support",
   "license": "MIT",
   "type": "commonjs",

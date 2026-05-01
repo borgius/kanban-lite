@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-cron",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "kanban-lite cron.runtime plugin for scheduled event emission",
   "license": "MIT",
   "type": "commonjs",

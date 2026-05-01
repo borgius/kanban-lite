@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-rbac",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "kanban-lite auth.policy plugin – noop, local, and RBAC policy providers with permission matrix",
   "license": "MIT",
   "type": "commonjs",

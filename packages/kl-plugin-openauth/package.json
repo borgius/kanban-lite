@@ -1,6 +1,6 @@
 {
   "name": "kl-plugin-openauth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "kanban-lite auth.identity/auth.policy plugin – OpenAuth.js provider with OAuth redirect flow and optional embedded issuer",
   "license": "MIT",
   "type": "commonjs",

@@ -37,7 +37,7 @@ export function validateCronPluginOptions(options: Record<string, unknown>): voi
 
     if (!name) throw new Error(`Cron events[${index}] must include a non-empty name.`)
     if (!eventName) throw new Error(`Cron event "${name}" must include a non-empty event name.`)
-    if (!expression) throw new Error(`Cron event "${name}" must include a cron or schedule value.`)
+    if (!expression) throw new Error(`Cron event "${name}" must include a schedule (cron expression).`)
     if (seenNames.has(name)) throw new Error(`Cron event names must be unique. Duplicate: "${name}".`)
 
     try {
@@ -80,13 +80,7 @@ export function createCronOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                 type: 'string',
                 title: 'Schedule',
                 minLength: 1,
-                description: 'Cron expression to evaluate. Prefer this field for new configuration.',
-              },
-              cron: {
-                type: 'string',
-                title: 'Cron alias',
-                minLength: 1,
-                description: 'Backward-compatible alias for the schedule field. When both are present, cron takes precedence.',
+                description: 'Cron expression, e.g. "0 0 * * *" for daily at midnight.',
               },
               event: {
                 type: 'string',
@@ -95,10 +89,7 @@ export function createCronOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                 description: 'Event name emitted on the shared SDK event bus when this cron schedule fires.',
               },
             },
-            anyOf: [
-              { required: ['schedule'] },
-              { required: ['cron'] },
-            ],
+            required: ['name', 'event', 'schedule'],
           },
         },
       },
@@ -134,14 +125,6 @@ export function createCronOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                       label: 'Schedule',
                       options: {
                         placeholder: '0 0 * * *',
-                      },
-                    },
-                    {
-                      type: 'Control',
-                      scope: '#/properties/cron',
-                      label: 'Cron alias',
-                      options: {
-                        placeholder: '0 */15 * * * *',
                       },
                     },
                     {

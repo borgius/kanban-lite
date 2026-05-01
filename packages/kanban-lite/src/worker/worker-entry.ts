@@ -294,7 +294,8 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
 
   const fetch = async (request: Request, env?: CloudflareWorkerRuntimeEnv): Promise<Response> => {
     state.runtimeEnv = env
-    setupWorkerCronContext(env) = await maybeHandleWebSocketUpgrade(request, options, state, env)
+    setupWorkerCronContext(env)
+    const webSocketUpgradeResponse = await maybeHandleWebSocketUpgrade(request, options, state, env)
     if (webSocketUpgradeResponse) {
       return webSocketUpgradeResponse
     }

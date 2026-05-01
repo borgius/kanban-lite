@@ -1,7 +1,7 @@
 import * as childProcess from 'node:child_process'
-import * as fs from 'node:fs'
 import { createRequire } from 'node:module'
 import * as path from 'node:path'
+import { readConfig } from 'kanban-lite/sdk'
 import type {
   AfterEventPayload,
   EventBus,
@@ -56,24 +56,10 @@ export interface CallbackRuntimeContext {
   readonly sdk: KanbanSDK
 }
 
-interface PersistedCallbackPluginConfig {
-  readonly provider?: string
-  readonly options?: CallbackPluginOptions
-}
-
-interface PersistedCallbackPlugins {
-  readonly 'callback.runtime'?: PersistedCallbackPluginConfig
-}
-
-interface PersistedCallbackConfig {
-  readonly plugins?: PersistedCallbackPlugins
-}
-
 export type CallbackPluginOptionsSchemaFactory = (sdk?: KanbanSDK) => PluginSettingsOptionsSchemaMetadata
 
 export const CALLBACK_PROVIDER_ID = 'callbacks'
 export const CALLBACK_PACKAGE_ID = 'kl-plugin-callback'
-const CONFIG_FILENAME = '.kanban.json'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -100,14 +86,6 @@ function logCallbackFailure(handlerName: string, eventName: string, error: unkno
     `[kl-plugin-callback] handler "${handlerName}" failed for event "${eventName}"`,
     message,
   )
-}
-
-function parseCallbackConfig(workspaceRoot: string): PersistedCallbackConfig {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(workspaceRoot, CONFIG_FILENAME), 'utf-8')) as PersistedCallbackConfig
-  } catch {
-    return {}
-  }
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -148,8 +126,7 @@ function normalizeCallbackHandler(raw: unknown, index: number): CallbackHandlerC
 }
 
 function readCallbackHandlers(workspaceRoot: string): CallbackHandlerConfig[] {
-  const pluginConfig = parseCallbackConfig(workspaceRoot).plugins?.['callback.runtime']
-  const handlers = pluginConfig?.options?.handlers
+  const handlers = readConfig(workspaceRoot).plugins?.['callback.runtime']?.options?.handlers
   if (!Array.isArray(handlers)) return []
 
   return handlers

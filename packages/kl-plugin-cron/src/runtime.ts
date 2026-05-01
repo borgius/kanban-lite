@@ -1,6 +1,5 @@
-import * as fs from 'node:fs'
-import * as path from 'node:path'
 import { CronExpressionParser } from 'cron-parser'
+import { readConfig } from 'kanban-lite/sdk'
 import type {
   EventBus,
   SDKEventListenerPlugin,
@@ -14,20 +13,6 @@ export interface CronRuntimeEventConfig {
   readonly event: string
 }
 
-interface PersistedCronPluginConfig {
-  readonly provider?: string
-  readonly options?: {
-    readonly events?: readonly unknown[]
-  }
-}
-
-interface PersistedCronConfig {
-  readonly plugins?: {
-    readonly 'cron.runtime'?: PersistedCronPluginConfig
-  }
-}
-
-const CONFIG_FILENAME = '.kanban.json'
 const MAX_TIMEOUT_MS = 2_147_483_647
 
 export const CRON_PROVIDER_ID = 'cron'
@@ -45,14 +30,6 @@ export function resolveCronExpression(event: Pick<CronRuntimeEventConfig, 'cron'
   if (isNonEmptyString(event.cron)) return event.cron.trim()
   if (isNonEmptyString(event.schedule)) return event.schedule.trim()
   return ''
-}
-
-function parseCronConfig(workspaceRoot: string): PersistedCronConfig {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(workspaceRoot, CONFIG_FILENAME), 'utf-8')) as PersistedCronConfig
-  } catch {
-    return {}
-  }
 }
 
 function normalizeCronRuntimeEvent(raw: unknown, index: number): CronRuntimeEventConfig | null {
@@ -91,7 +68,7 @@ function normalizeCronRuntimeEvent(raw: unknown, index: number): CronRuntimeEven
 }
 
 export function readCronRuntimeEvents(workspaceRoot: string): CronRuntimeEventConfig[] {
-  const configuredEvents = parseCronConfig(workspaceRoot).plugins?.['cron.runtime']?.options?.events
+  const configuredEvents = readConfig(workspaceRoot).plugins?.['cron.runtime']?.options?.events
   if (!Array.isArray(configuredEvents)) return []
 
   return configuredEvents

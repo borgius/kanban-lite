@@ -11,18 +11,15 @@ import { getWorkerPaths } from './worker-utils'
 import type { CloudflareWorkerFetchHandlerOptions } from './worker-types'
 import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './worker-runtime'
 import type { WorkerEntrypointState } from './worker-types'
+import { extractCloudflareWorkerBearerToken } from './worker-auth'
 
-function extractBearerToken(request: Request): string | undefined {
-  const header = request.headers.get('authorization')
-  if (!header) return undefined
-  const match = header.match(/^Bearer\s+(.+)$/i)
-  return match?.[1]
-}
-
-function createWorkerMcpAuthHelpers(sdk: KanbanSDK, token: string | undefined) {
+function createWorkerMcpAuthHelpers(
+  sdk: KanbanSDK,
+  token: ReturnType<typeof extractCloudflareWorkerBearerToken>,
+) {
   function resolveAuthContext(): AuthContext {
     return token
-      ? { token, tokenSource: 'header', transport: 'mcp' }
+      ? { token: token.token, tokenSource: token.source, transport: 'mcp' }
       : { transport: 'mcp' }
   }
 
@@ -60,7 +57,7 @@ export async function handleMcpRequest(
   return workerRuntimeHost.runWithRequestScope(() => withConfigReadCache(async () => {
     const absoluteKanbanDir = path.resolve(kanbanDir)
     const sdk = new KanbanSDK(absoluteKanbanDir)
-    const token = extractBearerToken(request)
+    const token = extractCloudflareWorkerBearerToken(request.headers)
     const authHelpers = createWorkerMcpAuthHelpers(sdk, token)
 
     const mcpServer = createMcpServerInstance({

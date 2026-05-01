@@ -40,6 +40,15 @@ import {
   createFallbackAttachmentStoragePlugin,
 } from './engine'
 export {
+  authIdentityPlugins,
+  createAuthIdentityPlugin,
+  createCloudflareAccessOptionsSchema,
+} from './access-auth'
+import {
+  authIdentityPlugins,
+  createCloudflareAccessOptionsSchema,
+} from './access-auth'
+export {
   createCardStoragePlugin,
   createAttachmentStoragePlugin,
   createCardStateProvider,
@@ -401,7 +410,13 @@ export const callbackListenerPlugin: SDKEventListenerPlugin & {
 export const optionsSchemas: Record<string, CloudflareCallbackOptionsSchemaFactory> = {
   [PROVIDER_ID]: createCloudflareCallbackOptionsSchema,
   'kl-plugin-cloudflare': createCloudflareCallbackOptionsSchema,
+  'auth.identity:cloudflare': createCloudflareAccessOptionsSchema,
 }
+
+export const authOptionsSchemas = {
+  [PROVIDER_ID]: createCloudflareAccessOptionsSchema,
+  'auth.identity:cloudflare': createCloudflareAccessOptionsSchema,
+} as const
 
 export const cardStoragePlugin = createFallbackCardStoragePlugin()
 
@@ -415,6 +430,7 @@ export const pluginManifest = {
     'card.state': [PROVIDER_ID] as const,
     'config.storage': [PROVIDER_ID] as const,
     'callback.runtime': [PROVIDER_ID] as const,
+    'auth.identity': [PROVIDER_ID] as const,
   },
   integrations: ['event.listener'] as const,
 } as const
@@ -422,7 +438,9 @@ export const pluginManifest = {
 const cloudflarePluginPackage = {
   pluginManifest,
   callbackListenerPlugin,
+  authIdentityPlugins,
   optionsSchemas,
+  authOptionsSchemas,
 }
 
 export default cloudflarePluginPackage

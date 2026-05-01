@@ -184,6 +184,7 @@ export const AUTH_PROVIDER_ALIASES: ReadonlyMap<string, string> = new Map([
   ['rbac', 'kl-plugin-auth'],
   ['local', 'kl-plugin-auth'],
   ['openauth', 'kl-plugin-openauth'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 
 /**

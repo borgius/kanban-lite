@@ -11,7 +11,7 @@ function seededCard(page: Page): Locator {
 }
 
 function pluginListEntry(page: Page): Locator {
-  return page.getByTestId(`plugin-package-${providerCacheKey}`)
+  return page.getByTestId(`plugin-package-${providerId}`)
 }
 
 function pluginOptionsSection(page: Page): Locator {

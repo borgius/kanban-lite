@@ -2,7 +2,8 @@ import * as vscode from 'vscode'
 import * as path from 'path'
 import * as fs from 'fs'
 import * as os from 'os'
-import { getDisplayTitleFromContent, CARD_FORMAT_VERSION, createEmptyPluginSettingsPayload, DEFAULT_SETTINGS_SUPPORT } from '../shared/types'
+import { getDisplayTitleFromContent, createEmptyPluginSettingsPayload, DEFAULT_SETTINGS_SUPPORT } from '../shared/types'
+import { buildCardFrontmatter } from '../shared/cardFrontmatter'
 import type {
   Card,
   KanbanColumn,
@@ -1333,11 +1334,17 @@ export class KanbanPanel {
     const canShowChecklist = await this._canShowChecklist()
     const canUpdateMetadata = await this._canUpdateMetadata()
 
+    const frontmatter: CardFrontmatter = buildCardFrontmatter(card)
+    if (canShowChecklist) {
+      frontmatter.tasks = card.tasks ?? []
+    } else {
+      delete frontmatter.tasks
+    }
     this._panel.webview.postMessage({
       type: 'cardContent',
       cardId: card.id,
       content: card.content,
-      frontmatter: this._buildCardFrontmatter(card, canShowChecklist),
+      frontmatter,
       comments: card.comments || [],
       logs: await this._getLogsForCard(card.id),
       canUpdateMetadata,
@@ -1915,28 +1922,6 @@ export class KanbanPanel {
       vscode.window.showErrorMessage(`Failed to cleanup list: ${err}`)
     } finally {
       this._migrating = false
-    }
-  }
-
-  private _buildCardFrontmatter(card: Card, canShowChecklist = false): CardFrontmatter {
-    return {
-      version: card.version ?? CARD_FORMAT_VERSION,
-      id: card.id,
-      status: card.status,
-      priority: card.priority,
-      assignee: card.assignee,
-      dueDate: card.dueDate,
-      created: card.created,
-      modified: card.modified,
-      completedAt: card.completedAt,
-      labels: card.labels,
-      attachments: card.attachments,
-      order: card.order,
-      metadata: card.metadata,
-      actions: card.actions,
-      forms: card.forms,
-      formData: card.formData,
-      ...(canShowChecklist ? { tasks: card.tasks ?? [] } : {}),
     }
   }
 }

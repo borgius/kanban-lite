@@ -1,26 +1,9 @@
-import type { Card, CardFrontmatter, CardSortOption } from '../shared/types'
+import type { CardSortOption } from '../shared/types'
 
-export function buildCardFrontmatter(card: Card): CardFrontmatter {
-  return {
-    version: card.version ?? 0,
-    id: card.id,
-    status: card.status,
-    priority: card.priority,
-    assignee: card.assignee,
-    dueDate: card.dueDate,
-    created: card.created,
-    modified: card.modified,
-    completedAt: card.completedAt,
-    labels: card.labels,
-    attachments: card.attachments,
-    tasks: card.tasks,
-    order: card.order,
-    metadata: card.metadata,
-    actions: card.actions,
-    forms: card.forms,
-    formData: card.formData,
-  }
-}
+// Re-exported here for existing standalone callers; the canonical definition
+// lives in `../shared/cardFrontmatter` so the VSCode extension and other
+// transports can use the same projection without a layer violation.
+export { buildCardFrontmatter } from '../shared/cardFrontmatter'
 
 export function parseSubmitData(value: unknown): Record<string, unknown> {
   if (value === undefined) return {}

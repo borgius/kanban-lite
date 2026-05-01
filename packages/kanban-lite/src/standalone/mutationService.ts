@@ -8,7 +8,6 @@ import { type SubmitFormInput, type SubmitFormResult } from '../sdk/types'
 import type { StandaloneContext } from './context'
 import { getAuthErrorLike } from './authUtils'
 import { broadcast, buildInitMessage, loadCards } from './broadcastService'
-import { buildCardFrontmatter } from './cardHelpers'
 
 /**
  * Reloads `ctx.cards` and broadcasts an init to all WebSocket clients.
@@ -398,6 +397,3 @@ export async function doClearLogs(ctx: StandaloneContext, cardId: string): Promi
     ctx.migrating = false
   }
 }
-
-// Re-export type alias for callers
-export { buildCardFrontmatter }

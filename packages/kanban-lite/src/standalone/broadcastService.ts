@@ -246,12 +246,27 @@ async function broadcastPerClient(ctx: StandaloneContext, type: 'init' | 'cardsU
     // down to one per broadcast. Wrapping per-client would still fire N reads
     // on high-latency backends like Cloudflare KV.
     await withConfigReadCache(async () => {
+      // Hoist the non-auth-scoped fields of the init payload (settings,
+      // columns, boards, labels, minimizedColumnIds, workspace metadata)
+      // out of the per-client loop. The config-read-cache covered provider
+      // IO, but each client still paid for 5 SDK calls and a fresh
+      // `settings` allocation. The resulting `baseInit` object is
+      // JSON-serialized once per client and never mutated after build.
+      const baseInit = type === 'init' ? buildBaseInitMessage(ctx) : null
       for (const client of ctx.wss.clients) {
         if (client.readyState !== WS_OPEN) continue
         const authContext = ctx.clientAuthContexts.get(client)
-        const payload = type === 'init'
-          ? await buildClientInitMessage(ctx, authContext)
-          : await buildClientCardsUpdatedMessage(ctx, authContext)
+        let payload: unknown
+        if (type === 'init' && baseInit) {
+          const currentUser = await resolveCurrentUserName(ctx.sdk, authContext)
+          payload = {
+            ...baseInit,
+            currentUser,
+            cards: await buildDecoratedCards(ctx, authContext),
+          }
+        } else {
+          payload = await buildClientCardsUpdatedMessage(ctx, authContext)
+        }
         client.send(JSON.stringify(payload))
       }
     })

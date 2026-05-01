@@ -60,6 +60,12 @@ export interface CloudflareWorkerRuntimeEnv {
   KANBAN_MODULES?: WorkerModuleRegistry
   KANBAN_ACTIVE_CARD_STATE?: unknown
   ASSETS?: { fetch(request: Request): Promise<Response> }
+  /** CF account ID — injected as a Worker var for runtime cron schedule sync. */
+  CLOUDFLARE_ACCOUNT_ID?: string
+  /** CF API token secret — set via `wrangler secret put CLOUDFLARE_API_TOKEN` for runtime cron sync. */
+  CLOUDFLARE_API_TOKEN?: string
+  /** Worker script name — injected as a Worker var for runtime cron schedule sync. */
+  CLOUDFLARE_WORKER_NAME?: string
 }
 
 export interface CloudflareWorkerFetchHandlerOptions {
@@ -88,6 +94,13 @@ export interface CloudflareWorkerQueueBatch<Body = unknown> {
 export interface CloudflareWorkerExecutionContext {
   waitUntil(promise: Promise<unknown>): void
   passThroughOnException?(): void
+}
+
+export interface CloudflareWorkerScheduledEvent {
+  /** The cron expression string that triggered this invocation (e.g. "*/5 * * * *"). */
+  readonly cron: string
+  /** Unix timestamp (ms) of the scheduled trigger time. */
+  readonly scheduledTime: number
 }
 
 export type CloudflareWorkerQueueHandlerOptions = CloudflareWorkerFetchHandlerOptions

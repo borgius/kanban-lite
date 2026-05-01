@@ -129,6 +129,103 @@ function createCronEventPayload(configuredEvent: CronRuntimeEventConfig): {
   }
 }
 
+/**
+ * Returns true when the current runtime is a Cloudflare Workers isolate.
+ * In that environment, timer-based scheduling is not viable because isolates
+ * are short-lived and wake up only on inbound events. Native cron scheduling
+ * is handled instead via the Worker `scheduled` export.
+ */
+export function isCloudflareWorkersEnvironment(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers'
+}
+
+/**
+ * Pool of rare placeholder cron expressions used as no-op slots in the CF
+ * Workers schedule pool. All fire only on Feb 29 (leap day), so they never
+ * fire in practice. Must stay in sync with CRON_POOL_DEFAULTS in
+ * deploy-cloudflare-worker.mjs.
+ */
+export const CRON_POOL_DEFAULTS = [
+  '0 0 29 2 *',
+  '1 0 29 2 *',
+  '2 0 29 2 *',
+  '3 0 29 2 *',
+  '4 0 29 2 *',
+  '5 0 29 2 *',
+  '6 0 29 2 *',
+  '7 0 29 2 *',
+  '8 0 29 2 *',
+  '9 0 29 2 *',
+] as const
+
+export interface CronCloudflareContext {
+  readonly accountId: string
+  readonly apiToken: string
+  readonly scriptName: string
+}
+
+let _cfContext: CronCloudflareContext | null = null
+
+/**
+ * Inject Cloudflare credentials so that `syncCronSchedulesToCloudflare` can
+ * call the CF Schedules API. Call this at the start of each Worker request
+ * using values from the `env` parameter. Pass `null` to clear.
+ */
+export function setCronCloudflareContext(ctx: CronCloudflareContext | null): void {
+  _cfContext = ctx
+}
+
+/**
+ * Sync user cron expressions to the running Cloudflare Worker's schedule pool
+ * via the CF Schedules REST API. The first N expressions fill the pool slots;
+ * remaining slots are reset to the rare leap-day defaults. Silently skips if
+ * no CF context has been injected via `setCronCloudflareContext`.
+ */
+export async function syncCronSchedulesToCloudflare(userExpressions: string[]): Promise<void> {
+  const ctx = _cfContext
+  if (!ctx?.accountId || !ctx?.apiToken || !ctx?.scriptName) return
+
+  const userSlots = userExpressions.slice(0, CRON_POOL_DEFAULTS.length)
+  const schedules = [
+    ...userSlots,
+    ...CRON_POOL_DEFAULTS.slice(userSlots.length),
+  ].map((cron) => ({ cron }))
+
+  const url = `https://api.cloudflare.com/client/v4/accounts/${ctx.accountId}/workers/scripts/${ctx.scriptName}/schedules`
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${ctx.apiToken}`,
+    },
+    body: JSON.stringify(schedules),
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`CF Schedules API error ${response.status}: ${body}`)
+  }
+}
+
+/**
+ * Emit events for every configured cron entry whose expression matches
+ * `cronExpression`. Intended for use inside a Cloudflare Worker `scheduled`
+ * handler where the platform supplies the triggered cron string.
+ */
+export function handleCloudflareScheduledEvent(
+  workspaceRoot: string,
+  cronExpression: string,
+  bus: EventBus,
+): void {
+  const configuredEvents = readCronRuntimeEvents(workspaceRoot)
+  for (const configuredEvent of configuredEvents) {
+    const expression = resolveCronExpression(configuredEvent)
+    if (expression === cronExpression) {
+      bus.emit(configuredEvent.event, createCronEventPayload(configuredEvent))
+    }
+  }
+}
+
 function getNextDelayMs(expression: string, currentDate: Date): number {
   const nextRun = CronExpressionParser.parse(expression, { currentDate }).next().toDate()
   return Math.max(0, nextRun.getTime() - currentDate.getTime())
@@ -151,6 +248,14 @@ export class CronListenerPlugin implements SDKEventListenerPlugin {
   register(bus: EventBus): void {
     if (this._isRegistered) return
     this._isRegistered = true
+
+    if (isCloudflareWorkersEnvironment()) {
+      // Cloudflare Workers isolates are short-lived and do not support
+      // persistent timers. Cron scheduling is handled natively by the
+      // platform via the Worker `scheduled` export and
+      // handleCloudflareScheduledEvent(). Nothing to set up here.
+      return
+    }
 
     for (const configuredEvent of readCronRuntimeEvents(this._workspaceRoot)) {
       if (this._timers.has(configuredEvent.name)) continue

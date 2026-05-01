@@ -1,5 +1,6 @@
 import * as path from 'node:path'
 import * as bundledCloudflareProviderModule from '../../../kl-plugin-cloudflare/src/index'
+import * as bundledCronModule from '../../../kl-plugin-cron/src/index'
 import {
   assertCloudflareCallbackModuleHandlerSetMatchesBootstrap,
   assertCloudflareCallbackModuleRegistry,
@@ -232,6 +233,49 @@ export function getCallbackRuntimeProviderId(config: RuntimeHostConfigDocument |
   return typeof callbackRuntime?.provider === 'string' && callbackRuntime.provider.length > 0
     ? callbackRuntime.provider
     : null
+}
+
+export function getCronRuntimeProviderId(config: RuntimeHostConfigDocument | undefined | null): string | null {
+  const plugins = isRecord(config?.plugins) ? config.plugins : null
+  const cronRuntime = plugins && isRecord(plugins['cron.runtime'])
+    ? plugins['cron.runtime']
+    : null
+
+  return typeof cronRuntime?.provider === 'string' && cronRuntime.provider.length > 0
+    ? cronRuntime.provider
+    : null
+}
+
+interface CronRuntimeWorkerModule {
+  handleCloudflareScheduledEvent?: unknown
+  setCronCloudflareContext?: unknown
+}
+
+/**
+ * Returns the bundled `handleCloudflareScheduledEvent` function from the cron
+ * plugin, or null if the export is absent (e.g. an older build is loaded).
+ */
+export function loadWorkerCronScheduledHandler(): ((workspaceRoot: string, cronExpression: string, bus: unknown) => void) | null {
+  const mod = bundledCronModule as CronRuntimeWorkerModule
+  return typeof mod.handleCloudflareScheduledEvent === 'function'
+    ? mod.handleCloudflareScheduledEvent as (workspaceRoot: string, cronExpression: string, bus: unknown) => void
+    : null
+}
+
+/**
+ * Injects Cloudflare credentials from the Worker env into the cron plugin so
+ * that saving cron settings via the settings UI triggers a live CF Schedules
+ * API call. Call at the top of every `fetch` handler. Clears context if any
+ * credential is missing.
+ */
+export function setupWorkerCronContext(env: CloudflareWorkerRuntimeEnv | undefined): void {
+  const mod = bundledCronModule as CronRuntimeWorkerModule
+  if (typeof mod.setCronCloudflareContext !== 'function') return
+  const setter = mod.setCronCloudflareContext as (ctx: { accountId: string; apiToken: string; scriptName: string } | null) => void
+  const accountId = typeof env?.CLOUDFLARE_ACCOUNT_ID === 'string' ? env.CLOUDFLARE_ACCOUNT_ID.trim() : ''
+  const apiToken = typeof env?.CLOUDFLARE_API_TOKEN === 'string' ? env.CLOUDFLARE_API_TOKEN.trim() : ''
+  const scriptName = typeof env?.CLOUDFLARE_WORKER_NAME === 'string' ? env.CLOUDFLARE_WORKER_NAME.trim() : ''
+  setter(accountId && apiToken && scriptName ? { accountId, apiToken, scriptName } : null)
 }
 
 export function isCallbackRuntimeQueueConsumer(value: unknown): value is CallbackRuntimeQueueConsumer {

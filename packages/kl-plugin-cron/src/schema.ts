@@ -4,7 +4,7 @@ import type {
   PluginSettingsOptionsSchemaMetadata,
 } from 'kanban-lite/sdk'
 import type { CronRuntimeEventConfig } from './runtime'
-import { resolveCronExpression } from './runtime'
+import { resolveCronExpression, syncCronSchedulesToCloudflare } from './runtime'
 
 interface CronPluginOptions {
   readonly events?: readonly CronRuntimeEventConfig[]
@@ -161,8 +161,20 @@ export function createCronOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
       ],
     },
     secrets: [],
-    beforeSave(options: Record<string, unknown>): void {
+    async beforeSave(options: Record<string, unknown>): Promise<void> {
       validateCronPluginOptions(options)
+      const events = Array.isArray(options.events) ? options.events : []
+      const userExpressions = events
+        .map((e) => isRecord(e) ? resolveCronExpression(e as unknown as Pick<CronRuntimeEventConfig, 'cron' | 'schedule'>) : '')
+        .filter(Boolean)
+      try {
+        await syncCronSchedulesToCloudflare(userExpressions)
+      } catch (error) {
+        console.warn(
+          '[kl-plugin-cron] CF schedule sync failed (settings saved locally):',
+          error instanceof Error ? error.message : String(error),
+        )
+      }
     },
   }
 }

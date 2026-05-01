@@ -36,14 +36,14 @@ describe('cron options schema', () => {
     expect(eventsControl?.options?.showSortButtons).toBe(true)
     expect(eventsControl?.options?.elementLabelProp).toBe('name')
 
-    expect(() => metadata.beforeSave?.({
+    await expect(metadata.beforeSave?.({
       events: [{ name: 'Broken', cron: 'not a cron', event: 'schedule.broken' }],
     }, {
       capability: 'cron.runtime',
       providerId: 'cron',
       sdk: {} as never,
       isActivating: true,
-    })).toThrow(/Invalid cron expression/)
+    })).rejects.toThrow(/Invalid cron expression/)
   })
 })
 

@@ -17,6 +17,7 @@ import type {
   CloudflareWorkerQueueHandlerOptions,
   CloudflareWorkerQueueBatch,
   CloudflareWorkerExecutionContext,
+  CloudflareWorkerScheduledEvent,
 } from './worker-types'
 export type {
   CloudflareWorkerRuntimeEnv,
@@ -25,11 +26,15 @@ export type {
   CloudflareWorkerQueueMessage,
   CloudflareWorkerQueueBatch,
   CloudflareWorkerExecutionContext,
+  CloudflareWorkerScheduledEvent,
 } from './worker-types'
 import {
   getWorkerPaths,
   getCallbackRuntimeProviderId,
+  getCronRuntimeProviderId,
   loadWorkerCallbackQueueConsumer,
+  loadWorkerCronScheduledHandler,
+  setupWorkerCronContext,
 } from './worker-utils'
 import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './worker-runtime'
 import { handleMcpRequest } from './mcp-handler'
@@ -274,6 +279,10 @@ export function createCloudflareWorkerQueueHandler(options: CloudflareWorkerQueu
   return createCloudflareWorkerEntrypoint(options).queue
 }
 
+export function createCloudflareWorkerScheduledHandler(options: CloudflareWorkerFetchHandlerOptions = {}) {
+  return createCloudflareWorkerEntrypoint(options).scheduled
+}
+
 function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerOptions = {}) {
   const state: WorkerEntrypointState = {
     dispatcher: null,
@@ -285,8 +294,7 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
 
   const fetch = async (request: Request, env?: CloudflareWorkerRuntimeEnv): Promise<Response> => {
     state.runtimeEnv = env
-
-    const webSocketUpgradeResponse = await maybeHandleWebSocketUpgrade(request, options, state, env)
+    setupWorkerCronContext(env) = await maybeHandleWebSocketUpgrade(request, options, state, env)
     if (webSocketUpgradeResponse) {
       return webSocketUpgradeResponse
     }
@@ -422,14 +430,59 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
     })
   }
 
-  return { fetch, queue }
+  const scheduled = async (
+    event: CloudflareWorkerScheduledEvent,
+    env?: CloudflareWorkerRuntimeEnv,
+    _context?: CloudflareWorkerExecutionContext,
+  ): Promise<void> => {
+    state.runtimeEnv = env
+    const { kanbanDir, workspaceRoot } = getWorkerPaths(options, env)
+    const workerRuntimeHost = resolveWorkerRuntimeHostHandle(options, env, workspaceRoot, state)
+
+    await workerRuntimeHost.refreshCommittedConfig()
+    workerRuntimeHost.assertConfigReady()
+    installWorkerRuntimeHost(workerRuntimeHost.runtimeHost)
+
+    await workerRuntimeHost.runWithRequestScope(async () => {
+      const runtimeConfig = workerRuntimeHost.runtimeHost.readConfig?.(
+        workspaceRoot,
+        path.join(kanbanDir, '.kanban.json'),
+      )
+      const cronProviderId = getCronRuntimeProviderId(runtimeConfig) ?? getCronRuntimeProviderId(state.bootstrap?.config)
+      if (!cronProviderId || cronProviderId === 'none') {
+        console.warn('[kl-plugin-cron] Cloudflare scheduled event received but cron.runtime is not configured; skipping.')
+        return
+      }
+
+      const handleScheduled = loadWorkerCronScheduledHandler()
+      if (!handleScheduled) {
+        throw new Error(
+          'kl-plugin-cron does not export handleCloudflareScheduledEvent. ' +
+          'Ensure the plugin is built and up to date.',
+        )
+      }
+
+      const sdk = new KanbanSDK(path.resolve(kanbanDir), {
+        onEvent: createWorkerSyncEventHandler(() => env, kanbanDir),
+      })
+
+      try {
+        handleScheduled(workspaceRoot, event.cron, sdk.eventBus)
+      } finally {
+        sdk.close()
+      }
+    })
+  }
+
+  return { fetch, queue, scheduled }
 }
 
-const { fetch: workerFetch, queue: workerQueue } = createCloudflareWorkerEntrypoint()
+const { fetch: workerFetch, queue: workerQueue, scheduled: workerScheduled } = createCloudflareWorkerEntrypoint()
 
 export { workerQueue as queue }
 
 export default {
   fetch: workerFetch,
   queue: workerQueue,
+  scheduled: workerScheduled,
 }

@@ -61,6 +61,25 @@ const allInternalPluginPackages = [
   'kl-plugin-storage-mongodb',
   'kl-plugin-storage-redis',
 ]
+// Pool of 10 placeholder cron expressions registered in wrangler.toml by default.
+// All fire only on Feb 29 (leap day), so they are effectively no-ops in practice.
+// After `wrangler deploy` resets the Worker's schedule to these rare defaults, the
+// post-deploy syncCronSchedules() step calls the CF Schedules API to swap the first
+// N slots to the actual user expressions from .kanban.json. Unused slots stay as
+// rare defaults. Removing events restores slots to defaults automatically on the
+// next deploy (wrangler resets from wrangler.toml, no API call needed for empty slots).
+const CRON_POOL_DEFAULTS = [
+  '0 0 29 2 *',
+  '1 0 29 2 *',
+  '2 0 29 2 *',
+  '3 0 29 2 *',
+  '4 0 29 2 *',
+  '5 0 29 2 *',
+  '6 0 29 2 *',
+  '7 0 29 2 *',
+  '8 0 29 2 *',
+  '9 0 29 2 *',
+]
 const nodeConsole = globalThis.console
 const nodeProcess = globalThis.process
 
@@ -637,6 +656,87 @@ function renderQueueConsumerConfigBlock(queueConsumer) {
   return `${lines.join('\n')}\n`
 }
 
+function renderCronTriggersBlock(expressions) {
+  if (!expressions || expressions.length === 0) return ''
+  const cronsToml = expressions.map((e) => JSON.stringify(e)).join(', ')
+  return `
+[triggers]
+crons = [${cronsToml}]
+`
+}
+
+/**
+ * Render a [vars] block with CLOUDFLARE_WORKER_NAME and CLOUDFLARE_ACCOUNT_ID
+ * so they are accessible as `env.CLOUDFLARE_WORKER_NAME` / process.env inside
+ * the Worker (with nodejs_compat). CLOUDFLARE_API_TOKEN is a secret and must
+ * be set separately via `wrangler secret put CLOUDFLARE_API_TOKEN`.
+ */
+function renderCronVarsBlock(workerName) {
+  const accountId = nodeProcess.env.CLOUDFLARE_ACCOUNT_ID ?? ''
+  if (!workerName) return ''
+  const lines = ['\n[vars]', `CLOUDFLARE_WORKER_NAME = ${JSON.stringify(workerName)}`]
+  if (accountId) lines.push(`CLOUDFLARE_ACCOUNT_ID = ${JSON.stringify(accountId)}`)
+  return lines.join('\n') + '\n'
+}
+
+/**
+ * After wrangler deploy (which resets the Worker's schedule to CRON_POOL_DEFAULTS),
+ * call the CF Schedules API to swap the first N pool slots to the user's actual cron
+ * expressions from .kanban.json. Unused slots keep the rare leap-day defaults.
+ * Requires CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN env vars.
+ */
+async function syncCronSchedules(scriptName, config) {
+  const events = config?.plugins?.['cron.runtime']?.options?.events
+  if (!Array.isArray(events) || events.length === 0) return
+
+  const userExpressions = events
+    .map((e) => (typeof e?.cron === 'string' ? e.cron : typeof e?.schedule === 'string' ? e.schedule : '').trim())
+    .filter(Boolean)
+
+  if (userExpressions.length === 0) return
+
+  if (userExpressions.length > CRON_POOL_DEFAULTS.length) {
+    nodeConsole.warn(
+      `[kl-plugin-cron] ${userExpressions.length} cron events configured but pool only has ${CRON_POOL_DEFAULTS.length} slots. ` +
+      `Only the first ${CRON_POOL_DEFAULTS.length} will be registered.`,
+    )
+  }
+
+  const accountId = nodeProcess.env.CLOUDFLARE_ACCOUNT_ID
+  const apiToken = nodeProcess.env.CLOUDFLARE_API_TOKEN
+
+  if (!accountId || !apiToken) {
+    nodeConsole.warn(
+      '[kl-plugin-cron] Skipping cron schedule sync: CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN not set.',
+    )
+    return
+  }
+
+  // Fill slots: user expressions first, remaining slots stay at rare leap-day defaults
+  const userSlots = userExpressions.slice(0, CRON_POOL_DEFAULTS.length)
+  const schedules = [
+    ...userSlots,
+    ...CRON_POOL_DEFAULTS.slice(userSlots.length),
+  ].map((cron) => ({ cron }))
+
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/scripts/${scriptName}/schedules`
+  const response = await fetch(url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiToken}`,
+    },
+    body: JSON.stringify(schedules),
+  })
+
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`[kl-plugin-cron] CF Schedules API error ${response.status}: ${body}`)
+  }
+
+  nodeConsole.log(`[kl-plugin-cron] Synced ${userSlots.length} cron schedule(s) to Cloudflare Worker '${scriptName}'.`)
+}
+
 function renderCustomDomainRouteBlocks(customDomains, customDomainZoneName) {
   const normalizedDomains = normalizeCustomDomainList(customDomains)
   if (normalizedDomains.length === 0) {
@@ -665,7 +765,7 @@ workers_dev = true
 [assets]
 directory = ${JSON.stringify(standaloneAssetsDir)}
 binding = "ASSETS"
-${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderKanbanWorkerDurableObjectConfigBlocks()}`
+${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderKanbanWorkerDurableObjectConfigBlocks()}${options.config?.plugins?.['cron.runtime'] ? renderCronTriggersBlock(CRON_POOL_DEFAULTS) + renderCronVarsBlock(options.name) : ''}`
   const configPath = path.join(tempDir, 'wrangler.toml')
   fs.writeFileSync(configPath, config, 'utf8')
   return configPath
@@ -762,6 +862,10 @@ async function main() {
   }
 
   run('npx', wranglerArgs, packageRoot)
+
+  if (embeddedConfig?.plugins?.['cron.runtime']) {
+    await syncCronSchedules(options.name, embeddedConfig)
+  }
 }
 
 if (nodeProcess.argv[1] && path.resolve(nodeProcess.argv[1]) === __filename) {

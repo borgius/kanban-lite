@@ -3,12 +3,20 @@ import { createCronOptionsSchema } from './schema'
 import {
   CRON_PACKAGE_ID,
   CRON_PROVIDER_ID,
+  CRON_POOL_DEFAULTS,
   CronListenerPlugin,
   getCronRuntimeEventDeclarations,
+  handleCloudflareScheduledEvent,
+  isCloudflareWorkersEnvironment,
+  setCronCloudflareContext,
+  syncCronSchedulesToCloudflare,
 } from './runtime'
 
 export type {
   CronRuntimeEventConfig,
+} from './runtime'
+export type {
+  CronCloudflareContext,
 } from './runtime'
 export type {
   CronPluginOptionsSchemaFactory,
@@ -16,8 +24,13 @@ export type {
 export {
   CRON_PACKAGE_ID,
   CRON_PROVIDER_ID,
+  CRON_POOL_DEFAULTS,
   CronListenerPlugin,
   getCronRuntimeEventDeclarations,
+  handleCloudflareScheduledEvent,
+  isCloudflareWorkersEnvironment,
+  setCronCloudflareContext,
+  syncCronSchedulesToCloudflare,
 } from './runtime'
 export {
   createCronOptionsSchema,

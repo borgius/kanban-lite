@@ -31,6 +31,7 @@ import { drawerContainerClass, drawerPanelStyle, getSlideInClass, isHorizontalDr
 import { JsonFormsCodeEditorControl, jsonFormsCodeEditorTester } from './JsonFormsCodeEditorControl'
 import { JsonFormsEnumArrayControl, jsonFormsEnumArrayTester } from './JsonFormsEnumArrayControl'
 import { JsonFormsStringListControl, jsonFormsStringListTester } from './JsonFormsStringListControl'
+import { JsonFormsTokenArrayControl, jsonFormsTokenArrayTester } from './JsonFormsTokenArrayControl'
 import { ActionsBuilderSection } from './ActionsBuilderSection'
 import { MetaBuilderSection } from './MetaBuilderSection'
 import { TitleBuilderSection } from './TitleBuilderSection'
@@ -42,6 +43,7 @@ const pluginOptionsJsonFormsRenderers = [
   { tester: jsonFormsCodeEditorTester, renderer: JsonFormsCodeEditorControl },
   { tester: jsonFormsEnumArrayTester, renderer: JsonFormsEnumArrayControl },
   { tester: jsonFormsStringListTester, renderer: JsonFormsStringListControl },
+  { tester: jsonFormsTokenArrayTester, renderer: JsonFormsTokenArrayControl },
   ...vanillaRenderers,
 ]
 

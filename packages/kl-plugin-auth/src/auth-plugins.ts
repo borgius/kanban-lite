@@ -9,6 +9,7 @@ import {
   cloneIdentity,
   createAuthIdentityOptionsSchema,
   getConfiguredApiToken,
+  normalizeConfiguredTokens,
   normalizeToken,
   safeTokenEquals,
 } from './auth-core'
@@ -76,6 +77,7 @@ export function createAuthIdentityPlugin(options?: Record<string, unknown>, prov
     typeof options?.apiToken === 'string' && options.apiToken.length > 0
       ? options.apiToken
       : null
+  const configuredTokens = normalizeConfiguredTokens(options ?? null)
 
   return {
     manifest: { id: providerId, provides: ['auth.identity'] },
@@ -84,9 +86,24 @@ export function createAuthIdentityPlugin(options?: Record<string, unknown>, prov
       if (context.identity) return cloneIdentity(context.identity)
 
       const token = normalizeToken(context.token)
-      const configuredToken = explicitToken ?? getConfiguredApiToken()
-      if (token && configuredToken && safeTokenEquals(token, configuredToken)) {
-        return { subject: context.actorHint ?? 'api-token' }
+      if (token) {
+        // Check global apiToken (unrestricted access).
+        const configuredToken = explicitToken ?? getConfiguredApiToken()
+        if (configuredToken && safeTokenEquals(token, configuredToken)) {
+          return { subject: context.actorHint ?? 'api-token' }
+        }
+        // Check named tokens array; tokens with a role carry role-based access.
+        const matchedToken = configuredTokens.find((t) => safeTokenEquals(token, t.token))
+        if (matchedToken) {
+          // Use 'named-token' subject when a role is set so RBAC policy checks
+          // are not bypassed by the 'api-token' fast-path.
+          const subject = matchedToken.role
+            ? (context.actorHint ?? 'named-token')
+            : (context.actorHint ?? 'api-token')
+          const identity: AuthIdentity = { subject }
+          if (matchedToken.role) identity.roles = [matchedToken.role]
+          return identity
+        }
       }
 
       if (context.actorHint) {

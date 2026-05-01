@@ -1930,6 +1930,190 @@ describe('KanbanSDK plugin settings inventory', () => {
     }
   })
 
+  it('persists a newly added role to plugins config and returns it on read-back (legacy auth format)', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: { apiToken: 'tok' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const updated = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+          apiToken: '••••••',
+          roles: ['user', 'manager', 'admin', 'new'],
+        }),
+      )
+
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: { roles?: string[] } }>
+      }
+
+      const readback = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.getPluginSettings('auth.identity', 'local'),
+      )
+
+      // Updated provider response should include all 4 roles
+      expect(updated.options?.values).toMatchObject({ roles: ['user', 'manager', 'admin', 'new'] })
+
+      // The new roles must be persisted under plugins (not discarded)
+      expect(persistedConfig.plugins?.['auth.identity']?.options?.roles).toEqual([
+        'user',
+        'manager',
+        'admin',
+        'new',
+      ])
+
+      // Fresh read-back from disk must also return all 4 roles
+      expect(readback?.options?.values).toMatchObject({ roles: ['user', 'manager', 'admin', 'new'] })
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('persists a newly added role to plugins config and returns it on read-back (plugins format)', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          'auth.identity': {
+            provider: 'local',
+            options: { apiToken: 'tok' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const updated = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+          apiToken: '••••••',
+          roles: ['user', 'manager', 'admin', 'new'],
+        }),
+      )
+
+      const persistedConfig = JSON.parse(
+        fs.readFileSync(path.join(workspaceDir, '.kanban.json'), 'utf-8'),
+      ) as {
+        plugins?: Record<string, { provider: string; options?: { roles?: string[] } }>
+      }
+
+      const readback = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.getPluginSettings('auth.identity', 'local'),
+      )
+
+      expect(updated.options?.values).toMatchObject({ roles: ['user', 'manager', 'admin', 'new'] })
+      expect(persistedConfig.plugins?.['auth.identity']?.options?.roles).toEqual([
+        'user',
+        'manager',
+        'admin',
+        'new',
+      ])
+      expect(readback?.options?.values).toMatchObject({ roles: ['user', 'manager', 'admin', 'new'] })
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('resolved enum values for role pickers reflect added roles after save', async () => {
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: { apiToken: 'tok' },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      // Save new role
+      await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.updatePluginSettingsOptions('auth.identity', 'local', {
+          apiToken: '••••••',
+          roles: ['user', 'manager', 'admin', 'new'],
+        }),
+      )
+
+      // Read back the full provider including the resolved schema
+      const readback = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.getPluginSettings('auth.identity', 'local'),
+      )
+
+      // The enum for users[].role should include the new role after the save
+      const usersRoleEnum = (readback?.optionsSchema?.schema as {
+        properties?: {
+          users?: { items?: { properties?: { role?: { enum?: string[] } } } }
+        }
+      })?.properties?.users?.items?.properties?.role?.enum
+
+      expect(usersRoleEnum).toContain('new')
+    } finally {
+      sdk.close()
+    }
+  })
+
+  it('resolved enum values for role pickers reflect existing legacy-format roles without a save', async () => {
+    // When the workspace uses the legacy config.auth format with custom roles already defined,
+    // the schema enum for users[].role should reflect those custom roles immediately — before any save.
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      JSON.stringify({
+        version: 2,
+        auth: {
+          'auth.identity': {
+            provider: 'local',
+            options: {
+              apiToken: 'tok',
+              roles: ['user', 'manager', 'admin', 'custom'],
+            },
+          },
+        },
+      }),
+      'utf-8',
+    )
+
+    const sdk = new KanbanSDK(kanbanDir)
+
+    try {
+      const provider = await sdk.runWithAuth({ actorHint: 'inventory-writer' }, () =>
+        sdk.getPluginSettings('auth.identity', 'local'),
+      )
+
+      const usersRoleEnum = (provider?.optionsSchema?.schema as {
+        properties?: {
+          users?: { items?: { properties?: { role?: { enum?: string[] } } } }
+        }
+      })?.properties?.users?.items?.properties?.role?.enum
+
+      expect(usersRoleEnum).toContain('custom')
+    } finally {
+      sdk.close()
+    }
+  })
+
   it('round-trips mixed callback handler edits through the shared plugin settings save flow', async () => {
     fs.writeFileSync(
       path.join(workspaceDir, '.kanban.json'),

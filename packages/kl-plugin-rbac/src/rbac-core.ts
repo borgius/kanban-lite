@@ -33,7 +33,8 @@ export function getConfiguredAuthRoles(sdk?: KanbanSDK): string[] {
     ? sdk.getConfigSnapshot()
     : undefined
   const roles = normalizeStringList(
-    configSnapshot?.plugins?.['auth.identity']?.options?.roles,
+    configSnapshot?.plugins?.['auth.identity']?.options?.roles
+    ?? configSnapshot?.auth?.['auth.identity']?.options?.roles,
   )
   return roles ?? getDefaultLocalAuthRoles()
 }

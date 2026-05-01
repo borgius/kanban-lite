@@ -90,6 +90,14 @@ const KL_RBAC_DEFAULT_POLICY_PLUGIN: AuthPolicyPlugin = {
   checkPolicy: RBAC_POLICY_PLUGIN.checkPolicy,
 }
 
+// Compat entry for workspaces that set auth.policy.provider: 'kl-plugin-auth'.
+// AUTH_POLICY_PROVIDER_ALIASES maps 'kl-plugin-auth' -> this package, so we
+// must export authPolicyPlugins['kl-plugin-auth'] with the matching manifest.id.
+const KL_AUTH_COMPAT_POLICY_PLUGIN: AuthPolicyPlugin = {
+  manifest: { id: 'kl-plugin-auth', provides: ['auth.policy'] },
+  checkPolicy: RBAC_POLICY_PLUGIN.checkPolicy,
+}
+
 // ---------------------------------------------------------------------------
 // Configurable policy factory
 // ---------------------------------------------------------------------------
@@ -129,6 +137,7 @@ export const authPolicyPlugins: Record<string, AuthPolicyPlugin> = {
   noop: NOOP_POLICY_PLUGIN,
   rbac: RBAC_POLICY_PLUGIN,
   'kl-plugin-rbac': KL_RBAC_DEFAULT_POLICY_PLUGIN,
+  'kl-plugin-auth': KL_AUTH_COMPAT_POLICY_PLUGIN,
 }
 
 // ---------------------------------------------------------------------------

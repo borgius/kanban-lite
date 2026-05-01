@@ -33,6 +33,17 @@ export interface LocalAuthUser {
   role?: string
 }
 
+export interface LocalAuthToken {
+  /** Opaque bearer token value. */
+  token: string
+  /**
+   * Optional role for this token. When omitted the token grants unrestricted
+   * access; when set, RBAC permission checks apply just as they would for a
+   * user carrying that role.
+   */
+  role?: string
+}
+
 export interface LocalAuthSession {
   username: string
   expiresAt: number
@@ -77,7 +88,8 @@ export function getConfiguredAuthRoles(sdk?: KanbanSDK): string[] {
     ? sdk.getConfigSnapshot()
     : undefined
   const roles = normalizeStringList(
-    configSnapshot?.plugins?.['auth.identity']?.options?.roles,
+    configSnapshot?.plugins?.['auth.identity']?.options?.roles
+    ?? configSnapshot?.auth?.['auth.identity']?.options?.roles,
   )
   return roles ?? getDefaultLocalAuthRoles()
 }
@@ -91,7 +103,31 @@ export function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMe
         apiToken: {
           type: 'string',
           title: 'API token',
-          description: 'Optional explicit bearer token. When omitted, the provider falls back to KANBAN_LITE_TOKEN or KANBAN_TOKEN.',
+          description: 'Single global bearer token. When omitted, the provider falls back to KANBAN_LITE_TOKEN or KANBAN_TOKEN. Use the Tokens array below for role-scoped tokens.',
+        },
+        tokens: {
+          type: 'array',
+          title: 'API Tokens',
+          description: 'Named bearer tokens with optional role-based access. A token without a role grants unrestricted access; a token with a role is subject to the same permission checks as a user carrying that role.',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['token'],
+            properties: {
+              token: {
+                type: 'string',
+                minLength: 1,
+                title: 'Token',
+                description: 'Opaque bearer token value.',
+              },
+              role: {
+                type: 'string',
+                title: 'Role',
+                description: 'Optional role. When omitted the token grants unrestricted access.',
+                enum: async (sdk: KanbanSDK) => getConfiguredAuthRoles(sdk),
+              },
+            },
+          },
         },
         roles: {
           type: 'array',
@@ -145,7 +181,37 @@ export function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMe
             {
               type: 'Control',
               scope: '#/properties/apiToken',
-              label: 'API token',
+              label: 'Global API token',
+            },
+          ],
+        },
+        {
+          type: 'Group',
+          label: 'Named API tokens',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/tokens',
+              label: 'Tokens',
+              options: {
+                generateToken: true,
+                elementLabelProp: 'token',
+                detail: {
+                  type: 'HorizontalLayout',
+                  elements: [
+                    {
+                      type: 'Control',
+                      scope: '#/properties/token',
+                      label: 'Token',
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/role',
+                      label: 'Role (leave blank for unrestricted access)',
+                    },
+                  ],
+                },
+              },
             },
           ],
         },
@@ -201,6 +267,7 @@ export function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMe
     },
     secrets: [
       { path: 'apiToken', redaction: AUTH_PLUGIN_SECRET_REDACTION },
+      { path: 'tokens.*.token', redaction: AUTH_PLUGIN_SECRET_REDACTION },
       { path: 'users.*.password', redaction: AUTH_PLUGIN_SECRET_REDACTION },
     ],
     beforeSave: validateAuthIdentityBeforeSave,
@@ -212,10 +279,10 @@ export function createAuthIdentityOptionsSchema(): PluginSettingsOptionsSchemaMe
  * is being activated (transitioning from disabled to enabled).
  *
  * Rules enforced on activation:
- *   1. An API token must be configured (either in options or via env var).
- *   2. At least one user must have a role that grants `plugin-settings.update`
- *      (i.e. the `admin` role), so a future session can manage plugin settings
- *      after auth is enforced.
+ *   1. At least one API token must be configured (apiToken, tokens array, or env var).
+ *   2. There must be at least one admin access path (unrestricted global token, a
+ *      named token with admin role, or a local user with admin role) so that plugin
+ *      settings can still be managed after auth is enforced.
  *
  * The current session is not affected — existing sessions remain valid — but
  * new browser sessions will require credentials.
@@ -231,22 +298,38 @@ async function validateAuthIdentityBeforeSave(
 
   const maskedValue = AUTH_PLUGIN_SECRET_REDACTION.maskedValue
 
-  // 1. API token must be present (options field or env fallback).
+  // 1. At least one API token must be present (global apiToken, named token, or env fallback).
   const optionToken = options.apiToken
   const hasApiTokenInOptions =
     typeof optionToken === 'string' && optionToken.length > 0 && optionToken !== maskedValue
   const hasApiTokenInEnv = API_TOKEN_ENV_KEYS.some(
     (key) => typeof process.env[key] === 'string' && (process.env[key] as string).length > 0,
   )
-  if (!hasApiTokenInOptions && !hasApiTokenInEnv) {
+  const namedTokenEntries = (Array.isArray(options.tokens) ? (options.tokens as Array<Record<string, unknown>>) : [])
+    .filter((t) => {
+      if (!t || typeof t !== 'object') return false
+      const tokenVal = (t as Record<string, unknown>).token
+      return typeof tokenVal === 'string' && tokenVal.length > 0 && tokenVal !== maskedValue
+    })
+  if (!hasApiTokenInOptions && !hasApiTokenInEnv && namedTokenEntries.length === 0) {
     throw new Error(
-      'Auth plugin requires an API Token before enabling. ' +
-      'Add an apiToken to the options (or set the KANBAN_LITE_TOKEN environment variable) ' +
-      'so new sessions can authenticate.',
+      'Auth plugin requires at least one API token before enabling. ' +
+      'Add an apiToken, a named token in the Tokens array, or set the KANBAN_LITE_TOKEN environment variable ' +
+      'so API clients can authenticate.',
     )
   }
 
-  // 2. At least one local user must have a role that includes plugin-settings.update.
+  // 2. There must be at least one path to admin access so plugin settings remain manageable.
+  // A global token (no role) is unrestricted; a named token or user with admin role also qualifies.
+  const hasGlobalToken =
+    hasApiTokenInOptions ||
+    hasApiTokenInEnv ||
+    namedTokenEntries.some((t) => !t.role)
+  const hasAdminToken = namedTokenEntries.some(
+    (t) =>
+      typeof t.role === 'string' &&
+      RBAC_ROLE_MATRIX[t.role as RbacRole]?.has('plugin-settings.update') === true,
+  )
   const users = Array.isArray(options.users) ? (options.users as Array<Record<string, unknown>>) : []
   const hasAdminUser = users.some((u) => {
     if (!u || typeof u !== 'object') return false
@@ -256,10 +339,11 @@ async function validateAuthIdentityBeforeSave(
       RBAC_ROLE_MATRIX[role as RbacRole]?.has('plugin-settings.update') === true
     )
   })
-  if (!hasAdminUser) {
+  if (!hasGlobalToken && !hasAdminToken && !hasAdminUser) {
     throw new Error(
-      'Auth plugin requires at least one user with admin role (which grants plugin-settings.update permission) ' +
-      'before enabling, to ensure a future session can manage plugin settings.',
+      'Auth plugin requires at least one admin access path before enabling — ' +
+      'a global (unrestricted) API token, a named token with admin role, or a local user with admin role — ' +
+      'to ensure plugin settings can still be managed after auth is enforced.',
     )
   }
 }
@@ -352,6 +436,31 @@ export function getWritableUsers(provider: ProviderRef | null): Array<{ username
   return Array.isArray(users)
     ? structuredClone(users as Array<{ username: string; password: string; role?: string }>)
     : []
+}
+
+export function getWritableTokens(provider: ProviderRef | null): Array<{ token: string; role?: string }> {
+  const tokens = provider?.options?.tokens
+  return Array.isArray(tokens)
+    ? structuredClone(tokens as Array<{ token: string; role?: string }>)
+    : []
+}
+
+/**
+ * Normalizes the `tokens` array from plugin options into typed `LocalAuthToken`
+ * entries, discarding any malformed or empty entries.
+ */
+export function normalizeConfiguredTokens(options: Record<string, unknown> | null | undefined): LocalAuthToken[] {
+  const tokens = options?.tokens
+  if (!Array.isArray(tokens)) return []
+  return tokens.flatMap((t) => {
+    if (!t || typeof t !== 'object') return []
+    const token = (t as Record<string, unknown>).token
+    if (typeof token !== 'string' || token.length === 0) return []
+    const entry: LocalAuthToken = { token }
+    const role = normalizeOptionalRole((t as Record<string, unknown>).role)
+    if (role) entry.role = role
+    return [entry]
+  })
 }
 
 export function getWritableRoles(provider: ProviderRef | null): string[] {

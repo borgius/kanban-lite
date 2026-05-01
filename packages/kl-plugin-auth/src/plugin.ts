@@ -16,6 +16,7 @@ import {
   getAuthProviderSelection,
   cloneWritableConfig,
   getWritableUsers,
+  getWritableTokens,
   getWritableRoles,
   normalizeOptionalRole,
   type AuthPluginOptionsSchemaFactory,
@@ -118,8 +119,56 @@ export const cliPlugin: KanbanCliPlugin = {
       return
     }
 
+    if (sub === 'create-token') {
+      const tokenValue = flags.token as string | undefined
+      const role = normalizeOptionalRole(flags.role)
+      if (!tokenValue) {
+        console.error('Usage: kl auth create-token --token <value> [--role <role>]')
+        process.exit(1)
+      }
+
+      const cfgPath = path.join(context.workspaceRoot, '.kanban.json')
+      const cfg = await cloneWritableConfig(context)
+
+      const plugins =
+        typeof cfg.plugins === 'object' && cfg.plugins !== null
+          ? (cfg.plugins as Record<string, unknown>)
+          : {}
+      const existingIdentity = getAuthProviderSelection(cfg, 'auth.identity')
+      const identity =
+        typeof plugins['auth.identity'] === 'object' && plugins['auth.identity'] !== null
+          ? (plugins['auth.identity'] as Record<string, unknown>)
+          : { provider: existingIdentity?.provider ?? 'kl-plugin-auth' }
+      const options =
+        typeof identity.options === 'object' && identity.options !== null
+          ? (identity.options as Record<string, unknown>)
+          : existingIdentity?.options
+            ? structuredClone(existingIdentity.options)
+            : {}
+      const tokens = Array.isArray(options.tokens)
+        ? (options.tokens as { token: string; role?: string }[])
+        : getWritableTokens(existingIdentity)
+
+      if (tokens.some(t => t.token === tokenValue)) {
+        console.error('A token with that value already exists.')
+        process.exit(1)
+      }
+
+      const newToken: { token: string; role?: string } = { token: tokenValue }
+      if (role) newToken.role = role
+      tokens.push(newToken)
+      options.tokens = tokens
+      identity.options = options
+      plugins['auth.identity'] = identity
+      cfg.plugins = plugins
+
+      await fs.promises.writeFile(cfgPath, JSON.stringify(cfg, null, 2) + '\n', 'utf-8')
+      console.log(`Token added${role ? ` with role "${role}"` : ' (global, unrestricted access)'}.`)
+      return
+    }
+
     console.error(`Unknown auth sub-command: ${sub ?? '(none)'}`)
-    console.error('Available sub-commands: create-user')
+    console.error('Available sub-commands: create-user, create-token')
     process.exit(1)
   },
 }

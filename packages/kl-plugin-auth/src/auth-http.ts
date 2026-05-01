@@ -26,11 +26,13 @@ import {
   persistSessionsToFile,
   normalizeOptionalRole,
   normalizeToken,
+  normalizeConfiguredTokens,
   resolveAuthCapabilities,
   resolveLocalIdentity,
   safeTokenEquals,
   type AuthConfigSnapshot,
   type LocalAuthSession,
+  type LocalAuthToken,
   type LocalAuthUser,
   type MobileAuthSession,
 } from './auth-core'
@@ -229,14 +231,19 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     typeof identityOptions?.apiToken === 'string' && identityOptions.apiToken.length > 0
       ? identityOptions.apiToken
       : null
+  const configuredTokens: readonly LocalAuthToken[] = localAuthEnabled
+    ? normalizeConfiguredTokens(identityOptions ?? null)
+    : []
   const apiToken: string | null = (() => {
     if (!localAuthEnabled) return null
     if (explicitApiToken) return explicitApiToken
     const envToken = getConfiguredApiToken()
     if (envToken) return envToken
+    // A named tokens array also satisfies the requirement — no global token needed.
+    if (configuredTokens.length > 0) return null
     throw new Error(
       'kl-plugin-auth: auth.identity is configured but no API token is available. ' +
-      'Set "apiToken" in auth.identity options (e.g. "options": { "apiToken": "..." }) ' +
+      'Set "apiToken" in auth.identity options, add entries to the "tokens" array, ' +
       'or set the KANBAN_LITE_TOKEN environment variable before starting the server.',
     )
   })()
@@ -263,16 +270,36 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
     const requestToken = normalizeToken(
       typeof authorization === 'string' ? authorization : queryToken ?? undefined,
     )
-    if (requestToken && apiToken && safeTokenEquals(requestToken, apiToken)) {
+    if (requestToken) {
       const tokenSource = queryToken && requestToken === normalizeToken(queryToken) ? 'query-param' : 'request-header'
-      request.mergeAuthContext({
-        token: requestToken,
-        tokenSource,
-        transport: 'http',
-        identity: { subject: 'api-token' },
-        actorHint: 'api-token',
-      })
-      return { subject: 'api-token' }
+      // Check global apiToken first (unrestricted access, backward compat).
+      if (apiToken && safeTokenEquals(requestToken, apiToken)) {
+        request.mergeAuthContext({
+          token: requestToken,
+          tokenSource,
+          transport: 'http',
+          identity: { subject: 'api-token' },
+          actorHint: 'api-token',
+        })
+        return { subject: 'api-token' }
+      }
+      // Check named tokens array; tokens with a role carry role-based access.
+      const matchedToken = configuredTokens.find((t) => safeTokenEquals(requestToken, t.token))
+      if (matchedToken) {
+        // Use 'named-token' subject when a role is set so RBAC policy checks
+        // are not bypassed by the 'api-token' fast-path.
+        const subject = matchedToken.role ? 'named-token' : 'api-token'
+        const identity: AuthIdentity = { subject }
+        if (matchedToken.role) identity.roles = [matchedToken.role]
+        request.mergeAuthContext({
+          token: requestToken,
+          tokenSource,
+          transport: 'http',
+          identity,
+          actorHint: subject,
+        })
+        return identity
+      }
     }
 
     const sessionIdentity = getSessionIdentity(request)

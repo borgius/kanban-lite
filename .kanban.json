@@ -83,7 +83,7 @@
   "labels": {},
   "compactMode": false,
   "panelMode": "drawer",
-  "drawerWidth": 45.883941650390625,
+  "drawerWidth": 59.56287510347682,
   "forms": {
     "editorial-review": {
       "name": "Editorial Review",
@@ -233,7 +233,15 @@
       }
     },
     "auth.identity": {
-      "provider": "noop"
+      "provider": "kl-plugin-auth",
+      "options": {
+        "roles": [
+          "user",
+          "manager",
+          "admin",
+          "zzz"
+        ]
+      }
     },
     "auth.policy": {
       "provider": "noop"

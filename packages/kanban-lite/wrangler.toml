@@ -8,13 +8,13 @@ directory = "dist/standalone-webview"
 binding = "ASSETS"
 
 # ── Custom domain ─────────────────────────────────────────────────────────────
-[[custom_domains]]
-hostname = "kanban.tsf.incidentmind.com"
-zone_name = "incidentmind.com"
+[[routes]]
+pattern = "kanban.tsf.incidentmind.com"
+custom_domain = true
 
 [vars]
 # Cloudflare Access team domain (non-secret) — update with your real team name:
-CF_ACCESS_TEAM_DOMAIN = "your-team.cloudflareaccess.com"
+CF_ACCESS_TEAM_DOMAIN = "burdyey.cloudflareaccess.com"
 # CF Access Application ID (AUD) for kanban.tsf.incidentmind.com – set with:
 #   wrangler secret put CF_ACCESS_AUD_KANBAN \
 #     --config ../kanban-light/packages/kanban-lite/wrangler.toml

@@ -15,6 +15,7 @@ import {
   normalizeConfigStorageSelection,
   normalizeStorageCapabilities,
   normalizeWebhookCapabilities,
+  invalidateConfigReadCache,
 } from '../../shared/config'
 import type {
   KanbanConfig,
@@ -272,6 +273,7 @@ export function writePluginSettingsConfigDocument(workspaceRoot: string, config:
       { configPath: result.filePath },
     )
   }
+  invalidateConfigReadCache()
 }
 
 export function ensurePluginSettingsOptionsRecord(

@@ -2775,7 +2775,6 @@ input:focus-visible {
   display: flex;
   justify-content: flex-end;
   gap: 0.25rem;
-  margin-bottom: 0.375rem;
 }
 
 .card-jsonforms .array-control-layout.control > header {
@@ -2797,7 +2796,7 @@ input:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.75rem;
-  align-items: end;
+  align-items: center;
   border-top: 1px solid var(--vscode-panel-border);
   padding-top: 0.75rem;
 }

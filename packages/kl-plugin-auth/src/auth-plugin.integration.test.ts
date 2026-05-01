@@ -651,6 +651,239 @@ describe('createAuthIdentityPlugin: apiToken option', () => {
   })
 })
 
+// ---------------------------------------------------------------------------
+// createAuthIdentityPlugin – named tokens array with role-based access
+// ---------------------------------------------------------------------------
+
+describe('createAuthIdentityPlugin: named tokens with roles', () => {
+  const ctx: AuthContext = { transport: 'http' }
+
+  // Setup: three tokens – one global (unrestricted), one manager-scoped, one user-scoped
+  const plugin = createAuthIdentityPlugin({
+    tokens: [
+      { token: 'global-token' },
+      { token: 'manager-token', role: 'manager' },
+      { token: 'user-token', role: 'user' },
+    ],
+  })
+
+  it('resolves a named token with no role as unrestricted identity (no roles array)', async () => {
+    const identity = await plugin.resolveIdentity({ ...ctx, token: 'global-token' })
+    expect(identity).not.toBeNull()
+    expect(identity?.subject).toBe('api-token')
+    expect(identity?.roles).toBeUndefined()
+  })
+
+  it('resolves a named token with manager role and attaches that role', async () => {
+    const identity = await plugin.resolveIdentity({ ...ctx, token: 'manager-token' })
+    expect(identity).not.toBeNull()
+    expect(identity?.subject).toBe('named-token')
+    expect(identity?.roles).toEqual(['manager'])
+  })
+
+  it('resolves a named token with user role and attaches that role', async () => {
+    const identity = await plugin.resolveIdentity({ ...ctx, token: 'user-token' })
+    expect(identity).not.toBeNull()
+    expect(identity?.subject).toBe('named-token')
+    expect(identity?.roles).toEqual(['user'])
+  })
+
+  it('returns null for an unrecognised token when no global apiToken is set', async () => {
+    const identity = await plugin.resolveIdentity({ ...ctx, token: 'unknown-token' })
+    expect(identity).toBeNull()
+  })
+
+  it('strips Bearer prefix before matching named tokens', async () => {
+    const identity = await plugin.resolveIdentity({ ...ctx, token: 'Bearer user-token' })
+    expect(identity).not.toBeNull()
+    expect(identity?.subject).toBe('named-token')
+    expect(identity?.roles).toEqual(['user'])
+  })
+
+  it('global token is not clobbered when an explicit apiToken is also configured', async () => {
+    const mixed = createAuthIdentityPlugin({
+      apiToken: 'global-pinned',
+      tokens: [{ token: 'role-token', role: 'manager' }],
+    })
+
+    const fromApiToken = await mixed.resolveIdentity({ ...ctx, token: 'global-pinned' })
+    expect(fromApiToken?.roles).toBeUndefined()
+
+    const fromNamedToken = await mixed.resolveIdentity({ ...ctx, token: 'role-token' })
+    expect(fromNamedToken?.roles).toEqual(['manager'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Role-scoped tokens end-to-end: identity → RBAC policy → action decisions
+// ---------------------------------------------------------------------------
+
+describe('createAuthIdentityPlugin: named token role enforcement via RBAC policy', () => {
+  const ctx: AuthContext = { transport: 'http' }
+
+  const identityPlugin = createAuthIdentityPlugin({
+    tokens: [
+      { token: 'global-token' },
+      { token: 'admin-token', role: 'admin' },
+      { token: 'manager-token', role: 'manager' },
+      { token: 'user-token', role: 'user' },
+    ],
+  })
+
+  async function check(token: string, action: string): Promise<{ allowed: boolean; reason?: string; actor?: string }> {
+    const identity = await identityPlugin.resolveIdentity({ ...ctx, token })
+    const decision = await RBAC_POLICY_PLUGIN.checkPolicy(identity ?? null, action, ctx)
+    return { allowed: decision.allowed, reason: (decision as { reason?: string }).reason, actor: (decision as { actor?: string }).actor }
+  }
+
+  // Global / unrestricted token (no role) → resolves to subject 'api-token'
+  // RBAC_POLICY_PLUGIN has a fast-path: subject === 'api-token' is always allowed,
+  // matching the global-admin semantics of unrestricted tokens.
+  it('global token (no role) is allowed by RBAC policy fast-path for any action', async () => {
+    const result = await check('global-token', 'card.create')
+    expect(result.allowed).toBe(true)
+    expect(result.actor).toBe('api-token')
+  })
+
+  // Admin token
+  it('admin token is allowed to perform admin-only actions', async () => {
+    for (const action of ['board.create', 'board.delete', 'plugin-settings.read', 'plugin-settings.update', 'storage.migrate']) {
+      const result = await check('admin-token', action)
+      expect(result.allowed).toBe(true)
+    }
+  })
+
+  it('admin token is allowed to perform manager and user actions too', async () => {
+    for (const action of ['card.create', 'card.update', 'card.move', 'card.delete', 'comment.create', 'attachment.add']) {
+      const result = await check('admin-token', action)
+      expect(result.allowed).toBe(true)
+    }
+  })
+
+  // Manager token
+  it('manager token is allowed for manager-level card lifecycle actions', async () => {
+    for (const action of ['card.create', 'card.update', 'card.move', 'card.delete']) {
+      const result = await check('manager-token', action)
+      expect(result.allowed).toBe(true)
+    }
+  })
+
+  it('manager token is denied for admin-only actions', async () => {
+    for (const action of ['board.delete', 'plugin-settings.update', 'storage.migrate']) {
+      const result = await check('manager-token', action)
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('auth.policy.denied')
+    }
+  })
+
+  // User token
+  it('user token is allowed only for card-interaction actions', async () => {
+    for (const action of ['comment.create', 'attachment.add', 'card.checklist.add', 'log.add']) {
+      const result = await check('user-token', action)
+      expect(result.allowed).toBe(true)
+    }
+  })
+
+  it('user token is denied for card lifecycle (manager) actions', async () => {
+    for (const action of ['card.create', 'card.update', 'card.move', 'card.delete']) {
+      const result = await check('user-token', action)
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('auth.policy.denied')
+    }
+  })
+
+  it('user token is denied for admin-only actions', async () => {
+    for (const action of ['board.create', 'board.delete', 'plugin-settings.read', 'settings.update']) {
+      const result = await check('user-token', action)
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('auth.policy.denied')
+    }
+  })
+
+  // Unknown token
+  it('unknown token is denied with auth.identity.missing', async () => {
+    const result = await check('bad-token', 'card.create')
+    expect(result.allowed).toBe(false)
+    expect(result.reason).toBe('auth.identity.missing')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// createStandaloneHttpPlugin – named tokens array as the sole token source
+// ---------------------------------------------------------------------------
+
+describe('createStandaloneHttpPlugin: named tokens array startup validation', () => {
+  function makeTokensOnlyOptions(tokens: Array<{ token: string; role?: string }>): StandaloneHttpPluginRegistrationOptions {
+    return {
+      workspaceRoot: '/tmp/test-workspace',
+      kanbanDir: '/tmp/test-workspace/.kanban',
+      capabilities: {
+        'card.storage': { provider: 'builtin' },
+        'attachment.storage': { provider: 'builtin' },
+      },
+      authCapabilities: {
+        'auth.identity': { provider: 'local', options: { tokens } },
+        'auth.policy': { provider: 'local' },
+      },
+      webhookCapabilities: null,
+    }
+  }
+
+  it('does not throw when only a named tokens array is configured (no global apiToken, no env)', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      expect(() =>
+        createStandaloneHttpPlugin(makeTokensOnlyOptions([{ token: 'named-only-token' }])),
+      ).not.toThrow()
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('throws when named tokens array is empty and no global apiToken or env var', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      expect(() => createStandaloneHttpPlugin(makeTokensOnlyOptions([]))).toThrow(
+        /no API token is available/,
+      )
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+
+  it('does not throw when a named tokens array and a global apiToken are both present', () => {
+    const savedToken = process.env.KANBAN_LITE_TOKEN
+    const savedAlt = process.env.KANBAN_TOKEN
+    delete process.env.KANBAN_LITE_TOKEN
+    delete process.env.KANBAN_TOKEN
+    try {
+      expect(() =>
+        createStandaloneHttpPlugin({
+          ...makeTokensOnlyOptions([{ token: 'named-token', role: 'manager' }]),
+          authCapabilities: {
+            'auth.identity': {
+              provider: 'local',
+              options: { apiToken: 'global-token', tokens: [{ token: 'named-token', role: 'manager' }] },
+            },
+            'auth.policy': { provider: 'local' },
+          },
+        }),
+      ).not.toThrow()
+    } finally {
+      if (savedToken !== undefined) process.env.KANBAN_LITE_TOKEN = savedToken
+      if (savedAlt !== undefined) process.env.KANBAN_TOKEN = savedAlt
+    }
+  })
+})
+
 describe('kl-plugin-auth: schema-driven options parity', () => {
   it('package exports and configurable factories resolve the same schema contract for shared plugin settings flows', async () => {
     const sdk = {
@@ -690,6 +923,20 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
       additionalProperties: false,
       properties: {
         apiToken: { type: 'string' },
+        tokens: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['token'],
+            properties: {
+              token: { type: 'string' },
+              role: {
+                type: 'string',
+                enum: expect.any(Function),
+              },
+            },
+          },
+        },
         roles: {
           type: 'array',
           default: ['user', 'manager', 'admin'],
@@ -722,7 +969,28 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
             {
               type: 'Control',
               scope: '#/properties/apiToken',
-              label: 'API token',
+              label: 'Global API token',
+            },
+          ],
+        },
+        {
+          type: 'Group',
+          label: 'Named API tokens',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/tokens',
+              label: 'Tokens',
+              options: {
+                elementLabelProp: 'token',
+                detail: {
+                  type: 'HorizontalLayout',
+                  elements: [
+                    { type: 'Control', scope: '#/properties/token', label: 'Token' },
+                    { type: 'Control', scope: '#/properties/role', label: 'Role (leave blank for unrestricted access)' },
+                  ],
+                },
+              },
             },
           ],
         },
@@ -766,6 +1034,7 @@ describe('kl-plugin-auth: schema-driven options parity', () => {
     })
     expect(schema?.secrets).toEqual([
       { path: 'apiToken', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
+      { path: 'tokens.*.token', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
       { path: 'users.*.password', redaction: DEFAULT_PLUGIN_SETTINGS_REDACTION },
     ])
   })

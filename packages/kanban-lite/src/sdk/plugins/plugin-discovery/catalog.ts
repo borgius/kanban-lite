@@ -566,22 +566,32 @@ export async function persistPluginSettingsProviderOptions(
     )
   }
 
-  // Inactive provider: return the options from this request without persisting to config.
+  // Inactive provider: save options and switch the capability to this provider.
+  // This matches the UI intent ("Save to persist these options and switch this capability to the provider").
+  if (provider.optionsSchema?.beforeSave) {
+    try {
+      await provider.optionsSchema.beforeSave(isRecord(mergedOptions) ? mergedOptions : {}, { capability, providerId: normalizedProviderId, sdk, isActivating: true })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Plugin options validation failed before save.'
+      throw new PluginSettingsStoreError('plugin-settings-before-save-rejected', message, { capability, providerId: normalizedProviderId })
+    }
+  }
+
+  getMutablePluginsRecord(config)[capability] = {
+    provider: normalizedProviderId,
+    options: persistedOptions,
+  }
   pruneRedundantDerivedStorageConfig(config)
   writePluginSettingsConfigDocument(workspaceRoot, config)
 
-  const selected = getCapabilitySelectedState(config, capability, sdk)
-  const inactiveOptions = createRedactedProviderOptions(persistedOptions, provider.optionsSchema, redaction)
+  const nextProvider = await readPluginSettingsProvider(workspaceRoot, capability, normalizedProviderId, redaction, sdk)
+  if (nextProvider) return nextProvider
 
-  return {
-    capability,
-    providerId: normalizedProviderId,
-    packageName: provider.packageName,
-    discoverySource: provider.discoverySource,
-    ...(provider.optionsSchema ? { optionsSchema: provider.optionsSchema } : {}),
-    selected,
-    options: inactiveOptions,
-  }
+  throw new PluginSettingsStoreError(
+    'plugin-settings-provider-not-found',
+    'The requested plugin provider is not available for this capability.',
+    { capability, providerId: normalizedProviderId },
+  )
 }
 
 

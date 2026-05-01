@@ -323,7 +323,7 @@ export class RemoteKanbanSDK {
     const blob =
       typeof data === 'string'
         ? new Blob([data], { type: 'text/plain' })
-        : new Blob([data], { type: 'application/octet-stream' })
+        : new Blob([data as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' })
     const form = new FormData()
     form.append('file', blob, filename)
     const res = await fetch(url, { method: 'POST', headers, body: form })

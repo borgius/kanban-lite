@@ -230,6 +230,10 @@ kl boards add --id bugs --name "Bug Tracker"            # Create a board
 kl boards show bugs                                     # Show board details
 kl boards remove bugs                                   # Remove an empty board
 kl boards default bugs                                  # Set default board
+kl boards export                                        # Export default board settings to stdout (JSON)
+kl boards export bugs --out bugs-settings.json         # Export a named board to a file
+kl boards import bugs-settings.json                    # Import board settings from a file
+kl boards import bugs-settings.json --overwrite        # Import and overwrite if board ID already exists
 kl transfer card-42 --from default --to bugs            # Transfer card between boards
 
 # Target a specific board (works with most commands)
@@ -340,6 +344,8 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | `GET` | `/api/boards/:boardId` | Get board configuration |
 | `PUT` | `/api/boards/:boardId` | Update board configuration |
 | `DELETE` | `/api/boards/:boardId` | Delete an empty board |
+| `GET` | `/api/boards/:boardId/export` | Export board settings as a versioned JSON archive |
+| `POST` | `/api/boards/import` | Import board settings from a JSON archive (body: `{ "payload": <archive> }`, query: `?overwrite=true`) |
 
 #### Board Actions
 

@@ -630,6 +630,60 @@ export class KanbanPanel {
           case 'toggleTheme':
             await vscode.commands.executeCommand('workbench.action.toggleLightDarkThemes')
             break
+          case 'exportBoardSettings': {
+            const exportSdk = this._getSDK()
+            if (!exportSdk) break
+            try {
+              const boardId = message.boardId ?? this._currentBoardId ?? undefined
+              const archive = exportSdk.exportBoardSettings(boardId)
+              const boardName = archive.board.config.name ?? archive.board.id
+              const defaultName = `${boardName.replace(/[^a-z0-9_-]/gi, '_')}-settings.json`
+              const workspaceRoot = this._getWorkspaceRoot()
+              const saveUri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(path.join(workspaceRoot ?? '', defaultName)),
+                filters: { 'JSON': ['json'] },
+                title: 'Export board settings',
+              })
+              if (saveUri) {
+                const json = JSON.stringify(archive, null, 2)
+                await vscode.workspace.fs.writeFile(saveUri, Buffer.from(json, 'utf-8'))
+                vscode.window.showInformationMessage(`Board settings exported to ${saveUri.fsPath}`)
+              }
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to export board settings: ${err}`)
+            }
+            break
+          }
+          case 'importBoardSettings': {
+            const importSdk = this._getSDK()
+            if (!importSdk) break
+            try {
+              const openUris = await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                filters: { 'JSON': ['json'] },
+                title: 'Import board settings',
+              })
+              if (!openUris || openUris.length === 0) break
+              const raw = await vscode.workspace.fs.readFile(openUris[0])
+              const text = Buffer.from(raw).toString('utf-8')
+              let payload: unknown
+              try {
+                payload = JSON.parse(text)
+              } catch {
+                vscode.window.showErrorMessage('Import failed: file is not valid JSON')
+                break
+              }
+              await this._runWithAuth(importSdk, () => Promise.resolve(importSdk.importBoardSettings(payload)))
+              await this._loadCards()
+              this._sendCardsToWebview()
+              vscode.window.showInformationMessage('Board settings imported successfully')
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to import board settings: ${err}`)
+            }
+            break
+          }
         }
       },
       null,

@@ -233,15 +233,7 @@
       }
     },
     "auth.identity": {
-      "provider": "kl-plugin-auth",
-      "options": {
-        "roles": [
-          "user",
-          "manager",
-          "admin",
-          "zzz"
-        ]
-      }
+      "provider": "noop"
     },
     "auth.policy": {
       "provider": "noop"

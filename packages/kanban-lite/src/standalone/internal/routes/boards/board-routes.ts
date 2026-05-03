@@ -216,6 +216,37 @@ export async function handleBoardCrudRoutes(request: StandaloneRequestContext): 
     return true
   }
 
+  params = route('GET', '/api/boards/:boardId/export')
+  if (params) {
+    try {
+      const { boardId } = params
+      jsonOk(res, sdk.exportBoardSettings(boardId))
+    } catch (err) {
+      jsonError(res, 404, String(err))
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/import')
+  if (params) {
+    try {
+      const body = await readBody(req)
+      const overwrite = body.overwrite === true
+      const payload = body.payload ?? body
+      const board = await runWithRequestAuth(() => Promise.resolve(sdk.importBoardSettings(payload, { overwrite })))
+      await broadcast(ctx, workspaceRoot)
+      jsonOk(res, board, 201)
+    } catch (err) {
+      const authErr = getAuthErrorLike(err)
+      if (authErr) {
+        jsonError(res, authErrorToHttpStatus(authErr), authErr.message)
+      } else {
+        jsonError(res, 400, String(err))
+      }
+    }
+    return true
+  }
+
   params = route('POST', '/api/boards/:boardId/tasks/:id/transfer')
   if (params) {
     try {

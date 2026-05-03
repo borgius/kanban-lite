@@ -320,6 +320,10 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
       if (!localAuthEnabled) return []
       return [
         async (request: StandaloneHttpRequestContext) => {
+          // Re-check at request time so config changes (e.g. switching back to noop)
+          // take effect without a server restart.
+          if (!isLocalAuthEnabled(options)) return false
+
           const isPublicAuthRoute = request.pathname === '/auth/login'
             || request.pathname === '/auth/logout'
             || request.pathname.startsWith('/api/mobile/')

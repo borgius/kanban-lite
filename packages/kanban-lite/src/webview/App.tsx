@@ -1341,6 +1341,8 @@ function App(): React.JSX.Element {
           onSaveBoardMeta={(metadata) => vscode.postMessage({ type: 'updateBoardMeta', boardId: currentBoard, metadata })}
           onSaveBoardTitle={(title, titleTemplate) => vscode.postMessage({ type: 'updateBoardTitle', boardId: currentBoard, title, ...(titleTemplate !== undefined ? { titleTemplate } : {}) })}
           onSaveBoardActions={(actions) => vscode.postMessage({ type: 'updateBoardActions', boardId: currentBoard, actions })}
+          onExportBoardSettings={() => vscode.postMessage({ type: 'exportBoardSettings', boardId: currentBoard ?? undefined })}
+          onImportBoardSettings={() => vscode.postMessage({ type: 'importBoardSettings', boardId: currentBoard ?? undefined })}
         />
       </Suspense>
 

@@ -5,6 +5,8 @@ import * as Boards from './modules/boards'
 import * as Columns from './modules/columns'
 import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
+import * as BoardImportExport from './modules/board-import-export'
+import type { BoardSettingsExportV1 } from './modules/board-import-export'
 import type { MethodInput } from './KanbanSDK-types'
 import type { SDKContext } from './modules/context'
 import { KanbanSDKCardState } from './KanbanSDK-card-state'
@@ -208,5 +210,34 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
     const mergedInput = await this._runBeforeEvent<{ id: string; url?: string; events?: string[]; secret?: string; active?: boolean }>('webhook.update', { id, ...updates })
     const { id: resolvedId, ...resolvedUpdates } = mergedInput
     return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
+  }
+
+  // --- Board import/export ---
+
+  /**
+   * Exports the settings for a board as a versioned JSON-safe archive.
+   *
+   * The archive includes the board's columns, defaults, actions, metadata,
+   * title fields, and the board-relevant workspace fragments (labels, forms,
+   * and hook-related plugin config).
+   *
+   * Card content, comments, attachments, and logs are not included.
+   */
+  exportBoardSettings(boardId?: string): BoardSettingsExportV1 {
+    return BoardImportExport.exportBoardSettings(this._ctx, { boardId })
+  }
+
+  /**
+   * Imports a board-settings archive produced by {@link exportBoardSettings}.
+   *
+   * By default, importing a board whose ID already exists throws an error.
+   * Pass `{ overwrite: true }` to replace the existing board config.
+   *
+   * Workspace fragments (labels, forms, hook-related plugin config, webhooks)
+   * are merged into the existing config without touching unrelated global
+   * settings such as storage or auth.
+   */
+  importBoardSettings(payload: unknown, options?: { overwrite?: boolean }): BoardInfo {
+    return BoardImportExport.importBoardSettings(this._ctx, { payload, options })
   }
 }

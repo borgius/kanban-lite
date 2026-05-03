@@ -35,6 +35,7 @@ import { JsonFormsTokenArrayControl, jsonFormsTokenArrayTester } from './JsonFor
 import { ActionsBuilderSection } from './ActionsBuilderSection'
 import { MetaBuilderSection } from './MetaBuilderSection'
 import { TitleBuilderSection } from './TitleBuilderSection'
+import { BoardImportExportControls } from './BoardImportExportControls'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
 const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the masked value unchanged to keep the current secret, or type a new value to replace it.'
@@ -121,6 +122,8 @@ interface SettingsPanelProps {
   onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
   onSaveBoardTitle?: (title: string[]) => void
   onSaveBoardActions?: (actions: Record<string, string>) => void
+  onExportBoardSettings?: () => void
+  onImportBoardSettings?: () => void
 }
 
 export function SettingsPanel({
@@ -154,6 +157,8 @@ export function SettingsPanel({
   onSaveBoardMeta,
   onSaveBoardTitle,
   onSaveBoardActions,
+  onExportBoardSettings,
+  onImportBoardSettings,
 }: SettingsPanelProps) {
   if (!isOpen) return null
   return (
@@ -187,6 +192,8 @@ export function SettingsPanel({
       onSaveBoardMeta={onSaveBoardMeta}
       onSaveBoardTitle={onSaveBoardTitle}
       onSaveBoardActions={onSaveBoardActions}
+      onExportBoardSettings={onExportBoardSettings}
+      onImportBoardSettings={onImportBoardSettings}
     />
   )
 }
@@ -1786,6 +1793,8 @@ function SettingsPanelContent({
   onSaveBoardMeta,
   onSaveBoardTitle,
   onSaveBoardActions,
+  onExportBoardSettings,
+  onImportBoardSettings,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
@@ -2164,6 +2173,9 @@ function SettingsPanelContent({
 
               {/* Right content */}
               <div className="flex-1 min-w-0 overflow-auto">
+                <div className="px-4">
+                  <BoardImportExportControls onExport={onExportBoardSettings} onImport={onImportBoardSettings} />
+                </div>
                 {boardSubTab === 'defaults' && (
                   <SettingsSection title="Defaults">
                     <SettingsDropdown

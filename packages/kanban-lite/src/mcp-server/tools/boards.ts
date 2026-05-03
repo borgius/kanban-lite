@@ -207,4 +207,46 @@ export function registerBoardMcpTools(
     }
   )
 
+  // --- Board Import / Export Tools ---
+
+  server.tool(
+    'export_board',
+    'Export board settings as a versioned JSON archive. Includes the board config (columns, defaults, actions, metadata, title fields) plus board-relevant workspace fragments (labels, forms, hook-related plugin config). Card content, comments, attachments, and logs are not included.',
+    {
+      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
+    },
+    async ({ boardId }) => {
+      try {
+        const archive = sdk.exportBoardSettings(boardId)
+        return { content: [{ type: 'text' as const, text: JSON.stringify(archive, null, 2) }] }
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+      }
+    }
+  )
+
+  server.tool(
+    'import_board',
+    'Import a board-settings archive produced by export_board. By default, importing a board whose ID already exists returns an error. Pass overwrite: true to replace the existing board config. Workspace fragments (labels, forms, plugin config) are merged without touching unrelated global settings.',
+    {
+      json_payload: z.string().describe('The JSON text of the board-settings archive (BoardSettingsExportV1)'),
+      overwrite: z.boolean().optional().describe('Replace existing board config when true (default: false)'),
+    },
+    async ({ json_payload, overwrite }) => {
+      try {
+        let payload: unknown
+        try {
+          payload = JSON.parse(json_payload)
+        } catch {
+          return { content: [{ type: 'text' as const, text: 'json_payload is not valid JSON' }], isError: true }
+        }
+        const board = sdk.importBoardSettings(payload, { overwrite: overwrite ?? false })
+        return { content: [{ type: 'text' as const, text: JSON.stringify(board, null, 2) }] }
+      } catch (err) {
+        if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+      }
+    }
+  )
+
 }

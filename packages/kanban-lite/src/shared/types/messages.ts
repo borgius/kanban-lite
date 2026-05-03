@@ -150,6 +150,8 @@ export type ExtensionMessage =
   | { type: 'commentChunk'; cardId: string; commentId: string; chunk: string }
   | { type: 'commentStreamDone'; cardId: string; commentId: string }
   | { type: 'cardStates'; states: Record<string, CardStateReadModelTransport> }
+  | { type: 'boardSettingsExportResult'; callbackKey: string; error?: string }
+  | { type: 'boardSettingsImportResult'; callbackKey: string; error?: string }
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -210,3 +212,5 @@ export type WebviewMessage =
   | { type: 'clearBoardLogs' }
   | { type: 'getBoardLogs' }
   | { type: 'getCardStates'; cardIds: string[] }
+  | { type: 'exportBoardSettings'; boardId?: string }
+  | { type: 'importBoardSettings'; boardId?: string }

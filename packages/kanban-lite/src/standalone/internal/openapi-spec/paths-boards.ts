@@ -153,6 +153,48 @@ export const boardsPaths = {
         responses: { 204: { description: 'Triggered.' }, 404: { description: 'Not found.' } },
       },
     },
+    '/api/boards/{boardId}/export': {
+      get: {
+        tags: ['Boards'],
+        summary: 'Export board settings',
+        description: 'Exports the board configuration plus board-relevant workspace fragments (labels, forms, hook-related plugin config) as a versioned JSON archive. Card content, comments, attachments, and logs are not included.',
+        parameters: [boardIdParam],
+        responses: {
+          200: { description: 'Board settings archive (BoardSettingsExportV1).' },
+          404: { description: 'Board not found.' },
+        },
+      },
+    },
+    '/api/boards/import': {
+      post: {
+        tags: ['Boards'],
+        summary: 'Import board settings',
+        description: 'Imports a board-settings archive produced by the export endpoint. By default, importing a board whose ID already exists returns a 400 error. Pass `overwrite: true` in the request body to replace the existing board config. Workspace fragments (labels, forms, plugin config) are merged without touching unrelated global settings.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                oneOf: [
+                  {
+                    type: 'object' as const,
+                    description: 'Pass the archive directly as the request body, or nest it under a `payload` key with an optional `overwrite` flag.',
+                    properties: {
+                      payload: { type: 'object' as const, description: 'The BoardSettingsExportV1 archive.' },
+                      overwrite: { type: 'boolean' as const, description: 'Replace existing board config when true.' },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Imported board summary.' },
+          400: { description: 'Validation error or duplicate board ID.' },
+        },
+      },
+    },
     '/api/boards/{boardId}/columns': {
       get: {
         tags: ['Boards'],

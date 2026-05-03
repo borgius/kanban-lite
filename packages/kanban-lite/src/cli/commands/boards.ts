@@ -13,6 +13,7 @@ import {
   runWithCliAuth,
   type Flags,
 } from '../shared'
+import { promises as fs } from 'node:fs'
 
 export async function cmdInit(sdk: KanbanSDK): Promise<void> {
   await sdk.init()
@@ -103,9 +104,57 @@ export async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Fla
       console.log(green(`Default board set to: ${boardId}`))
       break
     }
+    case 'export': {
+      const boardId = positional[1] || undefined
+      const outPath = typeof flags.out === 'string' ? flags.out : undefined
+      const archive = sdk.exportBoardSettings(boardId)
+      const json = JSON.stringify(archive, null, 2)
+      if (outPath) {
+        await fs.writeFile(outPath, json, 'utf8')
+        console.log(green(`Board settings exported to: ${outPath}`))
+      } else {
+        console.log(json)
+      }
+      break
+    }
+    case 'import': {
+      const filePath = positional[1]
+      if (!filePath) {
+        console.error(red('Usage: kl boards import <file.json> [--overwrite]'))
+        process.exit(1)
+      }
+      const overwrite = flags.overwrite === true
+      let raw: string
+      try {
+        raw = await fs.readFile(filePath, 'utf8')
+      } catch {
+        console.error(red(`Cannot read file: ${filePath}`))
+        process.exit(1)
+      }
+      let payload: unknown
+      try {
+        payload = JSON.parse(raw)
+      } catch {
+        console.error(red('File is not valid JSON'))
+        process.exit(1)
+      }
+      try {
+        const board = sdk.importBoardSettings(payload, { overwrite })
+        if (flags.json) {
+          console.log(JSON.stringify(board, null, 2))
+        } else {
+          console.log(green(`Imported board: ${board.id} (${board.name})`))
+        }
+      } catch (err) {
+        if (err instanceof AuthError) handleAuthError(err)
+        console.error(red(String(err)))
+        process.exit(1)
+      }
+      break
+    }
     default:
       console.error(red(`Unknown boards subcommand: ${subcommand}`))
-      console.error('Available: list, add, show, remove, default')
+      console.error('Available: list, add, show, remove, default, export, import')
       process.exit(1)
   }
 }

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Board settings export/import**: Board settings can now be exported as a versioned JSON archive and re-imported into any workspace. The archive captures the board's columns, defaults, actions, metadata, title fields, and board-relevant workspace fragments (labels, forms, `webhook.delivery`, `callback.runtime`, `cron.runtime` plugin config, and legacy `webhooks`). Card content, comments, attachments, and logs are not included. Import merges workspace fragments without touching unrelated global settings such as storage or auth providers; duplicate board IDs are rejected unless `overwrite: true` is passed. The feature is available across all surfaces: VS Code Settings panel (Export/Import buttons in the Board tab), standalone browser (file download and file picker), REST API (`GET /api/boards/:boardId/export`, `POST /api/boards/import`), CLI (`kl boards export [<boardId>] [--out <file>]`, `kl boards import <file.json> [--overwrite]`), and MCP tools (`export_board`, `import_board`).
+
 ### Changed
 
 - **Unify `buildCardFrontmatter` in shared SDK layer**: The VSCode extension (`KanbanPanel._buildCardFrontmatter`) and the standalone server (`standalone/cardHelpers.buildCardFrontmatter`) had two parallel copies of the card-to-frontmatter projection, which had drifted on the `version` default (extension defaulted to `CARD_FORMAT_VERSION`, standalone to `0`). The projection now lives in `shared/cardFrontmatter.ts` and both transports use it, aligning with the `CardFrontmatter` contract that treats `0` as the legacy (pre-versioning) default. The extension's private method and the unused `mutationService` re-export were removed. No user-visible behavior change beyond the `version: 0` legacy-card default in the extension.

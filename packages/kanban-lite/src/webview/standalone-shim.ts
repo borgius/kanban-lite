@@ -426,6 +426,77 @@ function handleOpenAttachment(cardId: string, attachment: string) {
   window.open(url, '_blank')
 }
 
+async function handleExportBoardSettings(boardId?: string) {
+  try {
+    const url = boardId
+      ? `/api/boards/${encodeURIComponent(boardId)}/export`
+      : '/api/boards/default/export'
+    const res = await fetch(url)
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+      console.error('Export failed:', err.error ?? res.statusText)
+      return
+    }
+    const data = await res.json() as Record<string, unknown>
+    const boardName = (data.board as { config?: { name?: string }; id?: string })?.config?.name
+      ?? (data.board as { id?: string })?.id
+      ?? 'board'
+    const filename = `${String(boardName).replace(/[^a-z0-9_-]/gi, '_')}-settings.json`
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+    const objectUrl = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = objectUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(objectUrl)
+  } catch (err) {
+    console.error('Export board settings failed:', err)
+  }
+}
+
+async function handleImportBoardSettings() {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.json,application/json'
+  input.style.display = 'none'
+  document.body.appendChild(input)
+
+  input.onchange = async () => {
+    if (!input.files || input.files.length === 0) {
+      input.remove()
+      return
+    }
+    const file = input.files[0]
+    input.remove()
+    try {
+      const text = await file.text()
+      let payload: unknown
+      try {
+        payload = JSON.parse(text)
+      } catch {
+        console.error('Import failed: file is not valid JSON')
+        return
+      }
+      const res = await fetch('/api/boards/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+        console.error('Import failed:', err.error ?? res.statusText)
+        return
+      }
+    } catch (err) {
+      console.error('Import board settings failed:', err)
+    }
+  }
+
+  input.click()
+}
+
 async function handleUploadVoiceCommentAttachment(cardId: string, filename: string, dataBase64: string, callbackKey: string) {
   const safeFilename = getStandaloneSafeFilename(filename)
 
@@ -543,6 +614,14 @@ function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, c
       const newDark = !isDark
       localStorage.setItem('kanban-standalone-theme', newDark ? 'dark' : 'light')
       applyTheme(newDark)
+      return
+    }
+    if (msg.type === 'exportBoardSettings') {
+      void handleExportBoardSettings(msg.boardId as string | undefined)
+      return
+    }
+    if (msg.type === 'importBoardSettings') {
+      void handleImportBoardSettings()
       return
     }
 

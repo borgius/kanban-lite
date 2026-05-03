@@ -456,7 +456,7 @@ async function handleExportBoardSettings(boardId?: string) {
   }
 }
 
-async function handleImportBoardSettings() {
+async function handleImportBoardSettings(overwrite?: boolean) {
   const input = document.createElement('input')
   input.type = 'file'
   input.accept = '.json,application/json'
@@ -482,7 +482,7 @@ async function handleImportBoardSettings() {
       const res = await fetch('/api/boards/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payload }),
+        body: JSON.stringify({ payload, overwrite: overwrite ?? false }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
@@ -621,7 +621,7 @@ function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, c
       return
     }
     if (msg.type === 'importBoardSettings') {
-      void handleImportBoardSettings()
+      void handleImportBoardSettings(msg.overwrite as boolean | undefined)
       return
     }
 

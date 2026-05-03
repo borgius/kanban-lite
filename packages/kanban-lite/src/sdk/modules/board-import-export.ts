@@ -1,11 +1,17 @@
-import type { BoardInfo } from '../../shared/types'
+import type { BoardInfo, Card, CardTask, CardFormAttachment, CardFormDataMap, Priority } from '../../shared/types'
 import type { BoardConfig, KanbanConfig } from '../../shared/config'
 import type { LabelDefinition } from '../../shared/types'
 import type { FormDefinition } from '../../shared/config/types'
 import { readConfig, writeConfig, getBoardConfig } from '../../shared/config'
+import { DELETED_STATUS_ID } from '../../shared/types'
 import type { SDKContext } from './context'
+import { listCardsRaw, createCard } from './cards/crud'
+import { permanentlyDeleteCard } from './cards/actions'
 
 // --- Payload types ---
+
+const SECRET_KEY_PATTERN = /(secret|token|password|passphrase|private[-_]?key|client[-_]?secret|secret[-_]?key|session[-_]?token|api[-_]?key)/i
+const UNSAFE_OBJECT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
 
 interface WorkspaceExportFragment {
   labels?: Record<string, LabelDefinition>
@@ -19,9 +25,64 @@ interface WorkspaceExportFragment {
   webhooks?: KanbanConfig['webhooks']
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function redactSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => redactSecrets(entry))
+  }
+
+  if (!isRecord(value)) return structuredClone(value)
+
+  const redacted: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (SECRET_KEY_PATTERN.test(key)) continue
+    redacted[key] = redactSecrets(entry)
+  }
+  return redacted
+}
+
+function validateNoUnsafeObjectKeys(value: unknown, path = 'payload'): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => validateNoUnsafeObjectKeys(entry, `${path}[${index}]`))
+    return
+  }
+
+  if (!isRecord(value)) return
+
+  for (const [key, entry] of Object.entries(value)) {
+    if (UNSAFE_OBJECT_KEYS.has(key)) {
+      throw new Error(`Import failed: unsafe object key "${key}" at ${path}`)
+    }
+    validateNoUnsafeObjectKeys(entry, `${path}.${key}`)
+  }
+}
+
+/**
+ * Card data snapshot included in a board export.
+ * Captures all fields needed to recreate the card on import.
+ * File attachments (binary blobs) are listed by filename but not embedded.
+ */
+export interface CardExportEntry {
+  content: string
+  status: string
+  priority: Priority
+  assignee: string | null
+  dueDate: string | null
+  labels: string[]
+  attachments: string[]
+  tasks?: CardTask[]
+  metadata?: Record<string, unknown>
+  actions?: string[] | Record<string, string>
+  forms?: CardFormAttachment[]
+  formData?: CardFormDataMap
+}
+
 /**
  * Versioned board-settings archive produced by {@link exportBoardSettings}.
- * Contains board config plus board-relevant workspace fragments.
+ * Contains board config, board-relevant workspace fragments, and card data.
  */
 export interface BoardSettingsExportV1 {
   kind: 'kanban-lite.board-settings'
@@ -32,6 +93,7 @@ export interface BoardSettingsExportV1 {
     config: BoardConfig
   }
   workspace: WorkspaceExportFragment
+  cards?: CardExportEntry[]
 }
 
 // --- Export ---
@@ -39,16 +101,16 @@ export interface BoardSettingsExportV1 {
 /**
  * Exports the settings for a board as a versioned JSON-safe archive.
  *
- * The payload includes the full board config plus labels, forms, and
+ * The payload includes the full board config, labels, forms,
  * hook-related workspace fragments (`webhook.delivery`, `callback.runtime`,
- * `cron.runtime`, `webhookPlugin`, `webhooks`).
+ * `cron.runtime`, `webhookPlugin`, `webhooks`), and all non-deleted card data.
  *
- * Card content, comments, attachments, and logs are not included.
+ * File attachment blobs are not embedded — only filenames are listed.
  */
-export function exportBoardSettings(
+export async function exportBoardSettings(
   ctx: SDKContext,
   { boardId }: { boardId?: string } = {},
-): BoardSettingsExportV1 {
+): Promise<BoardSettingsExportV1> {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
   const boardConfig = getBoardConfig(ctx.workspaceRoot, resolvedId)
@@ -67,13 +129,13 @@ export function exportBoardSettings(
   const plugins = config.plugins ?? {}
 
   if (plugins['webhook.delivery']) {
-    pluginFragment['webhook.delivery'] = structuredClone(plugins['webhook.delivery'])
+    pluginFragment['webhook.delivery'] = redactSecrets(plugins['webhook.delivery']) as typeof pluginFragment['webhook.delivery']
   }
   if (plugins['callback.runtime']) {
-    pluginFragment['callback.runtime'] = structuredClone(plugins['callback.runtime'])
+    pluginFragment['callback.runtime'] = redactSecrets(plugins['callback.runtime']) as typeof pluginFragment['callback.runtime']
   }
   if (plugins['cron.runtime']) {
-    pluginFragment['cron.runtime'] = structuredClone(plugins['cron.runtime'])
+    pluginFragment['cron.runtime'] = redactSecrets(plugins['cron.runtime']) as typeof pluginFragment['cron.runtime']
   }
 
   if (Object.keys(pluginFragment).length > 0) {
@@ -81,12 +143,31 @@ export function exportBoardSettings(
   }
 
   if (config.webhookPlugin) {
-    workspaceFragment.webhookPlugin = structuredClone(config.webhookPlugin)
+    workspaceFragment.webhookPlugin = redactSecrets(config.webhookPlugin) as KanbanConfig['webhookPlugin']
   }
 
   if (config.webhooks && config.webhooks.length > 0) {
-    workspaceFragment.webhooks = structuredClone(config.webhooks)
+    workspaceFragment.webhooks = redactSecrets(config.webhooks) as KanbanConfig['webhooks']
   }
+
+  // Export all non-deleted cards
+  const rawCards = await listCardsRaw(ctx, { boardId: resolvedId })
+  const cards: CardExportEntry[] = rawCards
+    .filter(c => c.status !== DELETED_STATUS_ID)
+    .map((c: Card): CardExportEntry => ({
+      content: c.content,
+      status: c.status,
+      priority: c.priority,
+      assignee: c.assignee,
+      dueDate: c.dueDate,
+      labels: c.labels,
+      attachments: c.attachments,
+      ...(c.tasks && c.tasks.length > 0 ? { tasks: structuredClone(c.tasks) } : {}),
+      ...(c.metadata && Object.keys(c.metadata).length > 0 ? { metadata: structuredClone(c.metadata) } : {}),
+      ...(c.actions ? { actions: structuredClone(c.actions) } : {}),
+      ...(c.forms && c.forms.length > 0 ? { forms: structuredClone(c.forms) } : {}),
+      ...(c.formData && Object.keys(c.formData).length > 0 ? { formData: structuredClone(c.formData) } : {}),
+    }))
 
   return {
     kind: 'kanban-lite.board-settings',
@@ -97,6 +178,7 @@ export function exportBoardSettings(
       config: structuredClone(boardConfig),
     },
     workspace: workspaceFragment,
+    ...(cards.length > 0 ? { cards } : {}),
   }
 }
 
@@ -106,6 +188,8 @@ function validateExportPayload(payload: unknown): asserts payload is BoardSettin
   if (!payload || typeof payload !== 'object') {
     throw new Error('Import failed: payload must be a JSON object')
   }
+
+  validateNoUnsafeObjectKeys(payload)
 
   const p = payload as Record<string, unknown>
 
@@ -148,7 +232,11 @@ function validateExportPayload(payload: unknown): asserts payload is BoardSettin
  * Imports a board-settings archive produced by {@link exportBoardSettings}.
  *
  * By default, importing a board whose ID already exists throws an error.
- * Pass `{ overwrite: true }` to replace the existing board's config.
+ * Pass `{ overwrite: true }` to replace the existing board's config and cards.
+ * In overwrite mode all existing non-deleted cards are permanently removed
+ * before the exported cards are recreated.
+ *
+ * In merge mode (default) exported cards are appended alongside existing ones.
  *
  * Workspace fragments (labels, forms, hook-related plugin config, webhooks)
  * are merged into the existing config without touching unrelated global
@@ -157,7 +245,7 @@ function validateExportPayload(payload: unknown): asserts payload is BoardSettin
  * @throws If the payload fails validation or the board already exists
  *   (unless `overwrite` is true).
  */
-export function importBoardSettings(
+export async function importBoardSettings(
   ctx: SDKContext,
   {
     payload,
@@ -166,15 +254,25 @@ export function importBoardSettings(
     payload: unknown
     options?: { overwrite?: boolean }
   },
-): BoardInfo {
+): Promise<BoardInfo> {
   validateExportPayload(payload)
 
-  const { board: { id: boardId, config: boardConfig }, workspace } = payload
+  const { board: { id: boardId, config: boardConfig }, workspace, cards } = payload
 
   const config = readConfig(ctx.workspaceRoot)
 
   if (config.boards[boardId] && !options?.overwrite) {
     throw new Error(`Board already exists: ${boardId}`)
+  }
+
+  // In overwrite mode, permanently delete all existing non-deleted cards
+  if (options?.overwrite && config.boards[boardId]) {
+    const existingCards = await listCardsRaw(ctx, { boardId })
+    await Promise.all(
+      existingCards
+        .filter(c => c.status !== DELETED_STATUS_ID)
+        .map(c => permanentlyDeleteCard(ctx, { cardId: c.id, boardId })),
+    )
   }
 
   // Write board config
@@ -210,6 +308,26 @@ export function importBoardSettings(
   }
 
   writeConfig(ctx.workspaceRoot, config)
+
+  // Re-create exported cards
+  if (Array.isArray(cards) && cards.length > 0) {
+    for (const entry of cards as CardExportEntry[]) {
+      await createCard(ctx, {
+        content: entry.content,
+        status: entry.status,
+        priority: entry.priority,
+        assignee: entry.assignee,
+        dueDate: entry.dueDate,
+        labels: entry.labels ?? [],
+        attachments: entry.attachments ?? [],
+        ...(entry.tasks ? { tasks: entry.tasks } : {}),
+        ...(entry.metadata ? { metadata: entry.metadata } : {}),
+        ...(entry.actions ? { actions: entry.actions } : {}),
+        ...(entry.forms ? { forms: entry.forms } : {}),
+        boardId,
+      })
+    }
+  }
 
   return {
     id: boardId,

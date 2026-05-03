@@ -1666,14 +1666,14 @@ describe('KanbanSDK plugin settings inventory', () => {
         plugins?: Record<string, { provider: string; options?: Record<string, unknown> }>
       }
 
+      // Calling updatePluginSettingsOptions for an inactive provider now switches to it and persists options
       expect(updated.selected).toEqual({
         capability: 'card.storage',
-        providerId: 'localfs',
+        providerId: 'sqlite',
         source: 'config',
       })
-      // Inactive provider options are returned in the response but not written to config
       expect(updated.options?.values?.sqlitePath).toBe('.kanban/disabled.db')
-      expect(persistedConfig.plugins?.['card.storage']).toEqual({ provider: 'localfs' })
+      expect(persistedConfig.plugins?.['card.storage']).toMatchObject({ provider: 'sqlite', options: { sqlitePath: '.kanban/disabled.db' } })
       expect(persistedConfig).not.toHaveProperty('pluginOptions')
       expect(persistedConfig.plugins?.['card.storage']).not.toHaveProperty('enabled')
     } finally {

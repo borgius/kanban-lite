@@ -218,12 +218,10 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
    * Exports the settings for a board as a versioned JSON-safe archive.
    *
    * The archive includes the board's columns, defaults, actions, metadata,
-   * title fields, and the board-relevant workspace fragments (labels, forms,
-   * and hook-related plugin config).
-   *
-   * Card content, comments, attachments, and logs are not included.
+   * title fields, the board-relevant workspace fragments (labels, forms,
+   * and hook-related plugin config), and all non-deleted card data.
    */
-  exportBoardSettings(boardId?: string): BoardSettingsExportV1 {
+  async exportBoardSettings(boardId?: string): Promise<BoardSettingsExportV1> {
     return BoardImportExport.exportBoardSettings(this._ctx, { boardId })
   }
 
@@ -231,13 +229,15 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
    * Imports a board-settings archive produced by {@link exportBoardSettings}.
    *
    * By default, importing a board whose ID already exists throws an error.
-   * Pass `{ overwrite: true }` to replace the existing board config.
+   * Pass `{ overwrite: true }` to replace the existing board config and cards.
+   * In overwrite mode all existing non-deleted cards are permanently removed
+   * before the exported cards are recreated.
    *
    * Workspace fragments (labels, forms, hook-related plugin config, webhooks)
    * are merged into the existing config without touching unrelated global
    * settings such as storage or auth.
    */
-  importBoardSettings(payload: unknown, options?: { overwrite?: boolean }): BoardInfo {
+  async importBoardSettings(payload: unknown, options?: { overwrite?: boolean }): Promise<BoardInfo> {
     return BoardImportExport.importBoardSettings(this._ctx, { payload, options })
   }
 }

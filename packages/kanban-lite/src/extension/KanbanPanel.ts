@@ -635,7 +635,7 @@ export class KanbanPanel {
             if (!exportSdk) break
             try {
               const boardId = message.boardId ?? this._currentBoardId ?? undefined
-              const archive = exportSdk.exportBoardSettings(boardId)
+              const archive = await exportSdk.exportBoardSettings(boardId)
               const boardName = archive.board.config.name ?? archive.board.id
               const defaultName = `${boardName.replace(/[^a-z0-9_-]/gi, '_')}-settings.json`
               const workspaceRoot = this._getWorkspaceRoot()
@@ -675,7 +675,7 @@ export class KanbanPanel {
                 vscode.window.showErrorMessage('Import failed: file is not valid JSON')
                 break
               }
-              await this._runWithAuth(importSdk, () => Promise.resolve(importSdk.importBoardSettings(payload)))
+              await this._runWithAuth(importSdk, () => importSdk.importBoardSettings(payload, { overwrite: message.overwrite ?? false }))
               await this._loadCards()
               this._sendCardsToWebview()
               vscode.window.showInformationMessage('Board settings imported successfully')

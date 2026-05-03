@@ -213,4 +213,4 @@ export type WebviewMessage =
   | { type: 'getBoardLogs' }
   | { type: 'getCardStates'; cardIds: string[] }
   | { type: 'exportBoardSettings'; boardId?: string }
-  | { type: 'importBoardSettings'; boardId?: string }
+  | { type: 'importBoardSettings'; boardId?: string; overwrite?: boolean }

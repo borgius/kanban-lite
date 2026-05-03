@@ -68,7 +68,6 @@ export function createCronOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['name', 'event'],
             properties: {
               name: {
                 type: 'string',

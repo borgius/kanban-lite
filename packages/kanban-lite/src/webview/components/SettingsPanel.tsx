@@ -35,7 +35,6 @@ import { JsonFormsTokenArrayControl, jsonFormsTokenArrayTester } from './JsonFor
 import { ActionsBuilderSection } from './ActionsBuilderSection'
 import { MetaBuilderSection } from './MetaBuilderSection'
 import { TitleBuilderSection } from './TitleBuilderSection'
-import { BoardImportExportControls } from './BoardImportExportControls'
 
 const pluginOptionsAjv = createAjv({ allErrors: true, strict: false })
 const pluginSecretFieldHint = 'Stored secret values reopen masked. Leave the masked value unchanged to keep the current secret, or type a new value to replace it.'
@@ -123,7 +122,7 @@ interface SettingsPanelProps {
   onSaveBoardTitle?: (title: string[]) => void
   onSaveBoardActions?: (actions: Record<string, string>) => void
   onExportBoardSettings?: () => void
-  onImportBoardSettings?: () => void
+  onImportBoardSettings?: (opts?: { overwrite?: boolean }) => void
 }
 
 export function SettingsPanel({
@@ -1761,6 +1760,8 @@ const boardSubTabLabels: Record<BoardSubTab, string> = {
   actions: 'Actions',
   labels: 'Labels',
   meta: 'Meta',
+  export: 'Export',
+  import: 'Import',
 }
 
 function SettingsPanelContent({
@@ -1799,6 +1800,7 @@ function SettingsPanelContent({
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
   const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>(initialBoardSubTab ?? 'defaults')
+  const [importMode, setImportMode] = useState<'override' | 'merge'>('merge')
 
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab)
@@ -2144,7 +2146,7 @@ function SettingsPanelContent({
                 className="flex flex-col shrink-0 py-2"
                 style={{ width: 96, borderRight: '1px solid var(--vscode-panel-border)' }}
               >
-                {(['defaults', 'title', 'actions', 'labels', 'meta'] as const).map(sub => (
+                {(['defaults', 'title', 'actions', 'labels', 'meta', 'export', 'import'] as const).map(sub => (
                   <button
                     key={sub}
                     type="button"
@@ -2173,9 +2175,6 @@ function SettingsPanelContent({
 
               {/* Right content */}
               <div className="flex-1 min-w-0 overflow-auto">
-                <div className="px-4">
-                  <BoardImportExportControls onExport={onExportBoardSettings} onImport={onImportBoardSettings} />
-                </div>
                 {boardSubTab === 'defaults' && (
                   <SettingsSection title="Defaults">
                     <SettingsDropdown
@@ -2220,6 +2219,69 @@ function SettingsPanelContent({
 
                 {boardSubTab === 'meta' && (
                   <MetaBuilderSection boardMeta={boardMeta} onSave={onSaveBoardMeta} />
+                )}
+
+                {boardSubTab === 'export' && (
+                  <div className="px-4 py-4">
+                    <p className="text-xs mb-1" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>Export Board</p>
+                    <p className="text-xs mb-4" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                      Downloads a JSON archive containing this board&apos;s configuration, workspace fragments (labels, forms, plugins, webhooks), and all current card data.
+                    </p>
+                    <button
+                      className="settings-btn settings-btn-secondary"
+                      onClick={onExportBoardSettings}
+                      type="button"
+                    >
+                      Export Board
+                    </button>
+                  </div>
+                )}
+
+                {boardSubTab === 'import' && (
+                  <div className="px-4 py-4">
+                    <p className="text-xs mb-1" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>Import Board</p>
+                    <p className="text-xs mb-4" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                      Import a board archive produced by Export Board. Choose how to handle conflicts with the existing board.
+                    </p>
+                    <fieldset className="mb-4" style={{ border: 'none', padding: 0, margin: 0 }}>
+                      <legend className="text-xs mb-2" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>Import mode</legend>
+                      <label className="flex items-start gap-2 mb-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="merge"
+                          checked={importMode === 'merge'}
+                          onChange={() => setImportMode('merge')}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="text-xs block" style={{ color: 'var(--vscode-foreground)' }}>Merge</span>
+                          <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>Keep existing cards and append imported cards alongside them.</span>
+                        </span>
+                      </label>
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="override"
+                          checked={importMode === 'override'}
+                          onChange={() => setImportMode('override')}
+                          className="mt-0.5"
+                        />
+                        <span>
+                          <span className="text-xs block" style={{ color: 'var(--vscode-foreground)' }}>Override</span>
+                          <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>Replace the board config and permanently delete all current cards before importing.</span>
+                        </span>
+                      </label>
+                    </fieldset>
+                    <button
+                      className="settings-btn settings-btn-secondary"
+                      onClick={() => onImportBoardSettings?.({ overwrite: importMode === 'override' })}
+                      type="button"
+                    >
+                      Import Board
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

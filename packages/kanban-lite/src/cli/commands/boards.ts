@@ -107,7 +107,7 @@ export async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Fla
     case 'export': {
       const boardId = positional[1] || undefined
       const outPath = typeof flags.out === 'string' ? flags.out : undefined
-      const archive = sdk.exportBoardSettings(boardId)
+      const archive = await sdk.exportBoardSettings(boardId)
       const json = JSON.stringify(archive, null, 2)
       if (outPath) {
         await fs.writeFile(outPath, json, 'utf8')
@@ -139,7 +139,7 @@ export async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Fla
         process.exit(1)
       }
       try {
-        const board = sdk.importBoardSettings(payload, { overwrite })
+        const board = await sdk.importBoardSettings(payload, { overwrite })
         if (flags.json) {
           console.log(JSON.stringify(board, null, 2))
         } else {

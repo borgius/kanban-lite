@@ -70,8 +70,8 @@ describe('board-import-export', () => {
   }
 
   describe('exportBoardSettings', () => {
-    it('exports board config including name, columns, and description', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
+    it('exports board config including name, columns, and description', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
       expect(archive.kind).toBe('kanban-lite.board-settings')
       expect(archive.version).toBe(1)
       expect(typeof archive.exportedAt).toBe('string')
@@ -81,20 +81,20 @@ describe('board-import-export', () => {
       expect(archive.board.config.columns).toEqual(BOARD_COLUMNS)
     })
 
-    it('includes labels in the workspace fragment', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
+    it('includes labels in the workspace fragment', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
       expect(archive.workspace.labels).toEqual({
         bug: { color: '#ef4444' },
         feature: { color: '#3b82f6' },
       })
     })
 
-    it('uses default board when boardId is omitted', () => {
-      const archive = exportBoardSettings(makeCtx())
+    it('uses default board when boardId is omitted', async () => {
+      const archive = await exportBoardSettings(makeCtx())
       expect(archive.board.id).toBe('default')
     })
 
-    it('includes webhook.delivery plugin fragment when present', () => {
+    it('includes webhook.delivery plugin fragment when present', async () => {
       const configWithPlugin = {
         ...BASE_CONFIG,
         plugins: {
@@ -102,11 +102,50 @@ describe('board-import-export', () => {
         },
       }
       writeKanbanJson(workspaceDir, configWithPlugin)
-      const archive = exportBoardSettings(makeCtx())
+      const archive = await exportBoardSettings(makeCtx())
       expect(archive.workspace.plugins?.['webhook.delivery']).toBeDefined()
     })
 
-    it('omits auth and storage plugin fragments', () => {
+    it('redacts secrets from hook-related workspace fragments', async () => {
+      const configWithSecrets = {
+        ...BASE_CONFIG,
+        plugins: {
+          'webhook.delivery': {
+            provider: 'kl-plugin-webhook',
+            options: {
+              webhooks: [
+                { id: 'wh_1', url: 'https://example.com', secret: 'super-secret' },
+              ],
+              apiToken: 'webhook-token',
+            },
+          },
+          'callback.runtime': { provider: 'callbacks', options: { clientSecret: 'callback-secret' } },
+          'cron.runtime': { provider: 'cron', options: { events: [], apiToken: 'cron-token' } },
+        },
+        webhookPlugin: {
+          'webhook.delivery': { provider: 'webhooks', options: { token: 'legacy-token' } },
+        },
+        webhooks: [
+          { id: 'legacy', url: 'https://example.com', events: ['*'], secret: 'legacy-secret' },
+        ],
+      }
+      writeKanbanJson(workspaceDir, configWithSecrets)
+
+      const archive = await exportBoardSettings(makeCtx())
+      const exported = JSON.stringify(archive)
+
+      expect(exported).not.toContain('super-secret')
+      expect(exported).not.toContain('webhook-token')
+      expect(exported).not.toContain('callback-secret')
+      expect(exported).not.toContain('cron-token')
+      expect(exported).not.toContain('legacy-token')
+      expect(exported).not.toContain('legacy-secret')
+      expect(exported).not.toContain('apiToken')
+      expect(exported).not.toContain('clientSecret')
+      expect(exported).not.toContain('"secret"')
+    })
+
+    it('omits auth and storage plugin fragments', async () => {
       const configWithAuth = {
         ...BASE_CONFIG,
         plugins: {
@@ -115,36 +154,36 @@ describe('board-import-export', () => {
         },
       }
       writeKanbanJson(workspaceDir, configWithAuth)
-      const archive = exportBoardSettings(makeCtx())
+      const archive = await exportBoardSettings(makeCtx())
       // auth and storage should not be in the export
       expect(archive.workspace.plugins?.['auth.identity' as keyof typeof archive.workspace.plugins]).toBeUndefined()
       expect(archive.workspace.plugins?.['card.storage' as keyof typeof archive.workspace.plugins]).toBeUndefined()
     })
 
-    it('omits forms fragment when no forms defined', () => {
-      const archive = exportBoardSettings(makeCtx())
+    it('omits forms fragment when no forms defined', async () => {
+      const archive = await exportBoardSettings(makeCtx())
       expect(archive.workspace.forms).toBeUndefined()
     })
 
-    it('includes forms in the workspace fragment when present', () => {
+    it('includes forms in the workspace fragment when present', async () => {
       const configWithForms = {
         ...BASE_CONFIG,
         forms: { contact: { fields: [{ id: 'name', type: 'text' }] } },
       }
       writeKanbanJson(workspaceDir, configWithForms)
-      const archive = exportBoardSettings(makeCtx())
+      const archive = await exportBoardSettings(makeCtx())
       expect(archive.workspace.forms).toBeDefined()
       expect(archive.workspace.forms?.contact).toBeDefined()
     })
   })
 
   describe('importBoardSettings', () => {
-    it('imports a valid archive and writes config', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
+    it('imports a valid archive and writes config', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
       // Modify exported archive to use a different board ID
       const newArchive = { ...archive, board: { id: 'imported', config: { ...archive.board.config, name: 'Imported Board' } } }
 
-      importBoardSettings(makeCtx(), { payload: newArchive })
+      await importBoardSettings(makeCtx(), { payload: newArchive })
 
       const saved = readKanbanJson(workspaceDir)
       const boards = saved.boards as Record<string, unknown>
@@ -152,14 +191,14 @@ describe('board-import-export', () => {
       expect((boards.imported as { name?: string }).name).toBe('Imported Board')
     })
 
-    it('merges labels from workspace fragment without overwriting unrelated labels', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
+    it('merges labels from workspace fragment without overwriting unrelated labels', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
       const newArchive = {
         ...archive,
         board: { ...archive.board, id: 'imported2' },
         workspace: { ...archive.workspace, labels: { newlabel: { color: '#000000' } } },
       }
-      importBoardSettings(makeCtx(), { payload: newArchive })
+      await importBoardSettings(makeCtx(), { payload: newArchive })
 
       const saved = readKanbanJson(workspaceDir)
       const labels = saved.labels as Record<string, unknown>
@@ -170,55 +209,69 @@ describe('board-import-export', () => {
       expect(labels.newlabel).toEqual({ color: '#000000' })
     })
 
-    it('throws when board already exists and overwrite is false', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
-      expect(() => importBoardSettings(makeCtx(), { payload: archive })).toThrow('Board already exists: default')
+    it('throws when board already exists and overwrite is false', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
+      await expect(importBoardSettings(makeCtx(), { payload: archive })).rejects.toThrow('Board already exists: default')
     })
 
-    it('overwrites existing board when overwrite is true', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
+    it('overwrites existing board when overwrite is true', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
       const modifiedArchive = {
         ...archive,
         board: { id: 'default', config: { ...archive.board.config, name: 'Overwritten Board' } },
       }
-      const result = importBoardSettings(makeCtx(), { payload: modifiedArchive, options: { overwrite: true } })
+      const result = await importBoardSettings(makeCtx(), { payload: modifiedArchive, options: { overwrite: true } })
       expect(result.name).toBe('Overwritten Board')
     })
 
-    it('rejects payload with wrong kind', () => {
+    it('rejects payload with wrong kind', async () => {
       const badPayload = { kind: 'some-other-tool.settings', version: 1, board: { id: 'x', config: { name: 'X', columns: [] } }, workspace: {} }
-      expect(() => importBoardSettings(makeCtx(), { payload: badPayload })).toThrow('unsupported archive kind')
+      await expect(importBoardSettings(makeCtx(), { payload: badPayload })).rejects.toThrow('unsupported archive kind')
     })
 
-    it('rejects payload with unsupported version', () => {
+    it('rejects payload with unsupported version', async () => {
       const badPayload = { kind: 'kanban-lite.board-settings', version: 99, board: { id: 'x', config: { name: 'X', columns: [] } }, workspace: {} }
-      expect(() => importBoardSettings(makeCtx(), { payload: badPayload })).toThrow('unsupported archive version')
+      await expect(importBoardSettings(makeCtx(), { payload: badPayload })).rejects.toThrow('unsupported archive version')
     })
 
-    it('rejects payload with missing board.id', () => {
+    it('rejects payload with missing board.id', async () => {
       const badPayload = { kind: 'kanban-lite.board-settings', version: 1, board: { id: '', config: { name: 'X', columns: [] } }, workspace: {} }
-      expect(() => importBoardSettings(makeCtx(), { payload: badPayload })).toThrow('missing board.id')
+      await expect(importBoardSettings(makeCtx(), { payload: badPayload })).rejects.toThrow('missing board.id')
     })
 
-    it('rejects payload with missing board.config.name', () => {
+    it('rejects payload with missing board.config.name', async () => {
       const badPayload = { kind: 'kanban-lite.board-settings', version: 1, board: { id: 'x', config: { columns: [] } }, workspace: {} }
-      expect(() => importBoardSettings(makeCtx(), { payload: badPayload })).toThrow('board.config.name')
+      await expect(importBoardSettings(makeCtx(), { payload: badPayload })).rejects.toThrow('board.config.name')
     })
 
-    it('rejects non-object payload', () => {
-      expect(() => importBoardSettings(makeCtx(), { payload: null })).toThrow('payload must be a JSON object')
-      expect(() => importBoardSettings(makeCtx(), { payload: 'string' })).toThrow('payload must be a JSON object')
+    it('rejects non-object payload', async () => {
+      await expect(importBoardSettings(makeCtx(), { payload: null })).rejects.toThrow('payload must be a JSON object')
+      await expect(importBoardSettings(makeCtx(), { payload: 'string' })).rejects.toThrow('payload must be a JSON object')
     })
 
-    it('writes config exactly once (single write call)', () => {
-      const archive = exportBoardSettings(makeCtx(), { boardId: 'default' })
+    it('rejects unsafe object keys before writing config', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
+      const payload = JSON.parse(JSON.stringify({
+        ...archive,
+        board: { ...archive.board, id: 'safe-import' },
+      })) as { workspace: unknown }
+      payload.workspace = { labels: JSON.parse('{"__proto__":{"color":"#000000"}}') as unknown }
+
+      await expect(importBoardSettings(makeCtx(), { payload })).rejects.toThrow('unsafe object key "__proto__"')
+
+      const saved = readKanbanJson(workspaceDir)
+      expect((saved.boards as Record<string, unknown>)['safe-import']).toBeUndefined()
+    })
+
+    it('writes config exactly once (single write call)', async () => {
+      const archive = await exportBoardSettings(makeCtx(), { boardId: 'default' })
       const newArchive = { ...archive, board: { id: 'once', config: { ...archive.board.config, name: 'Once Board' } } }
 
       // Read mtime before import
       const configPath = path.join(workspaceDir, '.kanban.json')
       const mtimeBefore = fs.statSync(configPath).mtimeMs
 
-      importBoardSettings(makeCtx(), { payload: newArchive })
+      await importBoardSettings(makeCtx(), { payload: newArchive })
 
       const saved = readKanbanJson(workspaceDir)
       expect((saved.boards as Record<string, { name?: string }>).once?.name).toBe('Once Board')
@@ -229,16 +282,16 @@ describe('board-import-export', () => {
   })
 
   describe('KanbanSDK wrappers', () => {
-    it('sdk.exportBoardSettings works', () => {
-      const archive = sdk.exportBoardSettings('default')
+    it('sdk.exportBoardSettings works', async () => {
+      const archive = await sdk.exportBoardSettings('default')
       expect(archive.kind).toBe('kanban-lite.board-settings')
       expect(archive.board.id).toBe('default')
     })
 
-    it('sdk.importBoardSettings works', () => {
-      const archive = sdk.exportBoardSettings('default')
+    it('sdk.importBoardSettings works', async () => {
+      const archive = await sdk.exportBoardSettings('default')
       const newArchive = { ...archive, board: { id: 'sdk-imported', config: { ...archive.board.config, name: 'SDK Import' } } }
-      const result = sdk.importBoardSettings(newArchive)
+      const result = await sdk.importBoardSettings(newArchive)
       expect(result.id).toBe('sdk-imported')
       expect(result.name).toBe('SDK Import')
     })

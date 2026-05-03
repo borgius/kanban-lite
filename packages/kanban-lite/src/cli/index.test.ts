@@ -1811,8 +1811,8 @@ describe('CLI plugin-settings commands', () => {
         providerId: 'local',
         selected: {
           capability: 'auth.identity',
-          providerId: 'noop',
-          source: 'legacy',
+          providerId: 'local',
+          source: 'config',
         },
         options: {
           values: {

@@ -217,7 +217,7 @@ export function registerBoardMcpTools(
     },
     async ({ boardId }) => {
       try {
-        const archive = sdk.exportBoardSettings(boardId)
+        const archive = await sdk.exportBoardSettings(boardId)
         return { content: [{ type: 'text' as const, text: JSON.stringify(archive, null, 2) }] }
       } catch (err) {
         return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
@@ -240,7 +240,7 @@ export function registerBoardMcpTools(
         } catch {
           return { content: [{ type: 'text' as const, text: 'json_payload is not valid JSON' }], isError: true }
         }
-        const board = sdk.importBoardSettings(payload, { overwrite: overwrite ?? false })
+        const board = await sdk.importBoardSettings(payload, { overwrite: overwrite ?? false })
         return { content: [{ type: 'text' as const, text: JSON.stringify(board, null, 2) }] }
       } catch (err) {
         if (err instanceof AuthError) return { content: [{ type: 'text' as const, text: err.message }], isError: true }

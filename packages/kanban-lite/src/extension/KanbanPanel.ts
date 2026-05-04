@@ -635,7 +635,10 @@ export class KanbanPanel {
             if (!exportSdk) break
             try {
               const boardId = message.boardId ?? this._currentBoardId ?? undefined
-              const archive = await exportSdk.exportBoardSettings(boardId)
+              const archive = await exportSdk.exportBoardSettings(boardId, {
+                withCards: message.withCards,
+                withAttachments: message.withAttachments,
+              })
               const boardName = archive.board.config.name ?? archive.board.id
               const defaultName = `${boardName.replace(/[^a-z0-9_-]/gi, '_')}-settings.json`
               const workspaceRoot = this._getWorkspaceRoot()

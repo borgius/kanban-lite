@@ -1,7 +1,7 @@
 export type SettingsTab = 'general' | 'board' | 'pluginOptions'
 
 /** Sub-tab within the "Board" tab */
-export type BoardSubTab = 'defaults' | 'title' | 'actions' | 'labels' | 'meta' | 'export' | 'import'
+export type BoardSubTab = 'defaults' | 'title' | 'actions' | 'labels' | 'meta' | 'export' | 'import' | 'delete'
 
 export const DEFAULT_BOARD_SUBTAB: BoardSubTab = 'defaults'
 
@@ -28,6 +28,7 @@ export const BOARD_SETTINGS_TAB_FROM_SLUG: Record<string, BoardSubTab> = {
   meta: 'meta',
   export: 'export',
   import: 'import',
+  delete: 'delete',
 }
 
 /** Internal BoardSubTab → URL-safe slug */
@@ -39,6 +40,7 @@ export const BOARD_SETTINGS_TAB_TO_SLUG: Record<BoardSubTab, string> = {
   meta: 'meta',
   export: 'export',
   import: 'import',
+  delete: 'delete',
 }
 
 /** Legacy top-level settings slugs that now live under /settings/board/* */

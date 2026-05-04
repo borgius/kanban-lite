@@ -220,7 +220,9 @@ export async function handleBoardCrudRoutes(request: StandaloneRequestContext): 
   if (params) {
     try {
       const { boardId } = params
-      jsonOk(res, await sdk.exportBoardSettings(boardId))
+      const withCards = url.searchParams.get('withCards') !== 'false'
+      const withAttachments = url.searchParams.get('withAttachments') !== 'false'
+      jsonOk(res, await sdk.exportBoardSettings(boardId, { withCards, withAttachments }))
     } catch (err) {
       jsonError(res, 404, String(err))
     }
@@ -234,7 +236,8 @@ export async function handleBoardCrudRoutes(request: StandaloneRequestContext): 
       const overwrite = body.overwrite === true
       const payload = body.payload ?? body
       const board = await runWithRequestAuth(() => sdk.importBoardSettings(payload, { overwrite }))
-      await broadcast(ctx, workspaceRoot)
+      await loadCards(ctx)
+      broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, board, 201)
     } catch (err) {
       const authErr = getAuthErrorLike(err)

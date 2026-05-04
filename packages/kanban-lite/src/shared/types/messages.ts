@@ -212,5 +212,5 @@ export type WebviewMessage =
   | { type: 'clearBoardLogs' }
   | { type: 'getBoardLogs' }
   | { type: 'getCardStates'; cardIds: string[] }
-  | { type: 'exportBoardSettings'; boardId?: string }
+  | { type: 'exportBoardSettings'; boardId?: string; withCards?: boolean; withAttachments?: boolean }
   | { type: 'importBoardSettings'; boardId?: string; overwrite?: boolean }

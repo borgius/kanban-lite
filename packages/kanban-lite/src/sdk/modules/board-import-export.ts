@@ -1,3 +1,8 @@
+import { gzip, gunzip } from 'node:zlib'
+import { promisify } from 'node:util'
+
+const gzipAsync = promisify(gzip)
+const gunzipAsync = promisify(gunzip)
 import type { BoardInfo, Card, CardTask, CardFormAttachment, CardFormDataMap, Priority } from '../../shared/types'
 import type { BoardConfig, KanbanConfig } from '../../shared/config'
 import type { LabelDefinition } from '../../shared/types'
@@ -63,7 +68,7 @@ function validateNoUnsafeObjectKeys(value: unknown, path = 'payload'): void {
 /**
  * Card data snapshot included in a board export.
  * Captures all fields needed to recreate the card on import.
- * File attachments (binary blobs) are listed by filename but not embedded.
+ * Attachment files are embedded as gzipped, base64-encoded blobs.
  */
 export interface CardExportEntry {
   content: string
@@ -72,7 +77,7 @@ export interface CardExportEntry {
   assignee: string | null
   dueDate: string | null
   labels: string[]
-  attachments: string[]
+  attachments: { name: string; content: string }[]
   tasks?: CardTask[]
   metadata?: Record<string, unknown>
   actions?: string[] | Record<string, string>
@@ -103,13 +108,12 @@ export interface BoardSettingsExportV1 {
  *
  * The payload includes the full board config, labels, forms,
  * hook-related workspace fragments (`webhook.delivery`, `callback.runtime`,
- * `cron.runtime`, `webhookPlugin`, `webhooks`), and all non-deleted card data.
- *
- * File attachment blobs are not embedded — only filenames are listed.
+ * `cron.runtime`, `webhookPlugin`, `webhooks`), all non-deleted card data,
+ * and attachment file blobs compressed with gzip and base64-encoded.
  */
 export async function exportBoardSettings(
   ctx: SDKContext,
-  { boardId }: { boardId?: string } = {},
+  { boardId, withCards = true, withAttachments = true }: { boardId?: string; withCards?: boolean; withAttachments?: boolean } = {},
 ): Promise<BoardSettingsExportV1> {
   const config = readConfig(ctx.workspaceRoot)
   const resolvedId = boardId || config.defaultBoard
@@ -150,24 +154,40 @@ export async function exportBoardSettings(
     workspaceFragment.webhooks = redactSecrets(config.webhooks) as KanbanConfig['webhooks']
   }
 
-  // Export all non-deleted cards
-  const rawCards = await listCardsRaw(ctx, { boardId: resolvedId })
-  const cards: CardExportEntry[] = rawCards
-    .filter(c => c.status !== DELETED_STATUS_ID)
-    .map((c: Card): CardExportEntry => ({
-      content: c.content,
-      status: c.status,
-      priority: c.priority,
-      assignee: c.assignee,
-      dueDate: c.dueDate,
-      labels: c.labels,
-      attachments: c.attachments,
-      ...(c.tasks && c.tasks.length > 0 ? { tasks: structuredClone(c.tasks) } : {}),
-      ...(c.metadata && Object.keys(c.metadata).length > 0 ? { metadata: structuredClone(c.metadata) } : {}),
-      ...(c.actions ? { actions: structuredClone(c.actions) } : {}),
-      ...(c.forms && c.forms.length > 0 ? { forms: structuredClone(c.forms) } : {}),
-      ...(c.formData && Object.keys(c.formData).length > 0 ? { formData: structuredClone(c.formData) } : {}),
-    }))
+  // Export all non-deleted cards, embedding attachment blobs as gzipped base64
+  let cards: CardExportEntry[] = []
+  if (withCards) {
+    const rawCards = await listCardsRaw(ctx, { boardId: resolvedId })
+    const activeCards = rawCards.filter(c => c.status !== DELETED_STATUS_ID)
+    cards = await Promise.all(
+      activeCards.map(async (c: Card): Promise<CardExportEntry> => {
+        const attachmentEntries: { name: string; content: string }[] = []
+        if (withAttachments) {
+          for (const filename of c.attachments) {
+            const result = await ctx.readAttachment(c, filename)
+            if (result) {
+              const compressed = await gzipAsync(result.data)
+              attachmentEntries.push({ name: filename, content: Buffer.from(compressed).toString('base64') })
+            }
+          }
+        }
+        return {
+          content: c.content,
+          status: c.status,
+          priority: c.priority,
+          assignee: c.assignee,
+          dueDate: c.dueDate,
+          labels: c.labels,
+          attachments: attachmentEntries,
+          ...(c.tasks && c.tasks.length > 0 ? { tasks: structuredClone(c.tasks) } : {}),
+          ...(c.metadata && Object.keys(c.metadata).length > 0 ? { metadata: structuredClone(c.metadata) } : {}),
+          ...(c.actions ? { actions: structuredClone(c.actions) } : {}),
+          ...(c.forms && c.forms.length > 0 ? { forms: structuredClone(c.forms) } : {}),
+          ...(c.formData && Object.keys(c.formData).length > 0 ? { formData: structuredClone(c.formData) } : {}),
+        }
+      }),
+    )
+  }
 
   return {
     kind: 'kanban-lite.board-settings',
@@ -184,14 +204,19 @@ export async function exportBoardSettings(
 
 // --- Validation ---
 
-function validateExportPayload(payload: unknown): asserts payload is BoardSettingsExportV1 {
+function validateExportPayload(payload: unknown): BoardSettingsExportV1 {
   if (!payload || typeof payload !== 'object') {
     throw new Error('Import failed: payload must be a JSON object')
   }
 
   validateNoUnsafeObjectKeys(payload)
 
-  const p = payload as Record<string, unknown>
+  // Unwrap API response envelope { ok: true, data: { ... } } produced by the standalone server
+  const maybeEnvelope = payload as Record<string, unknown>
+  const p: Record<string, unknown> =
+    maybeEnvelope['ok'] === true && maybeEnvelope['data'] && typeof maybeEnvelope['data'] === 'object'
+      ? (maybeEnvelope['data'] as Record<string, unknown>)
+      : maybeEnvelope
 
   if (p.kind !== 'kanban-lite.board-settings') {
     throw new Error(`Import failed: unsupported archive kind "${String(p.kind)}"`)
@@ -224,6 +249,8 @@ function validateExportPayload(payload: unknown): asserts payload is BoardSettin
   if (!Array.isArray(boardConfig.columns)) {
     throw new Error('Import failed: board.config.columns must be an array')
   }
+
+  return p as unknown as BoardSettingsExportV1
 }
 
 // --- Import ---
@@ -255,9 +282,9 @@ export async function importBoardSettings(
     options?: { overwrite?: boolean }
   },
 ): Promise<BoardInfo> {
-  validateExportPayload(payload)
+  const archive = validateExportPayload(payload)
 
-  const { board: { id: boardId, config: boardConfig }, workspace, cards } = payload
+  const { board: { id: boardId, config: boardConfig }, workspace, cards } = archive
 
   const config = readConfig(ctx.workspaceRoot)
 
@@ -309,23 +336,34 @@ export async function importBoardSettings(
 
   writeConfig(ctx.workspaceRoot, config)
 
-  // Re-create exported cards
+  // Re-create exported cards with their attachment blobs
   if (Array.isArray(cards) && cards.length > 0) {
     for (const entry of cards as CardExportEntry[]) {
-      await createCard(ctx, {
+      const attachmentNames = entry.attachments.map(a => a.name)
+      const newCard = await createCard(ctx, {
         content: entry.content,
         status: entry.status,
         priority: entry.priority,
         assignee: entry.assignee,
         dueDate: entry.dueDate,
         labels: entry.labels ?? [],
-        attachments: entry.attachments ?? [],
+        attachments: attachmentNames,
         ...(entry.tasks ? { tasks: entry.tasks } : {}),
         ...(entry.metadata ? { metadata: entry.metadata } : {}),
         ...(entry.actions ? { actions: entry.actions } : {}),
         ...(entry.forms ? { forms: entry.forms } : {}),
         boardId,
       })
+      // Restore attachment file data
+      for (const att of entry.attachments) {
+        try {
+          const raw = Buffer.from(att.content, 'base64')
+          const data = await gunzipAsync(raw)
+          await ctx.writeAttachment(newCard, att.name, data)
+        } catch {
+          // Skip attachments that fail to restore
+        }
+      }
     }
   }
 

@@ -121,8 +121,11 @@ interface SettingsPanelProps {
   onSaveBoardMeta?: (meta: Record<string, BoardMetaFieldDef>) => void
   onSaveBoardTitle?: (title: string[]) => void
   onSaveBoardActions?: (actions: Record<string, string>) => void
-  onExportBoardSettings?: () => void
+  onExportBoardSettings?: (opts?: { withCards?: boolean; withAttachments?: boolean }) => void
   onImportBoardSettings?: (opts?: { overwrite?: boolean }) => void
+  onDeleteBoard?: () => void
+  exportCardCount?: number
+  exportAttachmentCount?: number
 }
 
 export function SettingsPanel({
@@ -158,6 +161,9 @@ export function SettingsPanel({
   onSaveBoardActions,
   onExportBoardSettings,
   onImportBoardSettings,
+  onDeleteBoard,
+  exportCardCount,
+  exportAttachmentCount,
 }: SettingsPanelProps) {
   if (!isOpen) return null
   return (
@@ -193,6 +199,9 @@ export function SettingsPanel({
       onSaveBoardActions={onSaveBoardActions}
       onExportBoardSettings={onExportBoardSettings}
       onImportBoardSettings={onImportBoardSettings}
+      onDeleteBoard={onDeleteBoard}
+      exportCardCount={exportCardCount}
+      exportAttachmentCount={exportAttachmentCount}
     />
   )
 }
@@ -1762,6 +1771,7 @@ const boardSubTabLabels: Record<BoardSubTab, string> = {
   meta: 'Meta',
   export: 'Export',
   import: 'Import',
+  delete: 'Delete',
 }
 
 function SettingsPanelContent({
@@ -1796,11 +1806,17 @@ function SettingsPanelContent({
   onSaveBoardActions,
   onExportBoardSettings,
   onImportBoardSettings,
+  onDeleteBoard,
+  exportCardCount = 0,
+  exportAttachmentCount = 0,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
   const [boardSubTab, setBoardSubTab] = useState<BoardSubTab>(initialBoardSubTab ?? 'defaults')
   const [importMode, setImportMode] = useState<'override' | 'merge'>('merge')
+  const [withCards, setWithCards] = useState(true)
+  const [withAttachments, setWithAttachments] = useState(true)
+  const [deleteNameInput, setDeleteNameInput] = useState('')
 
   const setActiveTab = useCallback((tab: SettingsTab) => {
     setActiveTabRaw(tab)
@@ -1837,6 +1853,9 @@ function SettingsPanelContent({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const columns = useStore(s => s.columns)
+  const boards = useStore(s => s.boards)
+  const currentBoardId = useStore(s => s.currentBoard)
+  const currentBoardName = boards.find(b => b.id === currentBoardId)?.name ?? currentBoardId
   const effectiveDrawerWidth = useStore(s => s.effectiveDrawerWidth)
   const setDrawerWidthPreview = useStore(s => s.setDrawerWidthPreview)
   const clearDrawerWidthPreview = useStore(s => s.clearDrawerWidthPreview)
@@ -2146,7 +2165,7 @@ function SettingsPanelContent({
                 className="flex flex-col shrink-0 py-2"
                 style={{ width: 96, borderRight: '1px solid var(--vscode-panel-border)' }}
               >
-                {(['defaults', 'title', 'actions', 'labels', 'meta', 'export', 'import'] as const).map(sub => (
+                {(['defaults', 'title', 'actions', 'labels', 'meta', 'export', 'import', 'delete'] as const).map(sub => (
                   <button
                     key={sub}
                     type="button"
@@ -2155,7 +2174,9 @@ function SettingsPanelContent({
                     style={{
                       color: boardSubTab === sub
                         ? 'var(--vscode-foreground)'
-                        : 'var(--vscode-descriptionForeground)',
+                        : sub === 'delete'
+                          ? 'var(--vscode-errorForeground, #f14c4c)'
+                          : 'var(--vscode-descriptionForeground)',
                       background: boardSubTab === sub
                         ? 'var(--vscode-list-activeSelectionBackground, var(--vscode-list-hoverBackground))'
                         : 'transparent',
@@ -2225,11 +2246,46 @@ function SettingsPanelContent({
                   <div className="px-4 py-4">
                     <p className="text-xs mb-1" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>Export Board</p>
                     <p className="text-xs mb-4" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                      Downloads a JSON archive containing this board&apos;s configuration, workspace fragments (labels, forms, plugins, webhooks), and all current card data.
+                      Downloads a JSON archive of this board&apos;s configuration, workspace fragments (labels, forms, plugins, webhooks), and optionally card data with attachments.
                     </p>
+                    <fieldset className="mb-4" style={{ border: 'none', padding: 0, margin: 0 }}>
+                      <legend className="text-xs mb-2" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>Include</legend>
+                      <label className="flex items-center gap-2 mb-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={withCards}
+                          onChange={e => {
+                            setWithCards(e.target.checked)
+                            if (!e.target.checked) setWithAttachments(false)
+                          }}
+                          style={{ accentColor: 'var(--vscode-button-background)' }}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+                          With Cards ({exportCardCount})
+                        </span>
+                      </label>
+                      <label className={`flex items-center gap-2 cursor-pointer ${!withCards ? 'opacity-40' : ''}`}>
+                        <input
+                          type="checkbox"
+                          checked={withAttachments}
+                          disabled={!withCards}
+                          onChange={e => setWithAttachments(e.target.checked)}
+                          style={{ accentColor: 'var(--vscode-button-background)' }}
+                        />
+                        <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+                          With Attachments ({exportAttachmentCount})
+                        </span>
+                      </label>
+                    </fieldset>
                     <button
-                      className="settings-btn settings-btn-secondary"
-                      onClick={onExportBoardSettings}
+                      className="rounded px-3 py-1.5 text-xs font-medium mt-4"
+                      style={{
+                        background: 'var(--vscode-button-background)',
+                        color: 'var(--vscode-button-foreground)',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => onExportBoardSettings?.({ withCards, withAttachments })}
                       type="button"
                     >
                       Export Board
@@ -2275,11 +2331,102 @@ function SettingsPanelContent({
                       </label>
                     </fieldset>
                     <button
-                      className="settings-btn settings-btn-secondary"
+                      className="rounded px-3 py-1.5 text-xs font-medium"
+                      style={{
+                        background: 'var(--vscode-button-background)',
+                        color: 'var(--vscode-button-foreground)',
+                        border: 'none',
+                        cursor: 'pointer',
+                      }}
                       onClick={() => onImportBoardSettings?.({ overwrite: importMode === 'override' })}
                       type="button"
                     >
                       Import Board
+                    </button>
+                  </div>
+                )}
+
+                {boardSubTab === 'delete' && (
+                  <div className="px-4 py-4">
+                    <p className="text-xs mb-1" style={{ color: 'var(--vscode-errorForeground, #f14c4c)', fontWeight: 600 }}>Delete Board</p>
+                    <div
+                      className="flex items-start gap-2 rounded p-3 mb-4"
+                      style={{ background: 'var(--vscode-inputValidation-warningBackground, rgba(241,76,76,0.1))', border: '1px solid var(--vscode-inputValidation-warningBorder, #f14c4c)' }}
+                    >
+                      <span style={{ color: 'var(--vscode-errorForeground, #f14c4c)', fontSize: 14, lineHeight: 1 }}>⚠</span>
+                      <span className="text-xs" style={{ color: 'var(--vscode-foreground)' }}>
+                        This action is <strong>permanent</strong> and cannot be undone. All cards, attachments, and board configuration will be deleted.
+                      </span>
+                    </div>
+                    <p className="text-xs mb-4" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+                      We recommend exporting the board first so you have a backup. You can do that from the <strong>Export</strong> tab.
+                    </p>
+                    <p className="text-xs mb-1" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>Board name</p>
+                    <div className="flex items-center gap-2 mb-4">
+                      <code
+                        className="text-xs rounded px-2 py-1"
+                        style={{
+                          background: 'var(--vscode-textCodeBlock-background, var(--vscode-editor-background))',
+                          border: '1px solid var(--vscode-panel-border)',
+                          color: 'var(--vscode-foreground)',
+                          userSelect: 'all',
+                        }}
+                      >
+                        {currentBoardName}
+                      </code>
+                      <button
+                        type="button"
+                        title="Copy board name"
+                        className="rounded px-2 py-1 text-xs"
+                        style={{
+                          background: 'var(--vscode-button-secondaryBackground)',
+                          color: 'var(--vscode-button-secondaryForeground)',
+                          border: '1px solid var(--vscode-button-border, transparent)',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => navigator.clipboard.writeText(currentBoardName).catch(() => {})}
+                      >
+                        Copy
+                      </button>
+                    </div>
+                    <label className="block text-xs mb-1" style={{ color: 'var(--vscode-foreground)', fontWeight: 600 }}>
+                      Type the board name to confirm
+                    </label>
+                    <input
+                      type="text"
+                      value={deleteNameInput}
+                      onChange={e => setDeleteNameInput(e.target.value)}
+                      placeholder={currentBoardName}
+                      className="w-full rounded px-2 py-1.5 text-xs mb-4"
+                      style={{
+                        background: 'var(--vscode-input-background)',
+                        color: 'var(--vscode-input-foreground)',
+                        border: '1px solid var(--vscode-input-border)',
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={deleteNameInput !== currentBoardName}
+                      className="rounded px-3 py-1.5 text-xs font-medium"
+                      style={{
+                        background: deleteNameInput === currentBoardName
+                          ? 'var(--vscode-errorForeground, #f14c4c)'
+                          : 'var(--vscode-button-secondaryBackground)',
+                        color: deleteNameInput === currentBoardName
+                          ? '#fff'
+                          : 'var(--vscode-button-secondaryForeground)',
+                        border: 'none',
+                        cursor: deleteNameInput === currentBoardName ? 'pointer' : 'not-allowed',
+                        opacity: deleteNameInput === currentBoardName ? 1 : 0.5,
+                      }}
+                      onClick={() => {
+                        if (deleteNameInput === currentBoardName) {
+                          onDeleteBoard?.()
+                        }
+                      }}
+                    >
+                      Delete Board
                     </button>
                   </div>
                 )}

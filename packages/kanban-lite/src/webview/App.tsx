@@ -116,6 +116,7 @@ function App(): React.JSX.Element {
     currentBoard,
     columnVisibilityByBoard,
     workspace,
+    cards,
     cardSettings,
     effectiveDrawerWidth,
     settingsOpen,
@@ -147,6 +148,10 @@ function App(): React.JSX.Element {
   const [createCardOpen, setCreateCardOpen] = useState(false)
   const [createCardStatus, setCreateCardStatus] = useState<string>('backlog')
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+
+  const activeCards = cards.filter(c => c.status !== DELETED_STATUS_ID)
+  const exportCardCount = activeCards.length
+  const exportAttachmentCount = activeCards.reduce((sum, c) => sum + c.attachments.length, 0)
 
   // Column dialog state
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
@@ -1341,8 +1346,10 @@ function App(): React.JSX.Element {
           onSaveBoardMeta={(metadata) => vscode.postMessage({ type: 'updateBoardMeta', boardId: currentBoard, metadata })}
           onSaveBoardTitle={(title, titleTemplate) => vscode.postMessage({ type: 'updateBoardTitle', boardId: currentBoard, title, ...(titleTemplate !== undefined ? { titleTemplate } : {}) })}
           onSaveBoardActions={(actions) => vscode.postMessage({ type: 'updateBoardActions', boardId: currentBoard, actions })}
-          onExportBoardSettings={() => vscode.postMessage({ type: 'exportBoardSettings', boardId: currentBoard ?? undefined })}
+          onExportBoardSettings={(opts) => vscode.postMessage({ type: 'exportBoardSettings', boardId: currentBoard ?? undefined, withCards: opts?.withCards, withAttachments: opts?.withAttachments })}
           onImportBoardSettings={(opts) => vscode.postMessage({ type: 'importBoardSettings', boardId: currentBoard ?? undefined, overwrite: opts?.overwrite ?? false })}
+          exportCardCount={exportCardCount}
+          exportAttachmentCount={exportAttachmentCount}
         />
       </Suspense>
 

@@ -221,8 +221,8 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
    * title fields, the board-relevant workspace fragments (labels, forms,
    * and hook-related plugin config), and all non-deleted card data.
    */
-  async exportBoardSettings(boardId?: string): Promise<BoardSettingsExportV1> {
-    return BoardImportExport.exportBoardSettings(this._ctx, { boardId })
+  async exportBoardSettings(boardId?: string, opts?: { withCards?: boolean; withAttachments?: boolean }): Promise<BoardSettingsExportV1> {
+    return BoardImportExport.exportBoardSettings(this._ctx, { boardId, ...opts })
   }
 
   /**

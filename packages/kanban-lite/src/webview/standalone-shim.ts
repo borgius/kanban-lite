@@ -426,11 +426,15 @@ function handleOpenAttachment(cardId: string, attachment: string) {
   window.open(url, '_blank')
 }
 
-async function handleExportBoardSettings(boardId?: string) {
+async function handleExportBoardSettings(boardId?: string, withCards?: boolean, withAttachments?: boolean) {
   try {
-    const url = boardId
+    const params = new URLSearchParams()
+    if (withCards === false) params.set('withCards', 'false')
+    if (withAttachments === false) params.set('withAttachments', 'false')
+    const base = boardId
       ? `/api/boards/${encodeURIComponent(boardId)}/export`
       : '/api/boards/default/export'
+    const url = params.toString() ? `${base}?${params.toString()}` : base
     const res = await fetch(url)
     if (!res.ok) {
       const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
@@ -486,11 +490,17 @@ async function handleImportBoardSettings(overwrite?: boolean) {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
-        console.error('Import failed:', err.error ?? res.statusText)
+        window.alert(`Import failed: ${err.error ?? res.statusText}`)
         return
       }
+      // HTTP sync mode: the server WebSocket broadcast won't reach us, so force a resync
+      if (shouldUseHttpSyncTransport()) {
+        void syncCurrentStateOverHttp().catch((err) => {
+          console.error('Import resync failed:', err)
+        })
+      }
     } catch (err) {
-      console.error('Import board settings failed:', err)
+      window.alert(`Import board settings failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -617,7 +627,7 @@ function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, c
       return
     }
     if (msg.type === 'exportBoardSettings') {
-      void handleExportBoardSettings(msg.boardId as string | undefined)
+      void handleExportBoardSettings(msg.boardId as string | undefined, msg.withCards as boolean | undefined, msg.withAttachments as boolean | undefined)
       return
     }
     if (msg.type === 'importBoardSettings') {

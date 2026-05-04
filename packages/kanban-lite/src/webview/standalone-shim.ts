@@ -460,6 +460,24 @@ async function handleExportBoardSettings(boardId?: string, withCards?: boolean, 
   }
 }
 
+async function handleDeleteBoard(boardId: string) {
+  try {
+    const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+      window.alert(`Failed to delete board: ${err.error ?? res.statusText}`)
+      return
+    }
+    if (shouldUseHttpSyncTransport()) {
+      void syncCurrentStateOverHttp().catch((err) => {
+        console.error('Delete board resync failed:', err)
+      })
+    }
+  } catch (err) {
+    window.alert(`Failed to delete board: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 async function handleImportBoardSettings(overwrite?: boolean) {
   const input = document.createElement('input')
   input.type = 'file'
@@ -632,6 +650,10 @@ function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, c
     }
     if (msg.type === 'importBoardSettings') {
       void handleImportBoardSettings(msg.overwrite as boolean | undefined)
+      return
+    }
+    if (msg.type === 'deleteBoard') {
+      void handleDeleteBoard(msg.boardId as string)
       return
     }
 

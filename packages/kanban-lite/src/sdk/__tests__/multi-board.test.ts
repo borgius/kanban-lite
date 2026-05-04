@@ -145,19 +145,29 @@ describe('Multi-board SDK operations', () => {
       expect(raw.boards.temp).toBeUndefined()
     })
 
-    it('should throw when deleting the default board', async () => {
-      await expect(sdk.deleteBoard('default')).rejects.toThrow('Cannot delete the default board')
+    it('should allow deleting the default board when another board exists', async () => {
+      const other = await sdk.createBoard('other', 'Other')
+      await sdk.deleteBoard('default')
+      const boards = sdk.listBoards()
+      expect(boards.find(b => b.id === 'default')).toBeUndefined()
+      expect(boards.find(b => b.id === other.id)).toBeDefined()
+    })
+
+    it('should allow deleting the only board', async () => {
+      await sdk.deleteBoard('default')
+      expect(sdk.listBoards()).toHaveLength(0)
     })
 
     it('should throw when deleting a non-existent board', async () => {
       await expect(sdk.deleteBoard('nonexistent')).rejects.toThrow('Board not found')
     })
 
-    it('should throw when deleting a board with cards', async () => {
+    it('should delete a board with cards', async () => {
       await sdk.createBoard('has-cards', 'Has Cards')
       await sdk.createCard({ content: '# Card', boardId: 'has-cards' })
 
-      await expect(sdk.deleteBoard('has-cards')).rejects.toThrow('card(s) still exist')
+      await sdk.deleteBoard('has-cards')
+      expect(sdk.listBoards().find(b => b.id === 'has-cards')).toBeUndefined()
     })
   })
 

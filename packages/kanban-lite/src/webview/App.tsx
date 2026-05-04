@@ -1095,6 +1095,10 @@ function App(): React.JSX.Element {
 
   // Show loading if no columns yet
   if (columns.length === 0) {
+    // After init, if there are no boards, show the empty state
+    if (isColumnVisibilityPersistenceReady && boards.length === 0) {
+      return <EmptyBoardsScreen />
+    }
     return (
       <div className="h-full w-full flex items-center justify-center bg-[var(--vscode-editor-background)]">
         <div className="text-[var(--vscode-foreground)] opacity-60">Loading...</div>
@@ -1348,6 +1352,7 @@ function App(): React.JSX.Element {
           onSaveBoardActions={(actions) => vscode.postMessage({ type: 'updateBoardActions', boardId: currentBoard, actions })}
           onExportBoardSettings={(opts) => vscode.postMessage({ type: 'exportBoardSettings', boardId: currentBoard ?? undefined, withCards: opts?.withCards, withAttachments: opts?.withAttachments })}
           onImportBoardSettings={(opts) => vscode.postMessage({ type: 'importBoardSettings', boardId: currentBoard ?? undefined, overwrite: opts?.overwrite ?? false })}
+          onDeleteBoard={currentBoard ? () => vscode.postMessage({ type: 'deleteBoard', boardId: currentBoard }) : undefined}
           exportCardCount={exportCardCount}
           exportAttachmentCount={exportAttachmentCount}
         />
@@ -1383,6 +1388,99 @@ function App(): React.JSX.Element {
       ))}
 
       <ShortcutHelp isOpen={shortcutHelpOpen} onClose={() => setShortcutHelpOpen(false)} />
+    </div>
+  )
+}
+
+function EmptyBoardsScreen() {
+  const [boardName, setBoardName] = useState('')
+
+  const handleCreate = () => {
+    const name = boardName.trim()
+    if (!name) return
+    vscode.postMessage({ type: 'createBoard', name })
+    setBoardName('')
+  }
+
+  const handleImport = () => {
+    vscode.postMessage({ type: 'importBoardSettings', overwrite: false })
+  }
+
+  return (
+    <div className="h-full w-full flex items-center justify-center bg-[var(--vscode-editor-background)]">
+      <div
+        className="flex flex-col items-center gap-6 rounded-xl p-10 max-w-sm w-full"
+        style={{ border: '1px solid var(--vscode-panel-border)', background: 'var(--vscode-editor-background)' }}
+      >
+        <div className="text-4xl" aria-hidden>📋</div>
+        <div className="text-center">
+          <p className="text-sm font-semibold mb-1" style={{ color: 'var(--vscode-foreground)' }}>No boards yet</p>
+          <p className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            Create a new board to get started, or import an existing board archive.
+          </p>
+        </div>
+
+        <div className="w-full flex flex-col gap-2">
+          <label className="text-xs font-medium" style={{ color: 'var(--vscode-foreground)' }}>Board name</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={boardName}
+              onChange={e => setBoardName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleCreate()
+              }}
+              placeholder="My board"
+              className="flex-1 rounded px-2 py-1.5 text-xs"
+              style={{
+                background: 'var(--vscode-input-background)',
+                color: 'var(--vscode-input-foreground)',
+                border: '1px solid var(--vscode-input-border)',
+                outline: 'none',
+              }}
+              autoFocus
+            />
+            <button
+              type="button"
+              disabled={!boardName.trim()}
+              onClick={handleCreate}
+              className="rounded px-3 py-1.5 text-xs font-medium"
+              style={{
+                background: boardName.trim() ? 'var(--vscode-button-background)' : 'var(--vscode-button-secondaryBackground)',
+                color: boardName.trim() ? 'var(--vscode-button-foreground)' : 'var(--vscode-button-secondaryForeground)',
+                border: 'none',
+                cursor: boardName.trim() ? 'pointer' : 'not-allowed',
+                opacity: boardName.trim() ? 1 : 0.5,
+              }}
+            >
+              Create
+            </button>
+          </div>
+        </div>
+
+        <div className="w-full flex items-center gap-3">
+          <div className="flex-1 h-px" style={{ background: 'var(--vscode-panel-border)' }} />
+          <span className="text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>or</span>
+          <div className="flex-1 h-px" style={{ background: 'var(--vscode-panel-border)' }} />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleImport}
+          className="w-full rounded px-3 py-1.5 text-xs font-medium"
+          style={{
+            background: 'var(--vscode-button-secondaryBackground)',
+            color: 'var(--vscode-button-secondaryForeground)',
+            border: '1px solid var(--vscode-button-border, transparent)',
+            cursor: 'pointer',
+          }}
+        >
+          Import Board Archive
+        </button>
+        <p className="text-xs text-center" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+          Import a <code>.json</code> archive exported from another board.
+        </p>
+      </div>
     </div>
   )
 }

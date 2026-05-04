@@ -483,6 +483,21 @@ export class KanbanPanel {
             }
             break
           }
+          case 'deleteBoard': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            try {
+              await this._runWithAuth(sdk, () => sdk.deleteBoard(message.boardId))
+              // Switch to another board after deletion
+              const boards = sdk.listBoards()
+              this._currentBoardId = boards[0]?.id
+              await this._loadCards()
+              this._sendCardsToWebview()
+            } catch (err) {
+              vscode.window.showErrorMessage(`Failed to delete board: ${err}`)
+            }
+            break
+          }
           case 'setLabel': {
             const sdk = this._getSDK()
             if (!sdk) break

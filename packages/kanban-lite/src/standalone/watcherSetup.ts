@@ -74,7 +74,14 @@ function handleFileChange(
     if (Date.now() < ctx.suppressWatcherEventsUntil) return
     ctx.migrating = true
     try {
-      await loadCards(ctx)
+      if (!ctx.currentBoardId) {
+        ctx.currentBoardId = ctx.sdk.listBoards()[0]?.id
+      }
+      if (ctx.currentBoardId) {
+        await loadCards(ctx)
+      } else {
+        ctx.cards = []
+      }
       if (lifecycleRef.closed) return
       broadcast(ctx, buildInitMessage(ctx))
     } catch (error) {

@@ -58,7 +58,14 @@ export async function dispatchCardMessage(
       ctx.migrating = true
       enableScanCardsCache(ctx)
       try {
-        await loadCards(ctx)
+        if (!ctx.currentBoardId) {
+          ctx.currentBoardId = ctx.sdk.listBoards()[0]?.id
+        }
+        if (ctx.currentBoardId) {
+          await loadCards(ctx)
+        } else {
+          ctx.cards = []
+        }
         await sendInitMessage(ctx, ws)
       } finally {
         ctx.migrating = false

@@ -214,3 +214,4 @@ export type WebviewMessage =
   | { type: 'getCardStates'; cardIds: string[] }
   | { type: 'exportBoardSettings'; boardId?: string; withCards?: boolean; withAttachments?: boolean }
   | { type: 'importBoardSettings'; boardId?: string; overwrite?: boolean }
+  | { type: 'deleteBoard'; boardId: string }

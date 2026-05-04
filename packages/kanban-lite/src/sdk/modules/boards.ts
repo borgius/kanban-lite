@@ -91,12 +91,8 @@ export async function deleteBoard(ctx: SDKContext, { boardId }: { boardId: strin
     throw new Error(`Board not found: ${boardId}`)
   }
   if (config.defaultBoard === boardId) {
-    throw new Error(`Cannot delete the default board: ${boardId}`)
-  }
-
-  const cards = await ctx._listCardsRaw(undefined, boardId)
-  if (cards.length > 0) {
-    throw new Error(`Cannot delete board "${boardId}": ${cards.length} card(s) still exist`)
+    const otherBoardId = Object.keys(config.boards).find(id => id !== boardId)
+    config.defaultBoard = otherBoardId ?? ''
   }
 
   const boardDir = ctx._boardDir(boardId)

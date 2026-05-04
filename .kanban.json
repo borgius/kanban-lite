@@ -58,12 +58,12 @@
       "defaultPriority": "medium"
     }
   },
-  "defaultBoard": "default",
+  "defaultBoard": "",
   "kanbanDirectory": ".kanban",
   "aiAgent": "claude",
   "defaultPriority": "medium",
   "defaultStatus": "backlog",
-  "nextCardId": 243,
+  "nextCardId": 249,
   "showPriorityBadges": false,
   "showAssignee": true,
   "showDueDate": true,

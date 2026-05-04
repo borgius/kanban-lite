@@ -79,7 +79,8 @@ function resolveBoardsConfig(
 
   const entries = Object.entries(rawBoards)
   if (entries.length === 0) {
-    return defaults
+    // Explicitly empty boards object — user has deleted all boards. Preserve it.
+    return {}
   }
 
   const boards = entries.every(([, board]) => isBoardConfigRecord(board))
@@ -392,8 +393,12 @@ export function readConfig(workspaceRoot: string, options: ReadConfigOptions = {
       version: 2,
       boards: resolveBoardsConfig(raw.boards, defaults.boards),
     }
-    // Ensure boards object exists with at least default board
-    if (!config.boards || Object.keys(config.boards).length === 0) {
+    // Ensure boards object exists with at least default board, but only when
+    // the raw config had no boards key at all (first-time / missing). When the
+    // user has explicitly deleted all boards, raw.boards is an empty object and
+    // we must preserve that state so the empty-boards screen can be shown.
+    const rawBoardsAbsent = raw.boards == null || !hasRawBoardsRecord(raw.boards)
+    if (!config.boards || (rawBoardsAbsent && Object.keys(config.boards).length === 0)) {
       config.boards = defaults.boards
     }
     // Migrate: if global nextCardId is missing, derive it from per-board counters

@@ -207,7 +207,7 @@ function buildBaseInitMessage(ctx: StandaloneContext, currentUser: string = 'Use
       configVersion: config.version
     },
     labels: ctx.sdk.getLabels(),
-    minimizedColumnIds: ctx.sdk.getMinimizedColumns(ctx.currentBoardId)
+    minimizedColumnIds: ctx.currentBoardId ? ctx.sdk.getMinimizedColumns(ctx.currentBoardId) : []
   }
 }
 

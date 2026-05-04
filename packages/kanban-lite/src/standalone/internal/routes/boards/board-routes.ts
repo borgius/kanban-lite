@@ -236,6 +236,9 @@ export async function handleBoardCrudRoutes(request: StandaloneRequestContext): 
       const overwrite = body.overwrite === true
       const payload = body.payload ?? body
       const board = await runWithRequestAuth(() => sdk.importBoardSettings(payload, { overwrite }))
+      if (!ctx.currentBoardId) {
+        ctx.currentBoardId = board.id
+      }
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, board, 201)

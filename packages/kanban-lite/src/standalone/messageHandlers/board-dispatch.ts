@@ -201,6 +201,29 @@ export async function dispatchBoardMessage(
       break
     }
 
+    case 'deleteBoard': {
+      const boardId = msg.boardId as string
+      try {
+        await runWithScopedAuth(() => ctx.sdk.deleteBoard(boardId))
+        const remainingBoards = ctx.sdk.listBoards()
+        ctx.currentBoardId = remainingBoards[0]?.id
+        ctx.migrating = true
+        try {
+          if (ctx.currentBoardId) {
+            await loadCards(ctx)
+          } else {
+            ctx.cards = []
+          }
+          broadcast(ctx, buildInitMessage(ctx))
+        } finally {
+          ctx.migrating = false
+        }
+      } catch (err) {
+        console.error('Failed to delete board:', err)
+      }
+      break
+    }
+
     case 'setLabel': {
       await runWithScopedAuth(() => ctx.sdk.setLabel(msg.name as string, msg.definition as { color: string; group?: string }))
       broadcast(ctx, { type: 'labelsUpdated', labels: ctx.sdk.getLabels() })

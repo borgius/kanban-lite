@@ -126,6 +126,7 @@ interface SettingsPanelProps {
   onDeleteBoard?: () => void
   exportCardCount?: number
   exportAttachmentCount?: number
+  isImportingBoard?: boolean
 }
 
 export function SettingsPanel({
@@ -164,6 +165,7 @@ export function SettingsPanel({
   onDeleteBoard,
   exportCardCount,
   exportAttachmentCount,
+  isImportingBoard,
 }: SettingsPanelProps) {
   if (!isOpen) return null
   return (
@@ -202,6 +204,7 @@ export function SettingsPanel({
       onDeleteBoard={onDeleteBoard}
       exportCardCount={exportCardCount}
       exportAttachmentCount={exportAttachmentCount}
+      isImportingBoard={isImportingBoard}
     />
   )
 }
@@ -1809,6 +1812,7 @@ function SettingsPanelContent({
   onDeleteBoard,
   exportCardCount = 0,
   exportAttachmentCount = 0,
+  isImportingBoard = false,
 }: Omit<SettingsPanelProps, 'isOpen'>) {
   const [local, setLocal] = useState<CardDisplaySettings>(settings)
   const [activeTab, setActiveTabRaw] = useState<SettingsTab>(initialTab ?? 'general')
@@ -2331,17 +2335,27 @@ function SettingsPanelContent({
                       </label>
                     </fieldset>
                     <button
-                      className="rounded px-3 py-1.5 text-xs font-medium"
+                      className="rounded px-3 py-1.5 text-xs font-medium flex items-center gap-2"
                       style={{
                         background: 'var(--vscode-button-background)',
                         color: 'var(--vscode-button-foreground)',
                         border: 'none',
-                        cursor: 'pointer',
+                        cursor: isImportingBoard ? 'not-allowed' : 'pointer',
+                        opacity: isImportingBoard ? 0.7 : 1,
                       }}
-                      onClick={() => onImportBoardSettings?.({ overwrite: importMode === 'override' })}
+                      onClick={() => !isImportingBoard && onImportBoardSettings?.({ overwrite: importMode === 'override' })}
                       type="button"
+                      disabled={isImportingBoard}
+                      aria-busy={isImportingBoard}
                     >
-                      Import Board
+                      {isImportingBoard && (
+                        <span
+                          className="inline-block rounded-full border-2 border-t-transparent animate-spin"
+                          style={{ width: 12, height: 12, borderColor: 'var(--vscode-button-foreground)', borderTopColor: 'transparent' }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {isImportingBoard ? 'Importing…' : 'Import Board'}
                     </button>
                   </div>
                 )}

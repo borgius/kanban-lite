@@ -488,6 +488,7 @@ async function handleImportBoardSettings(overwrite?: boolean) {
   input.onchange = async () => {
     if (!input.files || input.files.length === 0) {
       input.remove()
+      window.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: 'cancelled' }, '*')
       return
     }
     const file = input.files[0]
@@ -498,7 +499,7 @@ async function handleImportBoardSettings(overwrite?: boolean) {
       try {
         payload = JSON.parse(text)
       } catch {
-        console.error('Import failed: file is not valid JSON')
+        window.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: 'file is not valid JSON' }, '*')
         return
       }
       const res = await fetch('/api/boards/import', {
@@ -508,9 +509,11 @@ async function handleImportBoardSettings(overwrite?: boolean) {
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string }
+        window.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: err.error ?? res.statusText }, '*')
         window.alert(`Import failed: ${err.error ?? res.statusText}`)
         return
       }
+      window.postMessage({ type: 'boardSettingsImportResult', callbackKey: '' }, '*')
       // HTTP sync mode: the server WebSocket broadcast won't reach us, so force a resync
       if (shouldUseHttpSyncTransport()) {
         void syncCurrentStateOverHttp().catch((err) => {
@@ -518,6 +521,7 @@ async function handleImportBoardSettings(overwrite?: boolean) {
         })
       }
     } catch (err) {
+      window.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: String(err) }, '*')
       window.alert(`Import board settings failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }

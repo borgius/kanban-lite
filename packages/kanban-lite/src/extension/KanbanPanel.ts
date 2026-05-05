@@ -683,21 +683,27 @@ export class KanbanPanel {
                 filters: { 'JSON': ['json'] },
                 title: 'Import board settings',
               })
-              if (!openUris || openUris.length === 0) break
+              if (!openUris || openUris.length === 0) {
+                this._panel.webview.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: 'cancelled' })
+                break
+              }
               const raw = await vscode.workspace.fs.readFile(openUris[0])
               const text = Buffer.from(raw).toString('utf-8')
               let payload: unknown
               try {
                 payload = JSON.parse(text)
               } catch {
+                this._panel.webview.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: 'invalid JSON' })
                 vscode.window.showErrorMessage('Import failed: file is not valid JSON')
                 break
               }
               await this._runWithAuth(importSdk, () => importSdk.importBoardSettings(payload, { overwrite: message.overwrite ?? false }))
               await this._loadCards()
               this._sendCardsToWebview()
+              this._panel.webview.postMessage({ type: 'boardSettingsImportResult', callbackKey: '' })
               vscode.window.showInformationMessage('Board settings imported successfully')
             } catch (err) {
+              this._panel.webview.postMessage({ type: 'boardSettingsImportResult', callbackKey: '', error: String(err) })
               vscode.window.showErrorMessage(`Failed to import board settings: ${err}`)
             }
             break

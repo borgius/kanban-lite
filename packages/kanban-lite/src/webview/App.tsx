@@ -149,6 +149,8 @@ function App(): React.JSX.Element {
   const [createCardStatus, setCreateCardStatus] = useState<string>('backlog')
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
 
+  const [isImportingBoard, setIsImportingBoard] = useState(false)
+
   const activeCards = cards.filter(c => c.status !== DELETED_STATUS_ID)
   const exportCardCount = activeCards.length
   const exportAttachmentCount = activeCards.reduce((sum, c) => sum + c.attachments.length, 0)
@@ -558,6 +560,14 @@ function App(): React.JSX.Element {
         }
         case 'boardActionResult': {
           // fire-and-forget: no UI feedback needed for now
+          break
+        }
+        case 'boardSettingsExportResult': {
+          // no-op: handled by KanbanPanel via file dialog
+          break
+        }
+        case 'boardSettingsImportResult': {
+          setIsImportingBoard(false)
           break
         }
         case 'logsUpdated': {
@@ -1351,10 +1361,11 @@ function App(): React.JSX.Element {
           onSaveBoardTitle={(title, titleTemplate) => vscode.postMessage({ type: 'updateBoardTitle', boardId: currentBoard, title, ...(titleTemplate !== undefined ? { titleTemplate } : {}) })}
           onSaveBoardActions={(actions) => vscode.postMessage({ type: 'updateBoardActions', boardId: currentBoard, actions })}
           onExportBoardSettings={(opts) => vscode.postMessage({ type: 'exportBoardSettings', boardId: currentBoard ?? undefined, withCards: opts?.withCards, withAttachments: opts?.withAttachments })}
-          onImportBoardSettings={(opts) => vscode.postMessage({ type: 'importBoardSettings', boardId: currentBoard ?? undefined, overwrite: opts?.overwrite ?? false })}
+          onImportBoardSettings={(opts) => { setIsImportingBoard(true); vscode.postMessage({ type: 'importBoardSettings', boardId: currentBoard ?? undefined, overwrite: opts?.overwrite ?? false }) }}
           onDeleteBoard={currentBoard ? () => vscode.postMessage({ type: 'deleteBoard', boardId: currentBoard }) : undefined}
           exportCardCount={exportCardCount}
           exportAttachmentCount={exportAttachmentCount}
+          isImportingBoard={isImportingBoard}
         />
       </Suspense>
 

@@ -145,6 +145,22 @@ function createWorkerBootstrapConfig(): WorkerConfigWithExtraPlugins {
   } as WorkerConfigWithExtraPlugins
 }
 
+function createWorkerBoardConfig(name: string): {
+  name: string
+  columns: []
+  nextCardId: number
+  defaultStatus: string
+  defaultPriority: 'medium'
+} {
+  return {
+    name,
+    columns: [],
+    nextCardId: 1,
+    defaultStatus: 'backlog',
+    defaultPriority: 'medium',
+  }
+}
+
 function createWorkerTestStorageEngine(kanbanDir: string): StorageEngine {
   return {
     type: 'cloudflare-worker-test',
@@ -1004,6 +1020,101 @@ describe('Cloudflare worker entrypoint', () => {
       ok: false,
       error: expect.stringContaining('config refresh failed'),
     })
+  })
+
+  it('waits for an in-flight cold-start config refresh before processing concurrent settings writes', async () => {
+    const workspaceRoot = '/virtual/worker-config-refresh-race'
+    const kanbanDir = `${workspaceRoot}/.kanban`
+    const revisionBinding = { current: 'rev-race-1' }
+    const configStorageProviderId = 'cloudflare-config-refresh-race'
+    const bootstrapConfig: WorkerConfigWithExtraPlugins = {
+      version: 2,
+      defaultBoard: 'default',
+      boards: {
+        default: createWorkerBoardConfig('Default'),
+      },
+      showLabels: false,
+      plugins: {
+        'config.storage': {
+          provider: configStorageProviderId,
+        },
+      },
+    }
+    let remoteConfig: WorkerConfigWithExtraPlugins = {
+      ...bootstrapConfig,
+      boards: {
+        default: createWorkerBoardConfig('Default'),
+        'runtime-board': createWorkerBoardConfig('Runtime Board'),
+      },
+    }
+    let releaseInitialRead!: () => void
+    const initialReadRelease = new Promise<void>((resolve) => {
+      releaseInitialRead = resolve
+    })
+    let signalInitialReadStarted!: () => void
+    const initialReadStarted = new Promise<void>((resolve) => {
+      signalInitialReadStarted = resolve
+    })
+    let blockInitialRead = true
+
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir,
+      bootstrap: createCloudflareWorkerBootstrap({
+        config: bootstrapConfig,
+        topology: {
+          configStorage: {
+            revisionSource: { kind: 'binding', binding: 'KANBAN_CONFIG_REVISION' },
+          },
+        },
+      }),
+      moduleRegistry: {
+        [configStorageProviderId]: {
+          createWorkerConfigRepositoryBridge() {
+            return {
+              async readConfigDocument() {
+                if (blockInitialRead) {
+                  blockInitialRead = false
+                  signalInitialReadStarted()
+                  await initialReadRelease
+                }
+                return structuredClone(remoteConfig)
+              },
+              async writeConfigDocument(nextDocument: Record<string, unknown>) {
+                remoteConfig = structuredClone(nextDocument) as WorkerConfigWithExtraPlugins
+              },
+            }
+          },
+        },
+      },
+    })
+
+    const env = {
+      KANBAN_CONFIG_REVISION: revisionBinding,
+    }
+
+    const initialRequest = handler(new Request('https://example.test/api/settings'), env)
+    await initialReadStarted
+
+    const syncRequest = handler(new Request('https://example.test/api/settings', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...configToSettings(remoteConfig as Parameters<typeof configToSettings>[0]),
+        showLabels: true,
+      }),
+    }), env)
+
+    releaseInitialRead()
+
+    const [initialResponse, syncResponse] = await Promise.all([initialRequest, syncRequest])
+    expect(initialResponse.status).toBe(200)
+    expect(syncResponse.status).toBe(200)
+    expect(Object.keys(remoteConfig.boards ?? {}).sort()).toEqual([
+      'default',
+      'runtime-board',
+    ])
   })
 
   it('keeps request-local Worker config writes isolated until the async bridge commit succeeds', async () => {

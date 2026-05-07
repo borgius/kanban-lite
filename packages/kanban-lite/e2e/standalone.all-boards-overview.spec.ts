@@ -8,6 +8,8 @@ describeStandaloneScenario('standalone all-boards overview', 'core-workflow', (_
   })
 
   test('opens all-boards overview from board menu and shows board card', async ({ page }) => {
+    const currentBoardName = (await page.getByLabel(/Switch board:/).innerText()).trim()
+
     // Open the board menu (MoreHorizontal button)
     await page.getByLabel(/Board options:/).click()
 
@@ -17,8 +19,8 @@ describeStandaloneScenario('standalone all-boards overview', 'core-workflow', (_
     // The overview page should show the board name
     await expect(page.getByRole('heading', { name: 'All Boards' })).toBeVisible()
 
-    // The default board card should be visible
-    await expect(page.getByText('Default Board')).toBeVisible()
+    // The current board card should be visible in the overview
+    await expect(page.getByRole('heading', { level: 3, name: currentBoardName })).toBeVisible()
   })
 
   test('shows card count in board overview card', async ({ page }) => {
@@ -28,7 +30,7 @@ describeStandaloneScenario('standalone all-boards overview', 'core-workflow', (_
     await expect(page.getByRole('heading', { name: 'All Boards' })).toBeVisible()
 
     // At least one card count is shown (the fixture has seeded cards)
-    await expect(page.getByText(/card/i)).toBeVisible()
+    await expect(page.getByText(/^\d+\s+cards?$/i)).toBeVisible()
   })
 
   test('navigates back to board from overview via Open board button', async ({ page }) => {

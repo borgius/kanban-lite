@@ -757,6 +757,10 @@ zone_name = ${JSON.stringify(zoneName)}
 
 export async function createGeneratedWranglerConfig(tempDir, options) {
   const queueConsumer = await buildCloudflareCallbackQueueConsumerConfig(options)
+  const revisionBinding = typeof options.configStorageRevisionBinding === 'string' ? options.configStorageRevisionBinding.trim() : ''
+  const versionMetadataBlock = revisionBinding
+    ? `\n[version_metadata]\nbinding = ${JSON.stringify(revisionBinding)}\n`
+    : ''
   const config = `name = ${JSON.stringify(options.name)}
 compatibility_date = ${JSON.stringify(options.compatibilityDate)}
 compatibility_flags = ${JSON.stringify(defaultCompatibilityFlags)}
@@ -765,7 +769,7 @@ workers_dev = true
 [assets]
 directory = ${JSON.stringify(standaloneAssetsDir)}
 binding = "ASSETS"
-${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderKanbanWorkerDurableObjectConfigBlocks()}${options.config?.plugins?.['cron.runtime'] ? renderCronTriggersBlock(CRON_POOL_DEFAULTS) + renderCronVarsBlock(options.name) : ''}`
+${renderCustomDomainRouteBlocks(options.customDomains, options.customDomainZoneName)}${renderD1BindingBlocks(options.resolvedD1Bindings)}${renderR2BindingBlocks(options.resolvedR2Bindings)}${renderQueueProducerBlocks(options.resolvedQueueProducers)}${renderQueueConsumerConfigBlock(queueConsumer)}${renderKanbanWorkerDurableObjectConfigBlocks()}${options.config?.plugins?.['cron.runtime'] ? renderCronTriggersBlock(CRON_POOL_DEFAULTS) + renderCronVarsBlock(options.name) : ''}${versionMetadataBlock}`
   const configPath = path.join(tempDir, 'wrangler.toml')
   fs.writeFileSync(configPath, config, 'utf8')
   return configPath

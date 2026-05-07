@@ -33,6 +33,8 @@ export function createWorkerRuntimeHost(
   let committedConfig: RuntimeHostConfigDocument | undefined = cloneWorkerValue(bootstrap?.config)
   let hasAuthoritativeConfig = false
   let dispatcherStale = false
+  let refreshInFlight: Promise<void> | null = null
+  let refreshInFlightRevisionToken: string | null = null
   const requestConfigStorage = createAsyncLocalStorageLike<WorkerRequestConfigState>()
 
   const assertCanWriteConfig = (workspaceRoot: string, filePath: string, nextConfig: RuntimeHostConfigDocument): void => {
@@ -173,70 +175,89 @@ export function createWorkerRuntimeHost(
       }
 
       const nextRevisionToken = getWorkerRevisionToken(workerProviderContext)
+      if (refreshInFlight && refreshInFlightRevisionToken === nextRevisionToken) {
+        await refreshInFlight
+        return
+      }
+
       if (configOwner.initialized && configOwner.lastRevisionToken === nextRevisionToken) {
         return
       }
 
-      configOwner.initialized = true
-      configOwner.lastRevisionToken = nextRevisionToken
+      const refreshOperation = (async () => {
+        configOwner.initialized = true
+        configOwner.lastRevisionToken = nextRevisionToken
 
-      if (configOwner.bridgeFailure || !configOwner.bridge) {
-        if (hasAuthoritativeConfig) {
-          committedConfig = undefined
-        }
-        configOwner.lastReadResult = {
-          status: 'error',
-          reason: 'read',
-          cause: configOwner.bridgeFailure ?? new Error('Worker config bridge is unavailable.'),
-          providerId: configOwner.providerId,
-        }
-        return
-      }
-
-      try {
-        const nextDocument = await configOwner.bridge.readConfigDocument()
-        if (nextDocument == null) {
-          if (hasAuthoritativeConfig) {
-            committedConfig = undefined
-          }
-          configOwner.lastReadResult = {
-            status: 'missing',
-            providerId: configOwner.providerId,
-          }
-          return
-        }
-
-        if (!isConfigDocument(nextDocument)) {
+        if (configOwner.bridgeFailure || !configOwner.bridge) {
           if (hasAuthoritativeConfig) {
             committedConfig = undefined
           }
           configOwner.lastReadResult = {
             status: 'error',
-            reason: 'parse',
-            cause: new Error('Worker config bridge returned an invalid config document.'),
+            reason: 'read',
+            cause: configOwner.bridgeFailure ?? new Error('Worker config bridge is unavailable.'),
             providerId: configOwner.providerId,
           }
           return
         }
 
-        const clonedNextDocument = cloneWorkerValue(nextDocument)
-        assertWorkerCallbackModuleHandlerSet(bootstrap, clonedNextDocument)
-        const changed = !areWorkerConfigsEqual(committedConfig, clonedNextDocument)
-        committedConfig = clonedNextDocument
-        hasAuthoritativeConfig = true
-        configOwner.lastReadResult = null
-        if (changed) {
-          dispatcherStale = true
+        try {
+          const nextDocument = await configOwner.bridge.readConfigDocument()
+          if (nextDocument == null) {
+            if (hasAuthoritativeConfig) {
+              committedConfig = undefined
+            }
+            configOwner.lastReadResult = {
+              status: 'missing',
+              providerId: configOwner.providerId,
+            }
+            return
+          }
+
+          if (!isConfigDocument(nextDocument)) {
+            if (hasAuthoritativeConfig) {
+              committedConfig = undefined
+            }
+            configOwner.lastReadResult = {
+              status: 'error',
+              reason: 'parse',
+              cause: new Error('Worker config bridge returned an invalid config document.'),
+              providerId: configOwner.providerId,
+            }
+            return
+          }
+
+          const clonedNextDocument = cloneWorkerValue(nextDocument)
+          assertWorkerCallbackModuleHandlerSet(bootstrap, clonedNextDocument)
+          const changed = !areWorkerConfigsEqual(committedConfig, clonedNextDocument)
+          committedConfig = clonedNextDocument
+          hasAuthoritativeConfig = true
+          configOwner.lastReadResult = null
+          if (changed) {
+            dispatcherStale = true
+          }
+        } catch (error) {
+          if (hasAuthoritativeConfig) {
+            committedConfig = undefined
+          }
+          configOwner.lastReadResult = {
+            status: 'error',
+            reason: 'read',
+            cause: error,
+            providerId: configOwner.providerId,
+          }
         }
-      } catch (error) {
-        if (hasAuthoritativeConfig) {
-          committedConfig = undefined
-        }
-        configOwner.lastReadResult = {
-          status: 'error',
-          reason: 'read',
-          cause: error,
-          providerId: configOwner.providerId,
+      })()
+
+      refreshInFlight = refreshOperation
+      refreshInFlightRevisionToken = nextRevisionToken
+
+      try {
+        await refreshOperation
+      } finally {
+        if (refreshInFlight === refreshOperation) {
+          refreshInFlight = null
+          refreshInFlightRevisionToken = null
         }
       }
     },

@@ -1,5 +1,6 @@
 import type {
   AttachmentStoragePlugin,
+  BoardConfig,
   Card,
   CardStateCursor,
   CardStateKey,
@@ -49,6 +50,7 @@ import {
   toUint8Array,
   concatUint8Arrays,
 } from './helpers'
+import { mergeBootstrapBoards } from './config-merge'
 
 class CloudflareAttachmentStore {
   constructor(private readonly worker: CloudflareWorkerProviderContext) {}
@@ -478,12 +480,16 @@ export function createWorkerConfigRepositoryBridge(context: ConfigStorageModuleC
         return getCachedConfigDocument(context)
       }
 
-      return cacheConfigDocument(context, parseConfigDocument(row.document_json))
+      const bootstrap = context.worker?.bootstrap?.config as ConfigDocument | undefined
+      const document = mergeBootstrapBoards(parseConfigDocument(row.document_json), bootstrap)
+      return cacheConfigDocument(context, document)
     },
     async writeConfigDocument(document: ConfigDocument): Promise<void> {
       const database = getDatabase(context.worker, 'config.storage')
-      const nextDocument = safeClone(document)
+      const bootstrap = context.worker?.bootstrap?.config as ConfigDocument | undefined
+      const nextDocument = mergeBootstrapBoards(safeClone(document), bootstrap)
       await ensureSchema(database)
+
       await database
         .prepare(`
           INSERT INTO config_documents (document_id, document_json)
@@ -528,7 +534,9 @@ export function createConfigStorageProvider(context: ConfigStorageModuleContext)
 
       if (!row) return getCachedConfigDocument(context)
 
-      return cacheConfigDocument(context, parseConfigDocument(row.document_json))
+      const bootstrap = context.worker?.bootstrap?.config as ConfigDocument | undefined
+      const document = mergeBootstrapBoards(parseConfigDocument(row.document_json), bootstrap)
+      return cacheConfigDocument(context, document)
     },
     writeConfigDocument(document: ConfigDocument): void {
       const database = getDatabase(context.worker, 'config.storage')
@@ -539,7 +547,8 @@ export function createConfigStorageProvider(context: ConfigStorageModuleContext)
         )
       }
 
-      const nextDocument = safeClone(document)
+      const bootstrap = context.worker?.bootstrap?.config as ConfigDocument | undefined
+      const nextDocument = mergeBootstrapBoards(safeClone(document), bootstrap)
 
       const result = database
         .prepare(`

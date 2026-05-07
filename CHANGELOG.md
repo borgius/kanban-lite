@@ -86,6 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Cloudflare Worker D1 board-config merge on redeploy**: When `config.storage` uses the Cloudflare D1 bridge, Worker refreshes now merge boards already created at runtime and persisted in D1 with boards that arrive in a newly deployed bootstrap config. Redeploying a Worker no longer drops API-created boards, and newly shipped board definitions appear alongside the persisted runtime boards.
+
 - **Shared settings panel parity**: Restored the missing **Board → Title** and **Board → Actions** sub-tabs in the shared settings UI, re-synced routed board-settings deep links with the left-rail sub-tab selection, brought back support-flag-controlled `showBuildWithAI` / `markdownEditorMode` controls, and kept Plugin Options rows distinct by `capability + providerId` so same-package variants stay selectable.
 
 - **Standalone settings preservation for extension-only fields**: Opening or saving settings from standalone mode no longer stomps stored `showBuildWithAI` / `markdownEditorMode` values when the host hides those unsupported controls; support flags now hide the UI while preserving persisted config.

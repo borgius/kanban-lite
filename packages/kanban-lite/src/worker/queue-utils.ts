@@ -158,11 +158,28 @@ export class FallbackAsyncLocalStorage<T> implements AsyncLocalStorageLike<T> {
   run<R>(store: T, callback: () => R): R {
     const previousStore = this.currentStore
     this.currentStore = store
+    let result: R
     try {
-      return callback()
-    } finally {
+      result = callback()
+    } catch (error) {
       this.currentStore = previousStore
+      throw error
     }
+
+    // If the callback returns a Promise, defer the store reset until it settles
+    // so that async continuations inside the callback observe the correct store.
+    if (
+      result !== null
+      && result !== undefined
+      && typeof (result as unknown as { then?: unknown }).then === 'function'
+    ) {
+      const reset = (): void => { this.currentStore = previousStore }
+      ;(result as unknown as Promise<unknown>).then(reset, reset)
+      return result
+    }
+
+    this.currentStore = previousStore
+    return result
   }
 }
 

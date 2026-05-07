@@ -8,6 +8,7 @@ import type { CloudflareWorkerBootstrap, CloudflareWorkerProviderContext } from 
 import type {
   WorkerModuleRegistry,
   WorkerConfigRepositoryOwnerState,
+  WorkerConfigRepositoryBridge,
   WorkerRequestConfigState,
   WorkerRuntimeHostHandle,
   WorkerEntrypointState,
@@ -137,23 +138,20 @@ function createWorkerRuntimeHost(
   const scheduleCommittedConfigWrite = (
     nextConfig: RuntimeHostConfigDocument,
     requestState: WorkerRequestConfigState,
+    bridge: NonNullable<WorkerConfigRepositoryOwnerState['bridge']>,
   ): void => {
-    if (!configOwner?.bridge || configOwner.bridgeFailure) {
-      return
-    }
-
-    const pendingCommit = configOwner.commitQueue
+    const pendingCommit = configOwner!.commitQueue
       .catch(() => undefined)
       .then(async () => {
         const clonedNextConfig = cloneWorkerValue(nextConfig)
-        await configOwner.bridge?.writeConfigDocument(clonedNextConfig)
+        await bridge.writeConfigDocument(clonedNextConfig)
         committedConfig = cloneWorkerValue(clonedNextConfig)
         hasAuthoritativeConfig = true
-        configOwner.lastReadResult = null
+        configOwner!.lastReadResult = null
         dispatcherStale = true
       })
 
-    configOwner.commitQueue = pendingCommit
+    configOwner!.commitQueue = pendingCommit
     requestState.pendingConfigCommits.push(pendingCommit)
   }
 
@@ -237,7 +235,7 @@ function createWorkerRuntimeHost(
       }
 
       requestState.config = cloneWorkerValue(clonedNextConfig)
-      scheduleCommittedConfigWrite(clonedNextConfig, requestState)
+      scheduleCommittedConfigWrite(clonedNextConfig, requestState, configOwner.bridge)
       return { status: 'ok', providerId: configOwner.providerId }
     },
     assertCanWriteConfig,

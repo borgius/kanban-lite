@@ -8,6 +8,7 @@ import type {
   WorkerModuleRegistry,
   WorkerRequestConfigState,
   WorkerConfigRepositoryOwnerState,
+  WorkerConfigRepositoryBridge,
   WorkerRuntimeHostHandle,
 } from './queue-utils'
 import {
@@ -44,23 +45,23 @@ export function createWorkerRuntimeHost(
     upstreamHost?.assertCanWriteConfig?.(workspaceRoot, filePath, clonedNextConfig)
   }
 
-  const scheduleCommittedConfigWrite = (nextConfig: RuntimeHostConfigDocument, requestState: WorkerRequestConfigState): void => {
-    if (!configOwner?.bridge || configOwner.bridgeFailure) {
-      return
-    }
-
-    const pendingCommit = configOwner.commitQueue
+  const scheduleCommittedConfigWrite = (
+    nextConfig: RuntimeHostConfigDocument,
+    requestState: WorkerRequestConfigState,
+    bridge: NonNullable<WorkerConfigRepositoryOwnerState['bridge']>,
+  ): void => {
+    const pendingCommit = configOwner!.commitQueue
       .catch(() => undefined)
       .then(async () => {
         const clonedNextConfig = cloneWorkerValue(nextConfig)
-        await configOwner.bridge?.writeConfigDocument(clonedNextConfig)
+        await bridge.writeConfigDocument(clonedNextConfig)
         committedConfig = cloneWorkerValue(clonedNextConfig)
         hasAuthoritativeConfig = true
-        configOwner.lastReadResult = null
+        configOwner!.lastReadResult = null
         dispatcherStale = true
       })
 
-    configOwner.commitQueue = pendingCommit
+    configOwner!.commitQueue = pendingCommit
     requestState.pendingConfigCommits.push(pendingCommit)
   }
 
@@ -144,7 +145,7 @@ export function createWorkerRuntimeHost(
       }
 
       requestState.config = cloneWorkerValue(clonedNextConfig)
-      scheduleCommittedConfigWrite(clonedNextConfig, requestState)
+      scheduleCommittedConfigWrite(clonedNextConfig, requestState, configOwner.bridge)
       return { status: 'ok', providerId: configOwner.providerId }
     },
     assertCanWriteConfig,

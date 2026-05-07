@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
-import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal, MoreHorizontal, Keyboard, Star, BookmarkPlus } from 'lucide-react'
+import { Search, X, Columns, Rows, Settings, Plus, Moon, Sun, ChevronDown, Check, ScrollText, Tag, Zap, SlidersHorizontal, MoreHorizontal, Keyboard, Star, BookmarkPlus, LayoutGrid } from 'lucide-react'
 import { useStore, type DueDateFilter, type SavedView } from '../store'
 import { LabelPicker } from './LabelPicker'
 import { BoardSwitcher } from './BoardSwitcher'
@@ -75,7 +75,7 @@ function CheckboxMenuItem({
   )
 }
 
-export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction, onOpenShortcutHelp }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void; onOpenShortcutHelp?: () => void }) {
+export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleTheme, onSwitchBoard, onCreateBoard, onOpenBoardLogs, boardLogsOpen, onTriggerBoardAction, onOpenShortcutHelp, onOpenAllBoards }: { onOpenSettings: () => void; onAddColumn: () => void; onCreateCard: () => void; onToggleTheme: () => void; onSwitchBoard: (boardId: string) => void; onCreateBoard: (name: string) => void; onOpenBoardLogs?: () => void; boardLogsOpen?: boolean; onTriggerBoardAction?: (boardId: string, actionKey: string) => void; onOpenShortcutHelp?: () => void; onOpenAllBoards?: () => void }) {
   const searchQuery = useStore(s => s.searchQuery)
   const setSearchQuery = useStore(s => s.setSearchQuery)
   const fuzzySearch = useStore(s => s.fuzzySearch)
@@ -703,6 +703,16 @@ export function Toolbar({ onOpenSettings, onAddColumn, onCreateCard, onToggleThe
               <span>{isDarkMode ? 'Light Theme' : 'Dark Theme'}</span>
             </button>
             <div className="border-t border-zinc-100 dark:border-zinc-700 my-1" />
+            {onOpenAllBoards && (
+              <button
+                type="button"
+                onClick={() => { onOpenAllBoards(); setBoardMenuOpen(false) }}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-900 dark:text-zinc-100 transition-colors"
+              >
+                <LayoutGrid size={14} className="shrink-0 text-zinc-400" />
+                <span>All Boards</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => { onOpenSettings(); setBoardMenuOpen(false) }}

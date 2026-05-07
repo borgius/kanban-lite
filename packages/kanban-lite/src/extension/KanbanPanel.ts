@@ -498,6 +498,17 @@ export class KanbanPanel {
             }
             break
           }
+          case 'loadBoardsOverview': {
+            const sdk = this._getSDK()
+            if (!sdk) break
+            try {
+              const summaries = await this._runWithAuth(sdk, () => sdk.listBoardsOverview())
+              this._panel.webview.postMessage({ type: 'boardsOverview', summaries })
+            } catch (err) {
+              this._panel.webview.postMessage({ type: 'boardsOverview', summaries: [], error: String(err) })
+            }
+            break
+          }
           case 'setLabel': {
             const sdk = this._getSDK()
             if (!sdk) break

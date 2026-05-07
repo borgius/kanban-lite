@@ -660,6 +660,18 @@ function handleResolveVoiceCommentPlayback(cardId: string, attachment: string, c
       void handleDeleteBoard(msg.boardId as string)
       return
     }
+    if (msg.type === 'loadBoardsOverview') {
+      void fetch('/api/boards/overview')
+        .then(async r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          const resp = await r.json() as { ok: boolean; data: unknown }
+          window.postMessage({ type: 'boardsOverview', summaries: resp.data }, '*')
+        })
+        .catch((err: unknown) => {
+          window.postMessage({ type: 'boardsOverview', summaries: [], error: String(err) }, '*')
+        })
+      return
+    }
 
     const json = JSON.stringify(message)
     const syncMessages = buildHttpSyncMessages(message)

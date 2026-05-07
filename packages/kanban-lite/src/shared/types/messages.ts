@@ -2,6 +2,7 @@ import type { Card, CardTask, Priority, KanbanColumn, BoardInfo, Comment, LogEnt
 import type { CardFrontmatter, LabelDefinition, WorkspaceInfo, ResolvedFormDescriptor } from './forms'
 import type { ShowSettingsMessage, PluginSettingsResultMessage, PluginSettingsInstallScope } from './plugin-settings'
 import type { PluginCapabilityNamespace } from '../config'
+import type { BoardOverviewSummary } from '../../sdk/modules/board-overview'
 
 export interface CreateCardPayload {
   status: string
@@ -152,6 +153,8 @@ export type ExtensionMessage =
   | { type: 'cardStates'; states: Record<string, CardStateReadModelTransport> }
   | { type: 'boardSettingsExportResult'; callbackKey: string; error?: string }
   | { type: 'boardSettingsImportResult'; callbackKey: string; error?: string }
+  | { type: 'boardsOverview'; summaries: BoardOverviewSummary[] }
+  | { type: 'boardsOverview'; summaries: never[]; error: string }
 
 export type WebviewMessage =
   | { type: 'ready' }
@@ -215,3 +218,4 @@ export type WebviewMessage =
   | { type: 'exportBoardSettings'; boardId?: string; withCards?: boolean; withAttachments?: boolean }
   | { type: 'importBoardSettings'; boardId?: string; overwrite?: boolean }
   | { type: 'deleteBoard'; boardId: string }
+  | { type: 'loadBoardsOverview' }

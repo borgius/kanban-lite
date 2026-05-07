@@ -21,6 +21,20 @@ export function registerBoardMcpTools(
     return { content: [{ type: 'text' as const, text: JSON.stringify(boards, null, 2) }] }
   })
 
+  server.tool(
+    'list_boards_overview',
+    'Get an overview summary of all boards including total card counts and unread notification counts per board and column. Notification counts are null when the card.state plugin is not configured.',
+    {},
+    async () => {
+      try {
+        const summaries = await sdk.listBoardsOverview()
+        return { content: [{ type: 'text' as const, text: JSON.stringify(summaries, null, 2) }] }
+      } catch (err) {
+        return { content: [{ type: 'text' as const, text: String(err) }], isError: true }
+      }
+    },
+  )
+
   server.tool('create_board', 'Create a new kanban board.', {
     id: z.string().describe('Board ID (used in directory name)'),
     name: z.string().describe('Display name'),

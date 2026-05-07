@@ -3,6 +3,7 @@ import { generateKeyBetween } from 'fractional-indexing'
 import { useStore } from './store'
 import { KanbanBoard } from './components/KanbanBoard'
 import { Toolbar } from './components/Toolbar'
+import { AllBoardsPage } from './components/AllBoardsPage'
 import { UndoToast } from './components/UndoToast'
 import { ColumnDialog } from './components/ColumnDialog'
 import { BulkActionsBar } from './components/BulkActionsBar'
@@ -144,6 +145,8 @@ function App(): React.JSX.Element {
     clearSelection,
     setActiveCardId
   } = useStore()
+
+  const workspaceView = useStore(s => s.workspaceView)
 
   const [createCardOpen, setCreateCardOpen] = useState(false)
   const [createCardStatus, setCreateCardStatus] = useState<string>('backlog')
@@ -568,6 +571,16 @@ function App(): React.JSX.Element {
         }
         case 'boardSettingsImportResult': {
           setIsImportingBoard(false)
+          break
+        }
+        case 'boardsOverview': {
+          if ('error' in message && message.error) {
+            useStore.getState().setBoardsOverviewError(message.error)
+            useStore.getState().setBoardsOverviewStatus('error')
+          } else {
+            useStore.getState().setBoardsOverview(message.summaries as import('../sdk/modules/board-overview').BoardOverviewSummary[])
+            useStore.getState().setBoardsOverviewStatus('ready')
+          }
           break
         }
         case 'logsUpdated': {
@@ -1137,7 +1150,13 @@ function App(): React.JSX.Element {
         boardLogsOpen={boardLogsOpen}
         onTriggerBoardAction={handleTriggerBoardAction}
         onOpenShortcutHelp={() => setShortcutHelpOpen(open => !open)}
+        onOpenAllBoards={() => useStore.getState().setWorkspaceView('allBoards')}
       />
+      {workspaceView === 'allBoards' ? (
+        <div className="kb-board-stage flex-1 flex overflow-hidden">
+          <AllBoardsPage />
+        </div>
+      ) : (
       <div className="kb-board-stage flex-1 flex overflow-hidden">
         <div className="board-zoom-scope w-full min-w-0">
           <KanbanBoard
@@ -1287,6 +1306,7 @@ function App(): React.JSX.Element {
           )
         })()}
       </div>
+      )}
 
       {selectedCardIds.length > 1 && (
         <BulkActionsBar

@@ -1,4 +1,5 @@
 import type { Card, KanbanColumn, Priority, CardDisplaySettings, BoardInfo, WorkspaceInfo, LabelDefinition, CardStateReadModelTransport } from '../../shared/types'
+import type { BoardOverviewSummary } from '../../sdk/modules/board-overview'
 import type { BoardSubTab, SettingsTab } from '../settingsTabs'
 
 import type { DueDateFilter, LayoutMode, SortOrder, CardTab } from './card-tabs'
@@ -45,9 +46,23 @@ export interface KanbanState {
   /** Named saved views capturing the current filter state */
   savedViews: SavedView[]
 
+  /** Current workspace-level view: single board or all-boards overview */
+  workspaceView: 'board' | 'allBoards'
+  /** All-boards overview summaries (populated on demand) */
+  boardsOverview: BoardOverviewSummary[]
+  /** Loading status for the all-boards overview */
+  boardsOverviewStatus: 'idle' | 'loading' | 'ready' | 'error'
+  /** Error message when boardsOverviewStatus === 'error' */
+  boardsOverviewError: string | null
+
   toggleStarBoard: (boardId: string) => void
   saveCurrentView: (name: string) => void
   removeView: (id: string) => void
+
+  setWorkspaceView: (view: 'board' | 'allBoards') => void
+  setBoardsOverview: (summaries: BoardOverviewSummary[]) => void
+  setBoardsOverviewStatus: (status: 'idle' | 'loading' | 'ready' | 'error') => void
+  setBoardsOverviewError: (error: string | null) => void
 
   setActiveCardId: (id: string | null) => void
   setActiveCardTab: (tab: CardTab) => void

@@ -152,9 +152,30 @@ export async function cmdBoards(sdk: KanbanSDK, positional: string[], flags: Fla
       }
       break
     }
+    case 'overview': {
+      try {
+        const summaries = await sdk.listBoardsOverview()
+        if (flags.json) {
+          console.log(JSON.stringify(summaries, null, 2))
+        } else if (summaries.length === 0) {
+          console.log(dim('  No boards found.'))
+        } else {
+          console.log(`  ${dim('BOARD'.padEnd(24))}  ${dim('CARDS'.padEnd(8))}  ${dim('UNREAD')}`)
+          console.log(dim('  ' + '-'.repeat(50)))
+          for (const s of summaries) {
+            const unread = s.notificationCards !== null ? String(s.notificationCards) : dim('N/A')
+            console.log(`  ${bold(s.board.id.padEnd(24))}  ${String(s.totalCards).padEnd(8)}  ${unread}`)
+          }
+        }
+      } catch (err) {
+        console.error(red(String(err)))
+        process.exit(1)
+      }
+      break
+    }
     default:
       console.error(red(`Unknown boards subcommand: ${subcommand}`))
-      console.error('Available: list, add, show, remove, default, export, import')
+      console.error('Available: list, add, show, remove, default, export, import, overview')
       process.exit(1)
   }
 }

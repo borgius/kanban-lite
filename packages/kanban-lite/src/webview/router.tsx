@@ -85,6 +85,7 @@ function URLSync() {
     setSettingsTab,
     setSettingsPluginId,
     setSettingsBoardSubTab,
+    setWorkspaceView,
   } = useStore.getState()
 
   const columns = useStore(s => s.columns)
@@ -101,6 +102,7 @@ function URLSync() {
   const settingsTab = useStore(s => s.settingsTab)
   const settingsPluginId = useStore(s => s.settingsPluginId)
   const settingsBoardSubTab = useStore(s => s.settingsBoardSubTab)
+  const workspaceView = useStore(s => s.workspaceView)
 
   // Detect initial settings route from URL params
   const initialSettingsTabResolved = params.pluginId
@@ -198,6 +200,11 @@ function URLSync() {
       }
     }
 
+    // Restore workspace view from URL
+    if (window.location.pathname.startsWith('/workspace/boards')) {
+      setWorkspaceView('allBoards')
+    }
+
     // Switch to the board from the URL (shim queues the message if not yet connected)
     if (params.boardId) {
       vscode.postMessage({ type: 'switchBoard', boardId: params.boardId })
@@ -258,12 +265,21 @@ function URLSync() {
     }
   }, [settingsOpen, settingsTab, settingsPluginId, settingsBoardSubTab, navigate])
 
+  // ── 3ab. Workspace view URL sync ─────────────────────────────────────────
+  useEffect(() => {
+    if (workspaceView === 'allBoards') {
+      navigate({ to: '/workspace/boards', replace: false })
+    }
+    // When returning to board view the board URL sync effect (3b) drives navigation
+  }, [workspaceView, navigate])
+
   // ── 3b. Board URL sync — waits for columns ────────────────────────────────
   const firstNavRef = useRef(true)
 
   useEffect(() => {
     if (columns.length === 0) return // wait for server init
     if (settingsOpen) return // settings URL handled above
+    if (workspaceView === 'allBoards') return // overview page — board URL sync must not override
 
     // ── Settings just closed — force board navigation ──────────────────────
     const settingsJustClosed = prevStateRef.current.settingsOpen
@@ -323,7 +339,7 @@ function URLSync() {
         replace,
       })
     }
-  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, settingsOpen, navigate])
+  }, [columns.length, currentBoard, activeCardId, activeCardTab, priorityFilter, assigneeFilter, labelFilter, dueDateFilter, searchQuery, fuzzySearch, settingsOpen, workspaceView, navigate])
 
   return null
 }
@@ -466,6 +482,18 @@ const settingsPluginIdRoute = createRoute({
   component: () => null,
 })
 
+// "/workspace/boards" — all-boards overview
+const workspaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: 'workspace',
+  component: () => <Outlet />,
+})
+const workspaceBoardsRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  path: 'boards',
+  component: () => null,
+})
+
 // "/settings/$settingsTab" — general + legacy defaults/labels redirects
 const settingsTabRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -508,6 +536,7 @@ const routeTree = rootRoute.addChildren([
   boardRoute.addChildren([
     cardRoute.addChildren([tabRoute]),
   ]),
+  workspaceRoute.addChildren([workspaceBoardsRoute]),
 ])
 
 export const router = createRouter({

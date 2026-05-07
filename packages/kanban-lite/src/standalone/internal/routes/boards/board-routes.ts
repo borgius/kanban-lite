@@ -94,6 +94,16 @@ export async function handleBoardCrudRoutes(request: StandaloneRequestContext): 
     return true
   }
 
+  params = route('GET', '/api/boards/overview')
+  if (params) {
+    try {
+      jsonOk(res, await runWithRequestAuth(() => sdk.listBoardsOverview()))
+    } catch (err) {
+      jsonError(res, 500, getErrorMessage(err))
+    }
+    return true
+  }
+
   params = route('GET', '/api/boards/:boardId')
   if (params) {
     try {

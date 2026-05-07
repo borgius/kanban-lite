@@ -48,6 +48,17 @@ export const boardsPaths = {
         },
       },
     },
+    '/api/boards/overview': {
+      get: {
+        tags: ['Boards'],
+        summary: 'Get boards overview',
+        description: 'Returns aggregated card counts and notification summaries for all boards. Notification counts are `null` when the `card.state` plugin is not configured.',
+        responses: {
+          200: { description: 'Array of board overview summaries.' },
+          500: { description: 'Internal error.' },
+        },
+      },
+    },
     '/api/boards/{boardId}': {
       get: {
         tags: ['Boards'],

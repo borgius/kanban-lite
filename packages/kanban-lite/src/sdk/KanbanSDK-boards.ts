@@ -7,6 +7,8 @@ import * as Settings from './modules/settings'
 import * as Migration from './modules/migration'
 import * as BoardImportExport from './modules/board-import-export'
 import type { BoardSettingsExportV1 } from './modules/board-import-export'
+import * as BoardOverview from './modules/board-overview'
+import type { BoardOverviewSummary } from './modules/board-overview'
 import type { MethodInput } from './KanbanSDK-types'
 import type { SDKContext } from './modules/context'
 import { KanbanSDKCardState } from './KanbanSDK-card-state'
@@ -32,6 +34,10 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
 
   listBoards(): BoardInfo[] {
     return Boards.listBoards(this._ctx)
+  }
+
+  async listBoardsOverview(): Promise<BoardOverviewSummary[]> {
+    return BoardOverview.listBoardsOverview(this as unknown as BoardOverview.BoardOverviewContext)
   }
 
   async createBoard(id: string, name: string, options?: {

@@ -340,6 +340,7 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/api/boards` | List all boards |
+| `GET` | `/api/boards/overview` | Get aggregated card counts and notification summaries across all boards |
 | `POST` | `/api/boards` | Create a board |
 | `GET` | `/api/boards/:boardId` | Get board configuration |
 | `PUT` | `/api/boards/:boardId` | Update board configuration |
@@ -1006,6 +1007,7 @@ kanban-mcp --dir .kanban        # Via dedicated binary
 | Tool | Description |
 |------|-------------|
 | `list_boards` | List all boards in the workspace |
+| `list_boards_overview` | Get aggregated card counts and notification summaries across all boards |
 | `create_board` | Create a new board with optional custom columns |
 | `get_board` | Get board configuration and details |
 | `delete_board` | Delete an empty board |

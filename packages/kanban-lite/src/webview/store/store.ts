@@ -67,6 +67,10 @@ export const useStore = create<KanbanState>((set, get) => ({
   lastClickedCardId: null,
   starredBoards: [] as string[],
   savedViews: [] as SavedView[],
+  workspaceView: 'board' as 'board' | 'allBoards',
+  boardsOverview: [],
+  boardsOverviewStatus: 'idle' as 'idle' | 'loading' | 'ready' | 'error',
+  boardsOverviewError: null,
 
   toggleStarBoard: (boardId) => set((state) => ({
     starredBoards: state.starredBoards.includes(boardId)
@@ -92,6 +96,15 @@ export const useStore = create<KanbanState>((set, get) => ({
   removeView: (id) => set((state) => ({
     savedViews: state.savedViews.filter(v => v.id !== id)
   })),
+
+  setWorkspaceView: (view) => set(
+    view === 'allBoards'
+      ? { workspaceView: view, boardsOverviewStatus: 'loading' as const, boardsOverviewError: null }
+      : { workspaceView: view },
+  ),
+  setBoardsOverview: (summaries) => set({ boardsOverview: summaries }),
+  setBoardsOverviewStatus: (status) => set({ boardsOverviewStatus: status }),
+  setBoardsOverviewError: (error) => set({ boardsOverviewError: error }),
 
   setActiveCardId: (id) => set((state) => {
     if (!id) {

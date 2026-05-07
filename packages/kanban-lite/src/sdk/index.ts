@@ -171,6 +171,7 @@ export type {
   StorageStatus,
   WebhookStatus,
 } from './KanbanSDK'
+export type { BoardOverviewSummary, BoardOverviewColumnSummary } from './modules/board-overview'
 export { EventBus } from './eventBus'
 export type { EventBusOptions, EventBusAnyListener, EventBusWaitOptions } from './eventBus'
 export type { KanbanResource, KanbanEventTransport, KanbanEventDescriptor, KanbanActionDescriptor } from './integrationCatalog'

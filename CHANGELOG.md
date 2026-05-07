@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **All Boards overview page**: A new overview page aggregates card counts and notification summaries across every board in the workspace. Open it from the board menu (⋯ → All Boards). Each board card shows total card count, per-column breakdown with color indicators, and an unread-notification badge when the `card.state` plugin is active. Click **Open board** to jump directly to a board. The feature is available across all surfaces: webview UI, REST API (`GET /api/boards/overview`), CLI (`kl boards overview`), and MCP (`list_boards_overview`).
+
 - **Board settings export/import**: Board settings can now be exported as a versioned JSON archive and re-imported into any workspace. The archive captures the board's columns, defaults, actions, metadata, title fields, and board-relevant workspace fragments (labels, forms, `webhook.delivery`, `callback.runtime`, `cron.runtime` plugin config, and legacy `webhooks`). Card content, comments, attachments, and logs are not included. Import merges workspace fragments without touching unrelated global settings such as storage or auth providers; duplicate board IDs are rejected unless `overwrite: true` is passed. The feature is available across all surfaces: VS Code Settings panel (Export/Import buttons in the Board tab), standalone browser (file download and file picker), REST API (`GET /api/boards/:boardId/export`, `POST /api/boards/import`), CLI (`kl boards export [<boardId>] [--out <file>]`, `kl boards import <file.json> [--overwrite]`), and MCP tools (`export_board`, `import_board`).
 
 ### Changed

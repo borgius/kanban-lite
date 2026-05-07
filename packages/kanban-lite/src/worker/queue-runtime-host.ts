@@ -60,7 +60,7 @@ export function createWorkerRuntimeHost(
         await bridge.writeConfigDocument(clonedNextConfig)
         committedConfig = cloneWorkerValue(clonedNextConfig)
         hasAuthoritativeConfig = true
-        configOwner!.lastReadResult = null
+        configOwner.lastReadResult = null
         dispatcherStale = true
       })
 

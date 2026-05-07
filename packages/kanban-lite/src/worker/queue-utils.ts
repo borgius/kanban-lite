@@ -174,7 +174,7 @@ export class FallbackAsyncLocalStorage<T> implements AsyncLocalStorageLike<T> {
     // so that async continuations inside the callback observe the correct store.
     if (isThenable(result)) {
       const reset = (): void => { this.currentStore = previousStore }
-      result.then(reset, reset)
+      result.finally(reset)
       return result
     }
 

@@ -1012,7 +1012,7 @@ describe('Standalone Server Integration', () => {
       )
       expect(deleteSpy).toHaveBeenCalledWith(
         'auth-delete',
-        undefined,
+        'default',
       )
       runWithAuthSpy.mockRestore()
     })
@@ -6400,7 +6400,7 @@ describe('Standalone Server Integration', () => {
       )
       expect(addColumnSpy).toHaveBeenCalledWith(
         expect.objectContaining({ name: 'New', color: '#000000' }),
-        undefined,
+        'default',
       )
       runWithAuthSpy.mockRestore()
       addColumnSpy.mockRestore()

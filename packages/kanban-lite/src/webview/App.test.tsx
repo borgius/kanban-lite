@@ -679,7 +679,7 @@ describe('App connection notices', () => {
 
   it('renders a resize handle for the board logs drawer in drawer mode', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[7] = true
+    hookRuntime.values[8] = true
 
     const markup = renderApp()
 
@@ -743,7 +743,7 @@ describe('App connection notices', () => {
 describe('App resize preview and commit timing', () => {
   it('preview updates the in-memory drawer width without posting saveSettings', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[7] = true // editingCard truthy → drawer panel renders
+    hookRuntime.values[8] = true // editingCard truthy → drawer panel renders
 
     renderApp()
 
@@ -758,7 +758,7 @@ describe('App resize preview and commit timing', () => {
 
   it('commit saves settings exactly once and clears the in-memory preview', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[7] = true // editingCard truthy → drawer panel renders
+    hookRuntime.values[8] = true // editingCard truthy → drawer panel renders
 
     renderApp()
 
@@ -1108,7 +1108,7 @@ describe('App live card refresh', () => {
 
     renderApp()
 
-    expect(hookRuntime.values[7]).toMatchObject({
+    expect(hookRuntime.values[8]).toMatchObject({
       content: '# New title',
       comments: [{ id: 'c1', author: 'bot', created: '2024-01-02T00:00:00.000Z', content: 'Synced from server' }],
       frontmatter: expect.objectContaining({
@@ -1122,7 +1122,7 @@ describe('App live card refresh', () => {
 
   it('hydrates an already-open card from cardsUpdated payloads', () => {
     storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
-    hookRuntime.values[7] = {
+    hookRuntime.values[8] = {
       id: 'card-2',
       content: '# Existing',
       frontmatter: {
@@ -1169,7 +1169,7 @@ describe('App live card refresh', () => {
 
     renderApp()
 
-    expect(hookRuntime.values[7]).toMatchObject({
+    expect(hookRuntime.values[8]).toMatchObject({
       comments: [{ id: 'c2', author: 'api', created: '2024-01-03T00:00:00.000Z', content: 'Added externally' }],
       logs: [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'test', text: 'keep me' }],
       frontmatter: expect.objectContaining({

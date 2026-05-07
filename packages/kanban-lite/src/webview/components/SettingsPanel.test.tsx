@@ -47,6 +47,8 @@ const storeState = {
   labelDefs: {},
   cards: [],
   columns: [],
+  boards: [],
+  currentBoard: 'default',
   effectiveDrawerWidth: 62,
   setDrawerWidthPreview: vi.fn(),
   clearDrawerWidthPreview: vi.fn(),

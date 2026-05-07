@@ -51,9 +51,11 @@ function createContext() {
   return {
     absoluteKanbanDir: '/tmp/kanban-light-watch-test/.kanban',
     workspaceRoot: '/tmp/kanban-light-watch-test',
+    currentBoardId: 'default',
     sdk: {
       getLocalCardPath: vi.fn(() => undefined),
       getStorageStatus: vi.fn(() => ({ watchGlob: 'boards/**/*.md' })),
+      listBoards: vi.fn(() => [{ id: 'default', name: 'Default' }]),
       close: vi.fn(),
     },
     wss: {

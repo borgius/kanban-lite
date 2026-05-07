@@ -8,6 +8,7 @@ import type {
   WorkerModuleRegistry,
   WorkerRequestConfigState,
   WorkerConfigRepositoryOwnerState,
+  WorkerConfigRepositoryBridge,
   WorkerRuntimeHostHandle,
 } from './queue-utils'
 import {
@@ -44,16 +45,19 @@ export function createWorkerRuntimeHost(
     upstreamHost?.assertCanWriteConfig?.(workspaceRoot, filePath, clonedNextConfig)
   }
 
-  const scheduleCommittedConfigWrite = (nextConfig: RuntimeHostConfigDocument, requestState: WorkerRequestConfigState): void => {
-    if (!configOwner?.bridge || configOwner.bridgeFailure) {
-      return
+  const scheduleCommittedConfigWrite = (
+    nextConfig: RuntimeHostConfigDocument,
+    requestState: WorkerRequestConfigState,
+    bridge: NonNullable<WorkerConfigRepositoryOwnerState['bridge']>,
+  ): void => {
+    if (!configOwner) {
+      throw new Error('Worker config write scheduled without an active config owner. This is an internal invariant violation.')
     }
-
     const pendingCommit = configOwner.commitQueue
       .catch(() => undefined)
       .then(async () => {
         const clonedNextConfig = cloneWorkerValue(nextConfig)
-        await configOwner.bridge?.writeConfigDocument(clonedNextConfig)
+        await bridge.writeConfigDocument(clonedNextConfig)
         committedConfig = cloneWorkerValue(clonedNextConfig)
         hasAuthoritativeConfig = true
         configOwner.lastReadResult = null
@@ -144,7 +148,7 @@ export function createWorkerRuntimeHost(
       }
 
       requestState.config = cloneWorkerValue(clonedNextConfig)
-      scheduleCommittedConfigWrite(clonedNextConfig, requestState)
+      scheduleCommittedConfigWrite(clonedNextConfig, requestState, configOwner.bridge)
       return { status: 'ok', providerId: configOwner.providerId }
     },
     assertCanWriteConfig,

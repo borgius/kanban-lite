@@ -8,6 +8,7 @@ import type { CloudflareWorkerBootstrap, CloudflareWorkerProviderContext } from 
 import type {
   WorkerModuleRegistry,
   WorkerConfigRepositoryOwnerState,
+  WorkerConfigRepositoryBridge,
   WorkerRequestConfigState,
   WorkerRuntimeHostHandle,
   WorkerEntrypointState,
@@ -137,16 +138,16 @@ function createWorkerRuntimeHost(
   const scheduleCommittedConfigWrite = (
     nextConfig: RuntimeHostConfigDocument,
     requestState: WorkerRequestConfigState,
+    bridge: NonNullable<WorkerConfigRepositoryOwnerState['bridge']>,
   ): void => {
-    if (!configOwner?.bridge || configOwner.bridgeFailure) {
-      return
+    if (!configOwner) {
+      throw new Error('Worker config write scheduled without an active config owner. This is an internal invariant violation.')
     }
-
     const pendingCommit = configOwner.commitQueue
       .catch(() => undefined)
       .then(async () => {
         const clonedNextConfig = cloneWorkerValue(nextConfig)
-        await configOwner.bridge?.writeConfigDocument(clonedNextConfig)
+        await bridge.writeConfigDocument(clonedNextConfig)
         committedConfig = cloneWorkerValue(clonedNextConfig)
         hasAuthoritativeConfig = true
         configOwner.lastReadResult = null
@@ -237,7 +238,7 @@ function createWorkerRuntimeHost(
       }
 
       requestState.config = cloneWorkerValue(clonedNextConfig)
-      scheduleCommittedConfigWrite(clonedNextConfig, requestState)
+      scheduleCommittedConfigWrite(clonedNextConfig, requestState, configOwner.bridge)
       return { status: 'ok', providerId: configOwner.providerId }
     },
     assertCanWriteConfig,

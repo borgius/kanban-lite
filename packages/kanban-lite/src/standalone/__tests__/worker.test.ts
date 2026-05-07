@@ -937,6 +937,95 @@ describe('Cloudflare worker entrypoint', () => {
     ]))
   })
 
+  it('persists a new board to the config bridge when POST /api/boards is called via the Worker fetch handler', async () => {
+    const workspaceRoot = '/virtual/worker-post-boards-bridge'
+    const kanbanDir = `${workspaceRoot}/.kanban`
+    const database = { kind: 'd1' }
+    const revisionBinding = { current: 'rev-board-1' }
+    const configStorageProviderId = 'cloudflare-boards-bridge-test'
+    const writes: Record<string, unknown>[] = []
+    let remoteConfig: WorkerConfigWithExtraPlugins = {
+      ...createWorkerBootstrapConfig(),
+      plugins: {
+        'config.storage': {
+          provider: configStorageProviderId,
+        },
+      },
+    }
+
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir,
+      bootstrap: createCloudflareWorkerBootstrap({
+        config: remoteConfig,
+        topology: {
+          configStorage: {
+            bindingHandles: { database: 'KANBAN_DB' },
+            revisionSource: { kind: 'binding', binding: 'KANBAN_CONFIG_REVISION' },
+          },
+        },
+      }),
+      moduleRegistry: {
+        [configStorageProviderId]: {
+          createWorkerConfigRepositoryBridge() {
+            return {
+              async readConfigDocument() {
+                return structuredClone(remoteConfig)
+              },
+              async writeConfigDocument(nextDocument: Record<string, unknown>) {
+                writes.push(structuredClone(nextDocument))
+                remoteConfig = structuredClone(nextDocument) as WorkerConfigWithExtraPlugins
+              },
+            }
+          },
+        },
+      },
+    })
+
+    // Warm up: load config from bridge
+    await handler(new Request('https://example.test/'), {
+      KANBAN_DB: database,
+      KANBAN_CONFIG_REVISION: revisionBinding,
+    })
+
+    // POST /api/boards to create a new board
+    const createBoardResponse = await handler(new Request('https://example.test/api/boards', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'processes',
+        name: 'Processes',
+        columns: [
+          { id: 'queued', name: 'Queued' },
+          { id: 'running', name: 'Running' },
+          { id: 'done', name: 'Done' },
+        ],
+        defaultStatus: 'queued',
+        defaultPriority: 'medium',
+      }),
+    }), {
+      KANBAN_DB: database,
+      KANBAN_CONFIG_REVISION: revisionBinding,
+    })
+
+    expect(createBoardResponse.status).toBe(201)
+
+    // Verify the bridge write was called exactly once and includes the new board
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toMatchObject({
+      boards: expect.objectContaining({
+        default: expect.anything(),
+        processes: expect.objectContaining({ name: 'Processes' }),
+      }),
+    })
+
+    // Verify the new board is reflected in the in-memory config
+    const finalReadResult = readConfigRepositoryDocument(workspaceRoot)
+    expect(finalReadResult.status).toBe('ok')
+    if (finalReadResult.status !== 'ok') return
+    const finalBoards = (finalReadResult.value as Record<string, unknown>).boards as Record<string, unknown>
+    expect(finalBoards.processes).toMatchObject({ name: 'Processes' })
+  })
+
   it('fails closed during request handling when a new Worker config revision cannot be refreshed', async () => {
     const workspaceRoot = '/virtual/worker-config-refresh-failure'
     const kanbanDir = `${workspaceRoot}/.kanban`

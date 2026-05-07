@@ -1020,11 +1020,10 @@ describe('Cloudflare worker entrypoint', () => {
 
     // Verify the new board is reflected in the in-memory config
     const finalReadResult = readConfigRepositoryDocument(workspaceRoot)
-    expect(finalReadResult).toMatchObject({ status: 'ok' })
-    const finalBoards = finalReadResult.status === 'ok'
-      ? (finalReadResult.value as Record<string, unknown>).boards as Record<string, unknown> | undefined
-      : undefined
-    expect(finalBoards?.processes).toMatchObject({ name: 'Processes' })
+    expect(finalReadResult.status).toBe('ok')
+    if (finalReadResult.status !== 'ok') return
+    const finalBoards = (finalReadResult.value as Record<string, unknown>).boards as Record<string, unknown>
+    expect(finalBoards.processes).toMatchObject({ name: 'Processes' })
   })
 
   it('fails closed during request handling when a new Worker config revision cannot be refreshed', async () => {

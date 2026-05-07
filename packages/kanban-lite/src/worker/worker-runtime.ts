@@ -140,7 +140,10 @@ function createWorkerRuntimeHost(
     requestState: WorkerRequestConfigState,
     bridge: NonNullable<WorkerConfigRepositoryOwnerState['bridge']>,
   ): void => {
-    const pendingCommit = configOwner!.commitQueue
+    if (!configOwner) {
+      throw new Error('Worker config write scheduled without an active config owner. This is an internal invariant violation.')
+    }
+    const pendingCommit = configOwner.commitQueue
       .catch(() => undefined)
       .then(async () => {
         const clonedNextConfig = cloneWorkerValue(nextConfig)
@@ -151,7 +154,7 @@ function createWorkerRuntimeHost(
         dispatcherStale = true
       })
 
-    configOwner!.commitQueue = pendingCommit
+    configOwner.commitQueue = pendingCommit
     requestState.pendingConfigCommits.push(pendingCommit)
   }
 

@@ -148,6 +148,10 @@ export interface AsyncLocalStorageLike<T> {
   run<R>(store: T, callback: () => R): R
 }
 
+function isThenable(value: unknown): value is Promise<unknown> {
+  return value !== null && value !== undefined && typeof (value as { then?: unknown }).then === 'function'
+}
+
 export class FallbackAsyncLocalStorage<T> implements AsyncLocalStorageLike<T> {
   private currentStore: T | undefined
 
@@ -168,13 +172,9 @@ export class FallbackAsyncLocalStorage<T> implements AsyncLocalStorageLike<T> {
 
     // If the callback returns a Promise, defer the store reset until it settles
     // so that async continuations inside the callback observe the correct store.
-    if (
-      result !== null
-      && result !== undefined
-      && typeof (result as unknown as { then?: unknown }).then === 'function'
-    ) {
+    if (isThenable(result)) {
       const reset = (): void => { this.currentStore = previousStore }
-      ;(result as unknown as Promise<unknown>).then(reset, reset)
+      result.then(reset, reset)
       return result
     }
 

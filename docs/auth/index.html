@@ -223,7 +223,7 @@
   <ul class="capability-list">
     <li>Plug in any identity source — JWT, API key, session cookie, or custom header</li>
     <li>Policy plugins receive the resolved identity and the requested action for fine-grained RBAC</li>
-    <li>First-party <code>kl-auth-plugin</code> package for RBAC and common identity strategies</li>
+    <li>First-party <code>kl-plugin-auth</code> package for RBAC and common identity strategies</li>
     <li>Auth events integrate with the SDK event bus for audit logging via webhooks</li>
   </ul>
 </div>
@@ -243,28 +243,37 @@
 <p>This guide is deliberately more detailed than the short auth section in <code>README.md</code> and more implementation-focused than the ADR/plan documents under <code>docs/plan/20260320-auth-authz-plugin-architecture/</code>.</p>
 <hr>
 <h2 id="executive-summary">Executive summary</h2>
-<p>Kanban Lite models auth as <strong>two capability namespaces</strong>:</p>
+<p>Kanban Lite models auth as <strong>three related capability namespaces</strong>:</p>
 <ul>
 <li><code>auth.identity</code></li>
 <li><code>auth.policy</code></li>
+<li><code>auth.visibility</code></li>
 </ul>
-<p>Those capabilities are resolved by the SDK in the same general style as storage capabilities.</p>
+<p>Those capabilities are resolved by the SDK in the same general style as storage capabilities, but they split responsibilities intentionally:</p>
+<ul>
+<li><code>auth.identity</code> resolves the caller and role list,</li>
+<li><code>auth.policy</code> authorizes protected actions,</li>
+<li><code>auth.visibility</code> optionally filters card reads after identity resolution.</li>
+</ul>
 <p>The key rule is:</p>
 <blockquote>
 <p>If no auth plugin is configured, behavior must not change.</p>
 </blockquote>
-<p>That rule is preserved by <strong>no-op</strong> providers resolved from <code>kl-auth-plugin</code> when available (with a core compatibility fallback when the package is absent):</p>
+<p>That rule is preserved by <strong>no-op</strong> providers resolved from <code>kl-plugin-auth</code> when available (with a core compatibility fallback when the package is absent) plus a disabled-by-default visibility slot:</p>
 <ul>
 <li><code>auth.identity: noop</code> → always resolves to anonymous (<code>null</code> identity)</li>
 <li><code>auth.policy: noop</code> → always allows the action</li>
+<li><code>auth.visibility: none</code> → disabled; card reads are unfiltered</li>
 </ul>
-<p>The current release also ships a <strong>starter RBAC</strong> provider pair through <code>kl-auth-plugin</code>:</p>
+<p>The current release also ships a <strong>starter RBAC</strong> provider pair through <code>kl-plugin-auth</code> plus a separate first-party visibility package:</p>
 <ul>
 <li><code>auth.identity: rbac</code> → validates opaque tokens against a runtime-owned principal registry</li>
 <li><code>auth.policy: rbac</code> → enforces a fixed cumulative role matrix for <code>user</code>, <code>manager</code>, and <code>admin</code></li>
+<li><code>auth.visibility: kl-plugin-auth-visibility</code> → filters cards with role-only rules after the SDK resolves identity and roles</li>
 </ul>
+<p><code>kl-plugin-auth</code> still owns identity resolution, tokens, sessions, and role lookup. <code>kl-plugin-auth-visibility</code> only filters the card set the SDK is about to return.</p>
 <p>So a workspace with no auth configuration continues to behave exactly like an open-access workspace.</p>
-<p>When a non-noop auth provider is active, the SDK performs <strong>pre-action authorization</strong> at the SDK method boundary before protected work executes.</p>
+<p>When a non-noop auth provider is active, the SDK performs <strong>pre-action authorization</strong> at the SDK method boundary before protected work executes. When <code>auth.visibility</code> is selected, the canonical cards read seam filters list/get flows so hidden cards behave as ordinary not-found or no-match results across host surfaces.</p>
 <hr>
 <h2 id="getting-started-fresh-install-with-the-local-auth-plugin">Getting started: fresh install with the local auth plugin</h2>
 <p>This section walks a new user through installing Kanban Lite in an empty folder with the <code>local</code> auth provider enabled so that the UI and REST API are protected by a username/password login and an API bearer token.</p>
@@ -278,8 +287,9 @@
 npm init -y
 </code></pre>
 <h3 id="step-2-install-kanban-lite-and-the-auth-plugin">Step 2 — install kanban-lite and the auth plugin</h3>
-<pre><code class="language-bash">npm install kanban-lite kl-auth-plugin
+<pre><code class="language-bash">npm install kanban-lite kl-plugin-auth
 </code></pre>
+<p><code>auth.visibility</code> is optional and disabled by default. Install <code>kl-plugin-auth-visibility</code> only if you also want card filtering layered on top of identity/policy enforcement.</p>
 <p>The standalone server binary is installed at <code>node_modules/.bin/kanban-lite</code> (or at the <code>kanban-lite</code> bin if you use npm scripts).</p>
 <h3 id="step-3-generate-bcrypt-password-hashes">Step 3 — generate bcrypt password hashes</h3>
 <p>The <code>local</code> provider stores passwords as bcrypt hashes, never plain text. Generate one hash per user:</p>
@@ -295,7 +305,7 @@ node -e &quot;require('bcryptjs').hash('user123', 12).then(h =&gt; console.log('
   &quot;port&quot;: 2954,
   &quot;plugins&quot;: {
     &quot;auth.identity&quot;: {
-      &quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;provider&quot;: &quot;local&quot;,
       &quot;options&quot;: {
         &quot;users&quot;: [
           { &quot;username&quot;: &quot;admin&quot;,   &quot;password&quot;: &quot;&lt;bcrypt-hash-for-admin&gt;&quot;,   &quot;role&quot;: &quot;admin&quot; },
@@ -304,9 +314,7 @@ node -e &quot;require('bcryptjs').hash('user123', 12).then(h =&gt; console.log('
         ]
       }
     },
-    &quot;auth.policy&quot;: {
-      &quot;provider&quot;: &quot;kl-auth-plugin&quot;
-    }
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;local&quot; }
   }
 }
 </code></pre>
@@ -325,7 +333,7 @@ node -e &quot;require('bcryptjs').hash('user123', 12).then(h =&gt; console.log('
 </tr>
 <tr>
 <td><code>auth.identity.options.users</code></td>
-<td>List of allowed username/bcrypt-password pairs for browser login. Each entry may include an optional <code>role</code> (<code>user</code>, <code>manager</code>, or <code>admin</code>) to enforce RBAC permissions</td>
+<td>List of allowed username/bcrypt-password pairs for browser login. Each entry may include an optional <code>role</code> (<code>user</code>, <code>manager</code>, or <code>admin</code>) for downstream <code>auth.policy</code> and <code>auth.visibility</code> evaluation</td>
 </tr>
 <tr>
 <td><code>auth.policy.provider = &quot;local&quot;</code></td>
@@ -360,7 +368,7 @@ Auth: local (identity) + local (policy)
 <pre><code class="language-bash">curl -H &quot;Authorization: Bearer kl-&lt;your-token&gt;&quot; \
   http://localhost:2954/api/boards
 </code></pre>
-<p>MCP and CLI calls running inside the same shell automatically pick up <code>KANBAN_LITE_TOKEN</code> from the environment — no extra configuration needed.</p>
+<p>MCP calls running inside the same shell automatically pick up <code>KANBAN_LITE_TOKEN</code> from the environment. CLI calls do the same, or you can pass <code>--token &lt;value&gt;</code> for a one-off invocation.</p>
 <h3 id="what-is-still-open-access">What is still open-access</h3>
 <p>The <code>local</code> policy provider allows <strong>any</strong> authenticated identity and denies <strong>anonymous</strong> callers. It does not enforce role-based restrictions between <code>admin</code>, <code>manager</code>, and <code>user</code>. If you need role-based access control, configure the <code>rbac</code> provider pair instead and supply a principal registry at runtime (see the <a href="#starter-rbac-provider">Starter RBAC provider</a> section below).</p>
 <hr>
@@ -382,31 +390,31 @@ Auth: local (identity) + local (policy)
 </ul>
 </li>
 <li>
-<p><strong>No secrets in <code>.kanban.json</code></strong></p>
+<p><strong>Schema-defined provider options</strong></p>
 <ul>
-<li>Workspace config can select providers.</li>
-<li>It must not store bearer tokens or similar secret material.</li>
+<li>Workspace config persists selected provider ids and documented provider options.</li>
+<li>Shared Plugin Options read/list/error flows redact secret fields and reopen them as masked write-only placeholders instead of redisplaying raw values.</li>
 </ul>
 </li>
 <li>
-<p><strong>Action-level authorization only</strong></p>
+<p><strong>Separate action authorization from card visibility</strong></p>
 <ul>
-<li>Current authorization is based on named SDK actions.</li>
-<li>It does not do partial filtering of card lists or board lists.</li>
+<li><code>auth.policy</code> authorization is based on named SDK actions.</li>
+<li>Optional partial filtering of card reads lives in <code>auth.visibility</code>, not inside <code>auth.policy</code>.</li>
 </ul>
 </li>
 <li>
 <p><strong>No-plugin = no behavior change</strong></p>
 <ul>
-<li>The default path remains anonymous + allow-all via <code>noop</code>, with a compatibility fallback when <code>kl-auth-plugin</code> is not installed yet.</li>
+<li>The default path remains anonymous + allow-all via <code>noop</code>, with a compatibility fallback when <code>kl-plugin-auth</code> is not installed yet.</li>
 </ul>
 </li>
 </ol>
 <hr>
 <h2 id="capability-model">Capability model</h2>
-<p>Auth uses two capability namespaces defined in <code>src/shared/config.ts</code>:</p>
+<p>Auth uses three capability namespaces defined in <code>src/shared/config.ts</code>:</p>
 <ul>
-<li><code>AuthCapabilityNamespace = 'auth.identity' | 'auth.policy'</code></li>
+<li><code>AuthCapabilityNamespace = 'auth.identity' | 'auth.policy' | 'auth.visibility'</code></li>
 <li><code>AuthCapabilitySelections = Partial&lt;Record&lt;AuthCapabilityNamespace, ProviderRef&gt;&gt;</code></li>
 <li><code>ResolvedAuthCapabilities = Record&lt;AuthCapabilityNamespace, ProviderRef&gt;</code></li>
 </ul>
@@ -418,7 +426,7 @@ Auth: local (identity) + local (policy)
 </code></pre>
 <p>That means auth provider selection looks structurally like storage provider selection.</p>
 <hr>
-<h2 id="the-two-auth-capabilities">The two auth capabilities</h2>
+<h2 id="the-auth-capabilities">The auth capabilities</h2>
 <h3 id="auth-identity"><code>auth.identity</code></h3>
 <p>Responsibility:</p>
 <ul>
@@ -516,6 +524,47 @@ Auth: local (identity) + local (policy)
 <li>does <strong>not</strong> enforce role distinctions — every authenticated caller has equal access</li>
 <li>intended for single-operator setups or when role separation is not required</li>
 </ul>
+<h3 id="auth-visibility"><code>auth.visibility</code></h3>
+<p>Responsibility:</p>
+<ul>
+<li>receive the SDK-resolved identity,</li>
+<li>receive the normalized role list,</li>
+<li>receive the active <code>AuthContext</code>,</li>
+<li>filter a provided card set without re-resolving identity or sessions.</li>
+</ul>
+<p>The normalized visibility input shape is defined in <code>src/sdk/plugins/index.ts</code>:</p>
+<pre><code class="language-ts">export interface AuthVisibilityFilterInput {
+	identity: AuthIdentity | null
+	roles: readonly string[]
+	auth: AuthContext
+}
+</code></pre>
+<p>Current shipped provider ids:</p>
+<ul>
+<li><code>none</code></li>
+<li><code>kl-plugin-auth-visibility</code></li>
+</ul>
+<p>Current <code>none</code> behavior:</p>
+<ul>
+<li>disables visibility filtering entirely</li>
+<li>preserves existing open card-read behavior when the capability is omitted</li>
+</ul>
+<p>Current <code>kl-plugin-auth-visibility</code> behavior:</p>
+<ul>
+<li>selects rules by roles only</li>
+<li>unions cards granted by multiple matching rules</li>
+<li>applies <strong>AND</strong> semantics across different fields in one rule</li>
+<li>applies <strong>OR</strong> semantics within one field</li>
+<li>supports <code>@me</code> inside assignee matching</li>
+<li>does <strong>not</strong> grant implicit admin/manager bypass</li>
+<li>returns no visible cards when the caller matches no rules</li>
+</ul>
+<p>Important implementation details:</p>
+<ul>
+<li>the canonical runtime seam lives in <code>src/sdk/modules/cards.ts</code></li>
+<li>the SDK resolves identity once, normalizes missing or empty roles to <code>[]</code>, and passes that input into the visibility provider</li>
+<li>downstream direct card reads and card-targeted host flows inherit hidden-as-not-found behavior because they resolve through visibility-scoped <code>listCards()</code> / <code>getCard()</code></li>
+</ul>
 <hr>
 <h2 id="current-implementation-status">Current implementation status</h2>
 <p>This part is important because the <strong>architecture</strong> is slightly broader than the <strong>currently shipped resolver behavior</strong>.</p>
@@ -524,7 +573,7 @@ Auth: local (identity) + local (policy)
 <ul>
 <li>auth capability types in config,</li>
 <li>auth plugin interfaces,</li>
-<li><code>kl-auth-plugin</code> package with three fully-shipped provider ids: <code>noop</code>, <code>rbac</code>, and <code>local</code>,</li>
+<li><code>kl-plugin-auth</code> package with three fully-shipped provider ids: <code>noop</code>, <code>rbac</code>, and <code>local</code>,</li>
 <li><code>noop</code> identity/policy providers that preserve open-access behavior,</li>
 <li><code>rbac</code> identity/policy providers with runtime-backed token registry,</li>
 <li><code>local</code> identity/policy providers for username/password + API token auth,</li>
@@ -536,8 +585,11 @@ Auth: local (identity) + local (policy)
 <li>the <code>ProviderBackedAuthListenerPlugin</code> class for custom listener wiring,</li>
 <li><code>authListenerPluginFactories</code> convenience map,</li>
 <li><code>authIdentityPlugins</code> and <code>authPolicyPlugins</code> provider registries,</li>
+<li>auth visibility provider loading and capability wiring,</li>
+<li>the <code>kl-plugin-auth-visibility</code> package with shared rule authoring metadata,</li>
 <li>SDK auth status reporting,</li>
 <li>SDK pre-action authorization hooks,</li>
+<li>SDK card-read visibility filtering in <code>src/sdk/modules/cards.ts</code>,</li>
 <li>normalized host <code>AuthContext</code> wiring for standalone, CLI, MCP, and extension host surfaces,</li>
 <li>auth diagnostics/status endpoints and commands,</li>
 <li>tests for the auth seam and host wiring.</li>
@@ -547,6 +599,7 @@ Auth: local (identity) + local (policy)
 <ul>
 <li><code>auth.identity.provider = &quot;noop&quot; | &quot;rbac&quot; | &quot;local&quot;</code></li>
 <li><code>auth.policy.provider = &quot;noop&quot; | &quot;rbac&quot; | &quot;local&quot;</code></li>
+<li><code>auth.visibility.provider = &quot;none&quot; | &quot;kl-plugin-auth-visibility&quot;</code></li>
 </ul>
 <p>If another provider id is selected, the resolver treats it as an external package name and throws an actionable install/shape error when the package cannot be loaded.</p>
 <p>So the system now has:</p>
@@ -555,6 +608,8 @@ Auth: local (identity) + local (policy)
 <li>the <strong>SDK enforcement seam</strong>,</li>
 <li>the built-in <strong><code>noop</code></strong> open-access default,</li>
 <li>the built-in <strong>starter <code>rbac</code></strong> policy implementation,</li>
+<li>the opt-in <strong><code>auth.visibility</code></strong> seam with a disabled default,</li>
+<li>the standalone <strong><code>kl-plugin-auth-visibility</code></strong> package for role-based card filtering,</li>
 <li>the turnkey <strong><code>local</code></strong> username/password + API token provider with a browser login UI,</li>
 <li>and the <strong>host integration path for token acquisition</strong>.</li>
 </ul>
@@ -564,15 +619,39 @@ Auth: local (identity) + local (policy)
 </ul>
 <hr>
 <h2 id="configuration">Configuration</h2>
-<p>Auth provider selection lives in <code>.kanban.json</code> under the <code>plugins</code> key, using the npm package name as the provider id. Both <code>auth.identity</code> and <code>auth.policy</code> capability namespaces sit alongside storage providers in the same <code>plugins</code> object.</p>
+<p>Auth now participates in the same shared <strong>Plugin Options</strong> workflow as other plugin-backed capabilities. The settings UI discovers auth providers from installed packages, shows the supplying package separately from the provider id, and persists the selected provider id plus its options under <code>.kanban.json -&gt; plugins</code>.</p>
+<p>For <code>auth.identity</code> / <code>auth.policy</code>, the package is typically <code>kl-plugin-auth</code>, while the selected provider ids are usually <code>local</code>, <code>rbac</code>, or <code>noop</code>. <code>auth.visibility</code> is supplied by <code>kl-plugin-auth-visibility</code> and defaults to disabled (<code>provider: &quot;none&quot;</code>) until selected. The legacy <code>provider: &quot;kl-plugin-auth&quot;</code> alias remains available for compatibility, but the shared workflow selects the explicit provider rows and does not use a separate auth-enabled boolean.</p>
+<h3 id="shared-plugin-options-workflow">Shared Plugin Options workflow</h3>
+<ul>
+<li>Install or discover <code>kl-plugin-auth</code>, and add <code>kl-plugin-auth-visibility</code> only if you want card filtering.</li>
+<li>Open <strong>Settings → Plugin Options</strong>.</li>
+<li>Select a provider row for <code>auth.identity</code> and <code>auth.policy</code> (for example <code>local</code> or <code>rbac</code>), and optionally for <code>auth.visibility</code>.</li>
+<li>Save provider options from the schema-driven form generated by the provider's <code>optionsSchema()</code> output.</li>
+<li>The selected provider id is persisted at <code>plugins[&quot;auth.identity&quot;].provider</code> / <code>plugins[&quot;auth.policy&quot;].provider</code> / <code>plugins[&quot;auth.visibility&quot;].provider</code>; selecting a provider is the enablement state. Leaving <code>auth.visibility</code> omitted (or set to <code>provider: &quot;none&quot;</code>) keeps filtering disabled.</li>
+</ul>
+<p>Secret-bearing auth fields participate in the same masked edit flow as other providers:</p>
+<ul>
+<li><code>auth.identity.options.apiToken</code></li>
+<li><code>auth.identity.options.users[*].password</code></li>
+</ul>
+<p>Those values reopen as <code>••••••</code> in the shared workflow. Leaving the masked placeholder unchanged keeps the stored secret/hash, and typing a new value replaces it. Read/list/error payloads stay redacted and do not redisplay the raw stored value.</p>
+<h3 id="plugin-settings-auth-split">Plugin settings auth split</h3>
+<p>Shared plugin-settings surfaces now use two auth actions:</p>
+<ul>
+<li><code>plugin-settings.read</code> controls plugin-settings inventory/detail reads before any plugin-settings payload is materialized. This covers the Settings panel hosts, the standalone websocket settings bridge (<code>openSettings</code>, <code>loadPluginSettings</code>, <code>readPluginSettings</code>), REST <code>GET /api/plugin-settings</code> and <code>GET /api/plugin-settings/:capability/:providerId</code>, CLI <code>plugin-settings list|show</code>, and MCP <code>list_plugin_settings</code>.</li>
+<li><code>plugin-settings.update</code> controls provider selection, option updates, and guarded installs. This covers the Settings panel hosts, the standalone websocket bridge mutation messages, REST <code>select</code> / <code>options</code> / <code>install</code>, CLI <code>plugin-settings select|update-options|install</code>, and the matching MCP mutation tools.</li>
+<li>Allowed reads still reuse the shared redaction contract (<code>••••••</code> masked write-only placeholders plus redacted error payloads).</li>
+<li>Redaction does <strong>not</strong> replace authorization; callers still need the matching auth action before any inventory or provider read model is returned.</li>
+</ul>
+<p>In the shipped RBAC defaults, only <code>admin</code> gets these actions automatically. A default <code>user</code> therefore cannot list/view plugin settings, while an <code>admin</code> can list/show redacted settings and perform plugin-settings mutations unless you override the permission matrix.</p>
 <h3 id="default-no-auth">Default (no auth)</h3>
-<p>Omit auth namespaces entirely — the SDK defaults both to <code>noop</code> (open-access).</p>
+<p>Omit auth namespaces entirely — the SDK defaults <code>auth.identity</code> and <code>auth.policy</code> to <code>noop</code> (open-access) and <code>auth.visibility</code> to <code>none</code> (disabled).</p>
 <h3 id="local-provider-config">Local provider config</h3>
-<p>Requires <code>kl-auth-plugin</code> installed. Passwords are bcrypt hashes (cost 12 recommended):</p>
+<p>Requires <code>kl-plugin-auth</code> installed. Passwords are bcrypt hashes (cost 12 recommended):</p>
 <pre><code class="language-json">{
 	&quot;plugins&quot;: {
 		&quot;auth.identity&quot;: {
-			&quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;provider&quot;: &quot;local&quot;,
 			&quot;options&quot;: {
 				&quot;users&quot;: [
 					{ &quot;username&quot;: &quot;admin&quot;,   &quot;password&quot;: &quot;$2b$12$...&quot;, &quot;role&quot;: &quot;admin&quot; },
@@ -581,7 +660,7 @@ Auth: local (identity) + local (policy)
 				]
 			}
 		},
-		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;kl-auth-plugin&quot; }
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;local&quot; }
 	}
 }
 </code></pre>
@@ -591,14 +670,14 @@ Auth: local (identity) + local (policy)
 <h3 id="starter-rbac-config">Starter RBAC config</h3>
 <pre><code class="language-json">{
 	&quot;plugins&quot;: {
-		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;kl-auth-plugin&quot; },
-		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;kl-auth-plugin&quot; }
+		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;rbac&quot; },
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;rbac&quot; }
 	}
 }
 </code></pre>
 <p>What this does in the current implementation:</p>
 <ul>
-<li>switches both auth capability ids to the <code>kl-auth-plugin</code> RBAC provider pair</li>
+<li>switches both auth capability ids to the <code>rbac</code> provider pair supplied by <code>kl-plugin-auth</code></li>
 <li>enables action-level authorization using the fixed SDK-owned role matrix</li>
 <li>requires the host/runtime to provide the principal registry used by <code>createRbacIdentityPlugin(principals)</code> if you want any token to resolve successfully</li>
 </ul>
@@ -608,41 +687,77 @@ Auth: local (identity) + local (policy)
 <li>it does not create a login flow</li>
 <li>it does not make the empty-registry <code>RBAC_IDENTITY_PLUGIN</code> singleton accept arbitrary token text</li>
 </ul>
+<h3 id="visibility-provider-config">Visibility provider config</h3>
+<p>Requires <code>kl-plugin-auth-visibility</code> installed alongside whichever identity/policy provider resolves the caller.</p>
+<pre><code class="language-json">{
+	&quot;plugins&quot;: {
+		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;local&quot; },
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;local&quot; },
+		&quot;auth.visibility&quot;: {
+			&quot;provider&quot;: &quot;kl-plugin-auth-visibility&quot;,
+			&quot;options&quot;: {
+				&quot;rules&quot;: [
+					{
+						&quot;roles&quot;: [&quot;design&quot;],
+						&quot;statuses&quot;: [&quot;backlog&quot;],
+						&quot;labels&quot;: [&quot;ux&quot;]
+					}
+				]
+			}
+		}
+	}
+}
+</code></pre>
+<p>If <code>auth.visibility</code> is omitted, <code>normalizeAuthCapabilities()</code> resolves it to <code>{ provider: &quot;none&quot; }</code>. When enabled, callers only see cards granted by matching role rules, and hidden cards behave as standard not-found / no-match results across SDK, REST, CLI, MCP, and UI surfaces.</p>
 <h3 id="shape-of-auth-config-full-example">Shape of auth config (full example)</h3>
 <pre><code class="language-json">{
 	&quot;plugins&quot;: {
 		&quot;auth.identity&quot;: {
-			&quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;provider&quot;: &quot;local&quot;,
 			&quot;options&quot;: {}
 		},
 		&quot;auth.policy&quot;: {
-			&quot;provider&quot;: &quot;kl-auth-plugin&quot;,
+			&quot;provider&quot;: &quot;local&quot;,
 			&quot;options&quot;: {}
+		},
+		&quot;auth.visibility&quot;: {
+			&quot;provider&quot;: &quot;none&quot;
 		}
 	}
 }
 </code></pre>
 <h3 id="normalization-behavior">Normalization behavior</h3>
-<p><code>normalizeAuthCapabilities()</code> in <code>src/shared/config.ts</code> guarantees that both auth namespaces are always resolved.</p>
-<p>Lookup order: <code>plugins[&quot;auth.identity&quot;]</code> → <code>{ provider: &quot;noop&quot; }</code>.</p>
+<p><code>normalizeAuthCapabilities()</code> in <code>src/shared/config.ts</code> guarantees that all three auth namespaces are always resolved.</p>
+<p>Lookup order:</p>
+<ul>
+<li><code>plugins[&quot;auth.identity&quot;]</code> → <code>{ provider: &quot;noop&quot; }</code></li>
+<li><code>plugins[&quot;auth.policy&quot;]</code> → <code>{ provider: &quot;noop&quot; }</code></li>
+<li><code>plugins[&quot;auth.visibility&quot;]</code> → <code>{ provider: &quot;none&quot; }</code></li>
+</ul>
 <p>If both <code>plugins</code> auth keys and the <code>auth</code> key are omitted entirely, the normalized result is:</p>
 <pre><code class="language-json">{
 	&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;noop&quot; },
-	&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;noop&quot; }
+	&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;noop&quot; },
+	&quot;auth.visibility&quot;: { &quot;provider&quot;: &quot;none&quot; }
 }
 </code></pre>
 <p>So there is always a complete runtime auth capability map, even when the workspace has no auth config.</p>
-<h3 id="what-must-never-go-in-kanban-json">What must never go in <code>.kanban.json</code></h3>
-<p>Do <strong>not</strong> store:</p>
+<h3 id="what-belongs-in-kanban-json-and-what-does-not">What belongs in <code>.kanban.json</code> and what does not</h3>
+<p>For auth providers, <code>.kanban.json</code> persists the selected provider ids plus documented provider options from the shared schema-driven workflow. That can include:</p>
 <ul>
-<li>bearer tokens,</li>
-<li>refresh tokens,</li>
-<li>session secrets,</li>
-<li>API keys used as auth credentials,</li>
-<li>cookies,</li>
-<li>or any other secret credential material.</li>
+<li><code>auth.identity.options.users</code> entries (with bcrypt password hashes),</li>
+<li><code>auth.identity.options.apiToken</code> when you intentionally pin an explicit API token,</li>
+<li>and <code>auth.policy.options.matrix</code> overrides.</li>
 </ul>
-<p><code>.kanban.json</code> is for provider <strong>selection/configuration</strong>, not secret storage.</p>
+<p>The Plugin Options workflow never redisplays raw secret values for those fields. Instead, secret-bearing paths reopen masked as <code>••••••</code>, and read/list/error payloads stay redacted.</p>
+<p>Still do <strong>not</strong> store runtime-only or unrelated secrets such as:</p>
+<ul>
+<li>session cookies,</li>
+<li>cookie-signing or session secrets,</li>
+<li>refresh tokens,</li>
+<li>CSRF secrets,</li>
+<li>or credentials that are not part of the provider's documented schema.</li>
+</ul>
 <hr>
 <h2 id="auth-plugin-contracts">Auth plugin contracts</h2>
 <p>The core auth plugin contracts live in <code>src/sdk/plugins/index.ts</code>.</p>
@@ -694,7 +809,7 @@ export function createRbacIdentityPlugin(
 <p>The built-in singleton <code>RBAC_IDENTITY_PLUGIN</code> simply calls this helper with <code>new Map()</code>.</p>
 <hr>
 <h2 id="local-provider-standalone-http-capability"><code>local</code> provider — standalone.http capability</h2>
-<p>When <code>plugins[&quot;auth.identity&quot;].provider</code> or <code>plugins[&quot;auth.policy&quot;].provider</code> is <code>&quot;kl-auth-plugin&quot;</code>, the standalone server automatically loads the <code>standalone.http</code> capability exported by <code>createStandaloneHttpPlugin</code> from <code>kl-auth-plugin</code>.</p>
+<p>When either auth capability resolves to a provider supplied by <code>kl-plugin-auth</code> (for example <code>local</code> or the legacy <code>kl-plugin-auth</code> alias), the standalone server automatically loads the <code>standalone.http</code> capability exported by <code>createStandaloneHttpPlugin</code> from <code>kl-plugin-auth</code>.</p>
 <h3 id="what-it-registers">What it registers</h3>
 <p><strong>Middleware</strong> (runs before every request):</p>
 <ul>
@@ -782,7 +897,7 @@ export function createRbacIdentityPlugin(
 </ul>
 <hr>
 <h2 id="listener-runtime-helpers">Listener runtime helpers</h2>
-<p><code>kl-auth-plugin</code> exports a set of standalone listener helpers that plug into the SDK event bus directly, separate from the capability-provider path. These are useful when you want to enforce auth from application code rather than from <code>.kanban.json</code> config.</p>
+<p><code>kl-plugin-auth</code> exports a set of standalone listener helpers that plug into the SDK event bus directly, separate from the capability-provider path. These are useful when you want to enforce auth from application code rather than from <code>.kanban.json</code> config.</p>
 <h3 id="providerbackedauthlistenerplugin"><code>ProviderBackedAuthListenerPlugin</code></h3>
 <p>The underlying class that all factory functions produce:</p>
 <pre><code class="language-ts">class ProviderBackedAuthListenerPlugin implements SDKEventListenerPlugin {
@@ -898,7 +1013,7 @@ createRbacAuthListenerPlugin(
 </code></pre>
 <hr>
 <h2 id="plugin-registries">Plugin registries</h2>
-<p><code>kl-auth-plugin</code> exports two flat registry objects for programmatic plugin lookup:</p>
+<p><code>kl-plugin-auth</code> exports two flat registry objects for programmatic plugin lookup:</p>
 <pre><code class="language-ts">const authIdentityPlugins: Record&lt;string, AuthIdentityPlugin&gt; = {
   local: LOCAL_IDENTITY_PLUGIN,
   noop:  NOOP_IDENTITY_PLUGIN,
@@ -912,7 +1027,7 @@ const authPolicyPlugins: Record&lt;string, AuthPolicyPlugin&gt; = {
 }
 </code></pre>
 <p>These are used by the SDK's capability resolver to look up providers by the id string from <code>.kanban.json</code>. You can also use them directly in application code:</p>
-<pre><code class="language-ts">import { authIdentityPlugins, authPolicyPlugins } from 'kl-auth-plugin'
+<pre><code class="language-ts">import { authIdentityPlugins, authPolicyPlugins } from 'kl-plugin-auth'
 
 const identity = authIdentityPlugins['local']
 const policy   = authPolicyPlugins['local']
@@ -1130,6 +1245,8 @@ const decision = await authPolicy.checkPolicy(identity, action, context)
 <li><code>board.update</code></li>
 <li><code>board.delete</code></li>
 <li><code>settings.update</code></li>
+<li><code>plugin-settings.read</code></li>
+<li><code>plugin-settings.update</code></li>
 <li><code>webhook.create</code></li>
 <li><code>webhook.update</code></li>
 <li><code>webhook.delete</code></li>
@@ -1269,9 +1386,14 @@ const decision = await authPolicy.checkPolicy(identity, action, context)
 </ul>
 <p>Behavior:</p>
 <ul>
-<li>reads <code>process.env.KANBAN_TOKEN</code></li>
+<li>reads <code>--token &lt;value&gt;</code> first, then falls back to <code>process.env.KANBAN_LITE_TOKEN</code> and <code>process.env.KANBAN_TOKEN</code></li>
 <li>wraps mutators in <code>sdk.runWithAuth(resolveCliAuthContext(), fn)</code></li>
-<li>if present, produces:</li>
+<li>if <code>--token</code> is present, produces:</li>
+</ul>
+<pre><code class="language-ts">{ token, tokenSource: 'flag', transport: 'cli' }
+</code></pre>
+<ul>
+<li>otherwise, when an env token is present, produces:</li>
 </ul>
 <pre><code class="language-ts">{ token, tokenSource: 'env', transport: 'cli' }
 </code></pre>
@@ -1459,12 +1581,14 @@ const decision = await authPolicy.checkPolicy(identity, action, context)
 <ul>
 <li><code>auth.identity = noop</code></li>
 <li><code>auth.policy = noop</code></li>
+<li><code>auth.visibility = none</code></li>
 </ul>
 <h3 id="explicitly-declaring-noop-auth">Explicitly declaring noop auth</h3>
 <pre><code class="language-json">{
 	&quot;auth&quot;: {
 		&quot;auth.identity&quot;: { &quot;provider&quot;: &quot;noop&quot; },
-		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;noop&quot; }
+		&quot;auth.policy&quot;: { &quot;provider&quot;: &quot;noop&quot; },
+		&quot;auth.visibility&quot;: { &quot;provider&quot;: &quot;none&quot; }
 	}
 }
 </code></pre>
@@ -1536,11 +1660,12 @@ Authorization: Bearer &lt;token&gt;
 <ul>
 <li><code>auth.identity</code></li>
 <li><code>auth.policy</code></li>
+<li><code>auth.visibility</code></li>
 </ul>
 <p>They share the same broad configuration style and capability-resolution pattern, but they solve different problems:</p>
 <ul>
 <li>storage decides <strong>where data lives</strong></li>
-<li>auth decides <strong>who may perform protected actions</strong></li>
+<li>auth decides <strong>who may perform protected actions</strong> and, when <code>auth.visibility</code> is enabled, <strong>which cards are visible to that caller</strong></li>
 </ul>
 <hr>
 <h2 id="where-to-look-in-the-codebase">Where to look in the codebase</h2>
@@ -1617,7 +1742,7 @@ Authorization: Bearer &lt;token&gt;
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

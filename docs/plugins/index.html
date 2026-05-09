@@ -223,19 +223,19 @@
   <div class="capability-grid">
     <div class="capability-card">
       <strong>card.storage</strong>
-      <span>Where cards and comments are persisted. Built-ins: <code>markdown</code>, <code>sqlite</code>. External: <code>kl-mysql-storage</code>.</span>
+      <span>Where cards and comments are persisted. Built-ins: <code>markdown</code>, <code>sqlite</code>. External: <code>kl-plugin-storage-mysql</code>.</span>
     </div>
     <div class="capability-card">
       <strong>attachment.storage</strong>
-      <span>Where file attachments are stored. Built-in: local filesystem. External: <code>kl-s3-attachment-storage</code>.</span>
+      <span>Where file attachments are stored. Built-in: local filesystem. External: <code>kl-plugin-attachment-s3</code>.</span>
     </div>
     <div class="capability-card">
       <strong>webhook.delivery</strong>
-      <span>Outbound HTTP delivery for kanban events. External: <code>kl-webhooks-plugin</code>.</span>
+      <span>Outbound HTTP delivery for kanban events. External: <code>kl-plugin-webhook</code>.</span>
     </div>
     <div class="capability-card">
       <strong>auth.identity / auth.policy</strong>
-      <span>Identity resolution and action-level authorization. Built-in: no-op. Package: <code>kl-auth-plugin</code>.</span>
+      <span>Identity resolution and action-level authorization. Built-in: no-op. Package: <code>kl-plugin-auth</code>.</span>
     </div>
   </div>
   <div class="usage-example">
@@ -243,7 +243,7 @@
     <pre><code>{
   "storage": {
     "card.storage":        { "provider": "sqlite" },
-    "attachment.storage": { "provider": "kl-s3-attachment-storage" },
+    "attachment.storage": { "provider": "kl-plugin-attachment-s3" },
     "webhook.delivery":   { "provider": "webhooks" }
   }
 }</code></pre>
@@ -264,17 +264,13 @@
 <li>and how future providers should integrate.</li>
 </ul>
 <p>The plugin system splits those concerns into <strong>capabilities</strong>.</p>
-<p>Today there are two <strong>storage</strong> capability namespaces:</p>
+<p>Today the core capability namespaces are:</p>
 <ul>
 <li><code>card.storage</code></li>
 <li><code>attachment.storage</code></li>
-</ul>
-<p>There is also one <strong>webhook delivery</strong> capability namespace:</p>
-<ul>
+<li><code>card.state</code></li>
 <li><code>webhook.delivery</code></li>
-</ul>
-<p>And two <strong>auth</strong> capability namespaces (no-op by default):</p>
-<ul>
+<li><code>callback.runtime</code></li>
 <li><code>auth.identity</code></li>
 <li><code>auth.policy</code></li>
 </ul>
@@ -282,7 +278,9 @@
 <ul>
 <li>one provider can store cards/comments,</li>
 <li>another provider can store attachments,</li>
+<li>card-state can stay actor-scoped without being mixed into shared card content,</li>
 <li>a webhook provider can own webhook CRUD while a paired listener handles outbound delivery,</li>
+<li>a callback provider can run trusted inline JavaScript or subprocess handlers for committed after-events through the shared plugin-settings flow,</li>
 <li>auth providers can resolve identity/policy while SDK-owned before-event listeners enforce the decision,</li>
 <li>or one provider can implement multiple capabilities explicitly in the plugin layer.</li>
 </ul>
@@ -349,6 +347,79 @@
 <li>and plugins may export <code>mcpPlugin</code> to register MCP tools without creating a second plugin framework.</li>
 </ul>
 <hr>
+<h2 id="plugin-settings-workflow">Plugin settings workflow</h2>
+<p>The runtime model in this document now has a matching public management surface called <strong>plugin settings</strong>.</p>
+<p>That workflow is exposed consistently through:</p>
+<ul>
+<li>the Settings panel's <strong>Plugin Options</strong> tab,</li>
+<li>the CLI's top-level <code>plugin-settings</code> command,</li>
+<li>the REST API's <code>/api/plugin-settings</code> routes,</li>
+<li>and the MCP tools <code>list_plugin_settings</code>, <code>select_plugin_settings_provider</code>, <code>update_plugin_settings_options</code>, and <code>install_plugin_settings_package</code>.</li>
+</ul>
+<p>All four surfaces delegate to the same SDK-owned contracts, so they share the same capability grouping, selected-provider semantics, redaction rules, and guarded install behavior.</p>
+<h3 id="capability-grouped-inventory-and-selected-provider-semantics">Capability-grouped inventory and selected-provider semantics</h3>
+<p>Plugin settings inventory is grouped by full capability namespace rather than by flat package name.</p>
+<p>Today that means the UI/API/CLI/MCP inventory can show providers for capabilities such as:</p>
+<ul>
+<li><code>card.storage</code></li>
+<li><code>attachment.storage</code></li>
+<li><code>card.state</code></li>
+<li><code>callback.runtime</code></li>
+<li><code>auth.identity</code></li>
+<li><code>auth.policy</code></li>
+<li><code>webhook.delivery</code></li>
+</ul>
+<p>Each provider row includes:</p>
+<ul>
+<li><code>providerId</code></li>
+<li><code>packageName</code></li>
+<li><code>discoverySource</code></li>
+<li>whether it is currently selected for that capability</li>
+<li>optional schema metadata from <code>optionsSchema()</code></li>
+</ul>
+<p>Enablement is represented only by provider selection. The canonical persisted form is the provider reference under <code>plugins[capability]</code> in <code>.kanban.json</code>; there is no second enabled/disabled boolean. Legacy config aliases still normalize into the same selected-provider view, but plugin-settings mutations write the canonical <code>plugins[capability]</code> entry. In the settings UI this now appears as a per-provider on/off toggle with in-flight loading feedback instead of separate Activate/Active buttons.</p>
+<p>Discovery sources surfaced to users are:</p>
+<ul>
+<li><code>builtin</code></li>
+<li><code>workspace</code></li>
+<li><code>dependency</code></li>
+<li><code>global</code></li>
+<li><code>sibling</code></li>
+</ul>
+<p>Those labels come directly from the resolver, so they describe why a provider is available in the current runtime rather than guessing from package names.</p>
+<h3 id="optionsschema-and-schema-driven-configuration"><code>optionsSchema()</code> and schema-driven configuration</h3>
+<p>Providers may expose an <code>optionsSchema()</code> hook. When present, the loader normalizes it into transport-safe schema metadata containing:</p>
+<ul>
+<li><code>schema</code> — the JSON Schema used for editing</li>
+<li>optional <code>uiSchema</code> — JSON Forms UI hints</li>
+<li><code>secrets</code> — secret-field metadata used for masking and write-only behavior</li>
+</ul>
+<p>The <strong>Plugin Options</strong> tab uses that metadata to render provider options through the shared JSON Forms stack rather than hard-coded provider-specific forms. Schema-backed providers render their options form in dedicated sections after the capability list instead of nesting the form inside the capability row, even when that provider is not currently selected.</p>
+<p>Schema and field <code>description</code> values are surfaced as visible helper text in the shared Plugin Options form, so provider authors should treat those descriptions as user-facing setup guidance rather than transport-only metadata.</p>
+<p>Saving options for an inactive provider does not change enablement. Instead, the shared contract caches those values under <code>pluginOptions[capability][providerId]</code> in <code>.kanban.json</code>. When that provider is selected later, the cached options are restored into the canonical <code>plugins[capability]</code> entry automatically.</p>
+<p>The shared plugin-settings loader resolves provider metadata before transport. <code>optionsSchema()</code> may therefore return a plain metadata object, a promise, or nested sync/async value resolvers inside <code>schema</code> / <code>uiSchema</code> fields, as long as the final resolved result is transport-safe JSON Forms metadata. This is useful for runtime-derived enums such as event/action catalogs.</p>
+<p>For anything more complex than a few flat scalar fields — especially arrays, nested objects, or sections that benefit from inline detail editors — providers should ship an explicit <code>uiSchema</code> instead of relying on the generated one-control-per-property fallback. Prefer JSON Forms <code>Group</code> / <code>VerticalLayout</code> / <code>HorizontalLayout</code>, array <code>options.detail</code>, <code>elementLabelProp</code>, and targeted <code>rule</code> conditions so the shared settings UI gets stable labels and predictable editing behavior.</p>
+<p>When a field such as <code>enum</code>, <code>default</code>, or a JSON Forms <code>rule</code> depends on runtime data, providers should prefer nested sync/async resolvers in <code>schema</code> / <code>uiSchema</code> values instead of UI-only schema extensions. The shared loader resolves those functions before transport, so hosts still receive plain JSON-compatible metadata.</p>
+<p>JSON Schema <code>default</code> values are also applied when the shared settings editor opens provider options that omit a field, so providers can seed editable arrays such as auth role catalogs without hard-coding that behavior in the UI layer.</p>
+<p>When a provider is selected and there are still no saved options for it, the same schema-default pass is now persisted into <code>plugins[capability].options</code>. For example, selecting <code>auth.policy: rbac</code> or <code>auth.policy: kl-plugin-auth</code> writes the default permission rows derived from the shipped <code>RBAC_ROLE_MATRIX</code> instead of leaving the provider selected with an empty options object. Selected providers with an existing but empty options object are also backfilled during plugin-settings refresh so the config and form stay aligned after reloads.</p>
+<p>The first-party <code>kl-plugin-callback</code> package uses this path directly: <code>plugins[&quot;callback.runtime&quot;].options.handlers</code> is one ordered mixed array, and its explicit <code>uiSchema</code> switches the shared JSON Forms detail editor between the CodeMirror-backed inline <code>source</code> field and the process <code>command</code> / <code>args</code> / <code>cwd</code> fields.</p>
+<p>If a provider does not expose <code>optionsSchema()</code>, it can still be selected, but the settings UI correctly reports that the provider does not expose schema-driven options.</p>
+<h3 id="redacted-read-list-behavior">Redacted read/list behavior</h3>
+<p>Plugin settings read/list flows are safe to surface directly because redaction happens in the SDK contract, not only in the UI.</p>
+<ul>
+<li>Inventory/list responses expose capability rows, selected-provider state, package names, discovery sources, and optional schema metadata.</li>
+<li>Provider read/update responses use the shared redacted read model.</li>
+<li>Persisted secrets are never re-read in plain text.</li>
+</ul>
+<p>Secret fields declared through <code>optionsSchema().secrets</code> reopen as masked write-only placeholders (<code>••••••</code>). The public behavior is:</p>
+<ul>
+<li>read/list/detail surfaces show the masked placeholder instead of the stored secret,</li>
+<li>leaving that masked value unchanged during an update preserves the current stored secret,</li>
+<li>entering a new value replaces the stored secret,</li>
+<li>and surfaced errors reuse the same redaction policy instead of echoing raw option payloads.</li>
+</ul>
+<p>This is why CLI output, REST responses, MCP results, and host/webview messages can all reuse the same payload shapes safely.</p>
+<hr>
 <h2 id="capability-namespaces">Capability namespaces</h2>
 <h3 id="card-storage"><code>card.storage</code></h3>
 <p>This capability owns card/comment persistence.</p>
@@ -361,8 +432,10 @@
 <ul>
 <li><code>sqlite</code></li>
 <li><code>mysql</code></li>
+<li><code>postgresql</code></li>
+<li><code>mongodb</code></li>
+<li><code>redis</code></li>
 </ul>
-<h3 id="attachment-storage"><code>attachment.storage</code></h3>
 <p>This capability owns attachment copy/materialization behavior.</p>
 <p>Built-in provider:</p>
 <ul>
@@ -382,7 +455,7 @@
 </ul>
 <p>External package:</p>
 <ul>
-<li><code>kl-webhooks-plugin</code></li>
+<li><code>kl-plugin-webhook</code></li>
 </ul>
 <p>Behavior:</p>
 <ul>
@@ -393,38 +466,107 @@
 </ul>
 <p>Important config nuance: unlike storage capabilities, webhook delivery is currently configured under the top-level <code>webhookPlugin</code> key rather than the <code>plugins</code> map.</p>
 <hr>
+<h3 id="callback-runtime"><code>callback.runtime</code></h3>
+<p>This capability owns same-runtime callback automation for committed SDK after-events.</p>
+<p>Provider id:</p>
+<ul>
+<li><code>callbacks</code></li>
+</ul>
+<p>External package:</p>
+<ul>
+<li><code>kl-plugin-callback</code></li>
+</ul>
+<p>Behavior:</p>
+<ul>
+<li>is selected through the shared plugin-settings path at <code>plugins[&quot;callback.runtime&quot;]</code>,</li>
+<li>persists one ordered mixed <code>plugins[&quot;callback.runtime&quot;].options.handlers</code> array,</li>
+<li>supports <code>inline</code> rows evaluated with <code>new Function</code> and invoked as <code>({ event, sdk })</code>,</li>
+<li>supports <code>process</code> rows that receive one serialized <code>{ event }</code> JSON payload on stdin only,</li>
+<li>logs per-handler failures and continues later matching handlers.</li>
+</ul>
+<p>Trust model:</p>
+<ul>
+<li>inline handlers are trusted same-runtime JavaScript, not sandboxed, and run with host process privileges,</li>
+<li>process handlers are ordinary subprocesses, not sandboxed, and do not receive a live SDK object or other in-memory runtime handles.</li>
+</ul>
+<p>Inline source authoring stays inside the shared plugin-settings workflow, but now uses the embedded CodeMirror JavaScript editor rather than a plain multiline text field.</p>
+<hr>
 <h3 id="auth-identity"><code>auth.identity</code></h3>
 <p>This capability resolves a raw token to a typed identity.</p>
 <p>Compatibility/default provider ids:</p>
 <ul>
 <li><code>noop</code> (default) — always returns <code>null</code> (anonymous); preserves current open-access behavior.</li>
-<li><code>rbac</code> — validates opaque tokens against a runtime-owned principal registry and returns <code>{ subject, roles }</code> for registered principals.</li>
+<li><code>rbac</code> — validates opaque tokens against a runtime-owned principal registry and returns <code>{ subject, roles, groups? }</code> for registered principals.</li>
 <li><code>local</code> — trusts host-validated standalone session identity, or the shared <code>KANBAN_LITE_TOKEN</code> / <code>KANBAN_TOKEN</code> API token for CLI, MCP, and bearer-authenticated HTTP calls.</li>
+<li><code>cloudflare</code> — validates Cloudflare Access JWT assertions with RS256 JWKS signature checks, exact issuer/audience validation, and configurable claim-to-role mapping.</li>
 </ul>
 <p>External package:</p>
 <ul>
-<li><code>kl-auth-plugin</code></li>
+<li><code>kl-plugin-auth</code></li>
+<li><code>kl-plugin-cloudflare</code> for Cloudflare Access / Worker deployments</li>
 </ul>
 <p>Important nuance: the exported <code>RBAC_IDENTITY_PLUGIN</code> singleton is backed by an empty registry, so hosts that want live token validation must construct a runtime-backed plugin via <code>createRbacIdentityPlugin(principals)</code> and wire it in through custom capability wiring. Unknown or absent tokens resolve to <code>null</code>, and roles are never inferred from token text.</p>
+<p>Cloudflare Access identity options are schema-driven and intentionally contain no secrets. Configure <code>teamName</code> or <code>issuer</code> plus <code>audience</code>; optional claim names, <code>defaultRoles</code>, and <code>roleMappings</code> determine the returned <code>{ subject, roles, groups }</code> after the JWT has been validated.</p>
 <h3 id="auth-policy"><code>auth.policy</code></h3>
 <p>This capability decides whether an identity may perform a named action.</p>
 <p>Compatibility/default provider ids:</p>
 <ul>
 <li><code>noop</code> (default) — always returns <code>true</code> (allow-all); preserves current open-access behavior.</li>
 <li><code>rbac</code> — enforces the fixed SDK-owned <code>RBAC_ROLE_MATRIX</code> for the cumulative <code>user</code>, <code>manager</code>, and <code>admin</code> roles.</li>
-<li><code>local</code> — requires a non-null identity and otherwise allows the action.</li>
+<li><code>local</code> — requires a non-null identity and otherwise allows the action unless a custom permission matrix is configured.</li>
 </ul>
 <p>External package:</p>
 <ul>
-<li><code>kl-auth-plugin</code></li>
+<li><code>kl-plugin-auth</code></li>
 </ul>
 <p>The built-in <code>rbac</code> policy denies <code>null</code> identity with <code>auth.identity.missing</code>, denies uncovered actions with <code>auth.policy.denied</code>, and returns the resolved caller subject as <code>actor</code> on allow.</p>
+<p>Both <code>local</code> and <code>rbac</code> policy providers now support an editable <code>options.permissions</code> array in shared plugin-settings flows. The shared Plugin Options UI treats that matrix as role-based: each row picks a role from the <code>auth.identity</code> role catalog via <code>permissions[].role</code> and lists the allowed before-events for that role. Existing legacy <code>options.matrix</code> role maps are still honored at runtime for backward compatibility.</p>
 <blockquote>
-<p><strong>Note:</strong> Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped <code>noop</code> / <code>rbac</code> / <code>local</code> ids resolve through <code>kl-auth-plugin</code> when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the <code>local</code> provider's <code>/auth/login</code> flow) without a separate config namespace.</p>
+<p><strong>Note:</strong> Auth capability enforcement now runs through SDK-owned before-events on the privileged async mutation surface used by the Node-hosted adapters. The shipped <code>noop</code> / <code>rbac</code> / <code>local</code> ids resolve through <code>kl-plugin-auth</code> when present, with a compatibility provider fallback retained so existing workspaces and test environments do not break when the package has not been installed yet. Active plugin packages may also contribute standalone-only HTTP middleware and routes (for example the <code>local</code> provider's <code>/auth/login</code> flow) without a separate config namespace.</p>
 </blockquote>
 <hr>
 <h2 id="config-model">Config model</h2>
 <p>The canonical config lives in <code>.kanban.json</code>.</p>
+<p>For plugin settings flows, the canonical persistence model is one selected provider per capability under <code>plugins[capability]</code>. That same config entry may also carry the selected provider's persisted <code>options</code> payload.</p>
+<p>Inactive providers may also have cached options stored separately under <code>pluginOptions[capability][providerId]</code> so hosts can reopen and save schema-driven forms without changing the selected provider.</p>
+<p>Example:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;auth.identity&quot;: {
+      &quot;provider&quot;: &quot;local&quot;,
+      &quot;options&quot;: {
+        &quot;roles&quot;: [&quot;operator&quot;, &quot;reviewer&quot;, &quot;admin&quot;],
+        &quot;apiToken&quot;: &quot;stored-secret&quot;,
+        &quot;users&quot;: [
+          {
+            &quot;username&quot;: &quot;alice&quot;,
+            &quot;password&quot;: &quot;$2b$12$REPLACE_WITH_BCRYPT_HASH&quot;,
+            &quot;role&quot;: &quot;admin&quot;
+          }
+        ]
+      }
+    }
+  },
+  &quot;pluginOptions&quot;: {
+    &quot;auth.identity&quot;: {
+      &quot;rbac&quot;: {
+        &quot;roles&quot;: [&quot;operator&quot;, &quot;reviewer&quot;, &quot;admin&quot;]
+      }
+    }
+  }
+}
+</code></pre>
+<p>The plugin-settings model does not add a second <code>enabled</code> boolean. Switching providers means changing the selected provider reference for that capability.</p>
+<p>For <code>webhook.delivery</code>, plugin settings also support an explicit disabled state by persisting:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;webhook.delivery&quot;: {
+      &quot;provider&quot;: &quot;none&quot;
+    }
+  }
+}
+</code></pre>
+<p>That disables webhook runtime loading without discarding any previously stored provider options, so the same webhook configuration can be restored when the provider is re-enabled.</p>
 <p>Webhook delivery uses its own top-level config section:</p>
 <pre><code class="language-json">{
   &quot;webhookPlugin&quot;: {
@@ -434,7 +576,37 @@
   }
 }
 </code></pre>
-<p>If <code>webhookPlugin</code> is omitted, runtime normalization still defaults to <code>{ provider: &quot;webhooks&quot; }</code> for <code>webhook.delivery</code>. That default resolves to the external <code>kl-webhooks-plugin</code> package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.</p>
+<p>If <code>webhookPlugin</code> is omitted, runtime normalization still defaults to <code>{ provider: &quot;webhooks&quot; }</code> for <code>webhook.delivery</code>. That default resolves to the external <code>kl-plugin-webhook</code> package; when the package is not installed, webhook CRUD methods fail with a deterministic install error instead of falling back to a built-in runtime path.</p>
+<p>First-party callback runtime selection uses the normal shared plugin-settings path:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;callback.runtime&quot;: {
+      &quot;provider&quot;: &quot;callbacks&quot;,
+      &quot;options&quot;: {
+        &quot;handlers&quot;: [
+          {
+            &quot;name&quot;: &quot;log task creation&quot;,
+            &quot;type&quot;: &quot;inline&quot;,
+            &quot;events&quot;: [&quot;task.created&quot;],
+            &quot;enabled&quot;: true,
+            &quot;source&quot;: &quot;async ({ event, sdk }) =&gt; { console.log(event.event, sdk.constructor.name) }&quot;
+          },
+          {
+            &quot;name&quot;: &quot;notify local worker&quot;,
+            &quot;type&quot;: &quot;process&quot;,
+            &quot;events&quot;: [&quot;task.created&quot;, &quot;task.updated&quot;],
+            &quot;enabled&quot;: true,
+            &quot;command&quot;: &quot;node&quot;,
+            &quot;args&quot;: [&quot;scripts/callback-worker.mjs&quot;],
+            &quot;cwd&quot;: &quot;.&quot;
+          }
+        ]
+      }
+    }
+  }
+}
+</code></pre>
+<p>That <code>handlers[]</code> list is intentionally mixed: inline rows carry <code>source</code>; process rows carry <code>command</code> / <code>args</code> / <code>cwd</code>.</p>
 <p>Only provider selection lives in <code>.kanban.json</code>. Listener plugins are runtime-loaded by the SDK; there is no separate user-facing <code>event.listener</code> config namespace.</p>
 <h2 id="runtime-listener-model">Runtime listener model</h2>
 <p>Runtime plugins are now <strong>listener-only</strong>.</p>
@@ -454,6 +626,7 @@
 }
 </code></pre>
 <p>This replaces the old <code>init(...)</code> / <code>destroy()</code> runtime seam for plugin authors. Storage and attachment providers remain direct capability adapters; they do not participate in this listener contract.</p>
+<p>First-party <code>kl-plugin-webhook</code> and <code>kl-plugin-callback</code> both use this listener-only model; users configure <code>webhook.delivery</code> or <code>callback.runtime</code>, not the internal <code>event.listener</code> seam.</p>
 <h3 id="modern-capability-based-config">Modern capability-based config</h3>
 <pre><code class="language-json">{
   &quot;plugins&quot;: {
@@ -488,22 +661,21 @@
 <ol>
 <li><code>plugins[namespace]</code></li>
 <li>legacy <code>storageEngine</code> / <code>sqlitePath</code> for <code>card.storage</code></li>
-<li>defaults:
+<li>defaults:</li>
+</ol>
 <ul>
-<li><code>card.storage</code> → <code>markdown</code></li>
+<li><code>card.storage</code> → <code>localfs</code></li>
 <li><code>attachment.storage</code> → <code>localfs</code></li>
 </ul>
-</li>
-</ol>
 <p>So if you have both forms present:</p>
 <pre><code class="language-json">{
   &quot;storageEngine&quot;: &quot;sqlite&quot;,
   &quot;plugins&quot;: {
-    &quot;card.storage&quot;: { &quot;provider&quot;: &quot;markdown&quot; }
+    &quot;card.storage&quot;: { &quot;provider&quot;: &quot;localfs&quot; }
   }
 }
 </code></pre>
-<p>then <code>card.storage</code> resolves to <code>markdown</code>.</p>
+<p>then <code>card.storage</code> resolves to <code>localfs</code>.</p>
 <h3 id="what-normalization-returns">What normalization returns</h3>
 <p>Internally, config normalization produces a complete <code>ResolvedCapabilities</code> map:</p>
 <pre><code class="language-ts">type ResolvedCapabilities = Record&lt;
@@ -514,7 +686,7 @@
 <p>Even if you omit one namespace in config, the normalized map always includes both.</p>
 <hr>
 <h2 id="core-and-compatibility-providers">Core and compatibility providers</h2>
-<h2 id="markdown"><code>markdown</code></h2>
+<h2 id="localfs-legacy-markdown-alias"><code>localfs</code> (legacy <code>markdown</code> alias)</h2>
 <p>Namespace: <code>card.storage</code></p>
 <p>Behavior:</p>
 <ul>
@@ -545,8 +717,8 @@
 <li>card/comment persistence is separate from attachment persistence.</li>
 </ul>
 <p>External package:</p>
-<p>The <code>sqlite</code> provider id is a compatibility alias for the <code>kl-sqlite-storage</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
-<pre><code class="language-sh">npm install kl-sqlite-storage
+<p>The <code>sqlite</code> provider id is a compatibility alias for the <code>kl-plugin-storage-sqlite</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-plugin-storage-sqlite
 </code></pre>
 <p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>.</p>
 <h2 id="mysql"><code>mysql</code></h2>
@@ -565,18 +737,81 @@
 <li>environments that do not use MySQL do not need <code>mysql2</code> installed.</li>
 </ul>
 <p>External package:</p>
-<p>The <code>mysql</code> provider id is a compatibility alias for the <code>kl-mysql-storage</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
-<pre><code class="language-sh">npm install kl-mysql-storage
+<p>The <code>mysql</code> provider id is a compatibility alias for the <code>kl-plugin-storage-mysql</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-plugin-storage-mysql
 </code></pre>
 <p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>, and preserves the lazy <code>mysql2</code> load semantics.</p>
-<h2 id="builtin-sqlite-for-card-state"><code>builtin</code> / <code>sqlite</code> for <code>card.state</code></h2>
-<p>Namespace: <code>card.state</code></p>
+<h2 id="postgresql"><code>postgresql</code></h2>
+<p>Namespace: <code>card.storage</code></p>
 <p>Behavior:</p>
 <ul>
-<li><code>builtin</code> is the core file-backed backend and persists actor-scoped unread/open state in workspace sidecar files,</li>
-<li>that persisted <code>card.state</code> data is distinct from <code>.active-card.json</code> and other active-card UI selection state,</li>
-<li><code>sqlite</code> is a first-party compatibility id backed by the <code>kl-sqlite-card-state</code> package,</li>
-<li>both backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.</li>
+<li>stores cards/comments in PostgreSQL tables,</li>
+<li>is <strong>not</strong> file-backed for cards,</li>
+<li>does not expose local card file paths,</li>
+<li>reports <code>watchGlob: null</code>.</li>
+</ul>
+<p>Requirements:</p>
+<ul>
+<li><code>database</code> is required in provider options,</li>
+<li>the <code>pg</code> driver is loaded lazily,</li>
+<li>environments that do not use PostgreSQL do not need <code>pg</code> installed.</li>
+</ul>
+<p>External package:</p>
+<p>The <code>postgresql</code> provider id is a compatibility alias for the <code>kl-plugin-storage-postgresql</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-plugin-storage-postgresql
+</code></pre>
+<p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>, and preserves the lazy <code>pg</code> load semantics.</p>
+<h2 id="mongodb"><code>mongodb</code></h2>
+<p>Namespace: <code>card.storage</code></p>
+<p>Behavior:</p>
+<ul>
+<li>stores cards/comments in MongoDB collections,</li>
+<li>is <strong>not</strong> file-backed for cards,</li>
+<li>does not expose local card file paths,</li>
+<li>reports <code>watchGlob: null</code>.</li>
+</ul>
+<p>Requirements:</p>
+<ul>
+<li><code>database</code> is required in provider options,</li>
+<li>the <code>mongodb</code> driver is loaded lazily,</li>
+<li>environments that do not use MongoDB do not need <code>mongodb</code> installed.</li>
+</ul>
+<p>External package:</p>
+<p>The <code>mongodb</code> provider id is a compatibility alias for the <code>kl-plugin-storage-mongodb</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-plugin-storage-mongodb
+</code></pre>
+<p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>, and preserves the lazy <code>mongodb</code> load semantics.</p>
+<h2 id="redis"><code>redis</code></h2>
+<p>Namespace: <code>card.storage</code></p>
+<p>Behavior:</p>
+<ul>
+<li>stores cards/comments in Redis hashes,</li>
+<li>is <strong>not</strong> file-backed for cards,</li>
+<li>does not expose local card file paths,</li>
+<li>reports <code>watchGlob: null</code>.</li>
+</ul>
+<p>Requirements:</p>
+<ul>
+<li>the <code>ioredis</code> driver is loaded lazily,</li>
+<li>environments that do not use Redis do not need <code>ioredis</code> installed.</li>
+</ul>
+<p>External package:</p>
+<p>The <code>redis</code> provider id is a compatibility alias for the <code>kl-plugin-storage-redis</code> npm package. Install the external package in the host environment that loads Kanban Lite:</p>
+<pre><code class="language-sh">npm install kl-plugin-storage-redis
+</code></pre>
+<p>The package exports both <code>cardStoragePlugin</code> and <code>attachmentStoragePlugin</code>, and preserves the lazy <code>ioredis</code> load semantics.</p>
+<h2 id="card-state-auto-derived-from-storage"><code>card.state</code> (auto-derived from storage)</h2>
+<p>Namespace: <code>card.state</code></p>
+<p>Card-state is now <strong>automatically derived</strong> from the active <code>card.storage</code> plugin.
+There is no need to install or configure a separate <code>card.state</code> package.</p>
+<p>Behavior:</p>
+<ul>
+<li>When <code>card.storage</code> is <code>localfs</code> (default), the built-in file-backed backend persists actor-scoped unread/open state in workspace sidecar files,</li>
+<li>When <code>card.storage</code> is an external plugin (e.g. <code>sqlite</code>, <code>mongodb</code>, <code>postgresql</code>, <code>mysql</code>, <code>redis</code>), card-state is loaded from the same storage package via its <code>createCardStateProvider</code> export,</li>
+<li>Plugin Settings reuses the selected <code>card.storage</code> provider/options for storage-backed <code>card.state</code> rows instead of surfacing a second database configuration form,</li>
+<li>If the storage package does not export card-state support, the built-in file-backed backend is used as a fallback,</li>
+<li>persisted <code>card.state</code> data is distinct from <code>.active-card.json</code> and other active-card UI selection state,</li>
+<li>all backends share the same SDK-owned unread derivation, explicit read/open mutations, and stable auth-absent default actor contract.</li>
 </ul>
 <p>Identity behavior:</p>
 <ul>
@@ -584,11 +819,20 @@
 <li>when a real <code>auth.identity</code> provider is configured but no actor can be resolved, host surfaces report <code>identity-unavailable</code> / <code>ERR_CARD_STATE_IDENTITY_UNAVAILABLE</code>,</li>
 <li>this is intentionally different from backend unavailability (<code>unavailable</code> / <code>ERR_CARD_STATE_UNAVAILABLE</code>).</li>
 </ul>
-<p>External package:</p>
-<p>The <code>sqlite</code> provider id is a compatibility alias for the first-party <code>kl-sqlite-card-state</code> npm package:</p>
-<pre><code class="language-sh">npm install kl-sqlite-card-state
+<p>No separate installation is needed — card-state support is included in each storage plugin:</p>
+<pre><code class="language-json">{
+  &quot;plugins&quot;: {
+    &quot;card.storage&quot;: {
+      &quot;provider&quot;: &quot;sqlite&quot;
+    }
+  }
+}
 </code></pre>
-<p>Example:</p>
+<p>The above configuration automatically provides both card storage and card-state via the <code>kl-plugin-storage-sqlite</code> package.</p>
+<blockquote>
+<p><strong>Deprecation notice:</strong> The dedicated <code>kl-plugin-card-state-sqlite</code>, <code>kl-plugin-card-state-mongodb</code>, and <code>kl-plugin-card-state-redis</code> packages are deprecated. Explicit <code>card.state</code> configuration is still supported for backward compatibility but is no longer required.</p>
+</blockquote>
+<p>Example with explicit options:</p>
 <pre><code class="language-json">{
   &quot;plugins&quot;: {
     &quot;card.storage&quot;: {
@@ -623,7 +867,8 @@
 <ul>
 <li>with core <code>markdown</code>, <code>localfs</code> delegates directly to the markdown engine,</li>
 <li>with external card providers that expose the same local attachment semantics, <code>localfs</code> delegates to the active engine,</li>
-<li>when <code>attachment.storage</code> stays on <code>localfs</code>, the resolver still gives the selected external card provider package a same-package chance to provide <code>attachment.storage</code> first.</li>
+<li>omitted or redundant matching <code>attachment.storage</code> config is normalized to the active <code>card.storage</code> provider/options for first-party storage plugins,</li>
+<li>when <code>attachment.storage</code> would otherwise stay on <code>localfs</code>, the resolver still gives the selected external card provider package a same-package chance to provide <code>attachment.storage</code> first.</li>
 </ul>
 <hr>
 <h2 id="resolver-architecture">Resolver architecture</h2>
@@ -762,6 +1007,70 @@
 <li>providers without native append support still work through the runtime fallback path</li>
 </ul>
 <hr>
+<h2 id="package-level-plugin-manifest">Package-level plugin manifest</h2>
+<p>Every first-party plugin package exports a <code>pluginManifest</code> constant that
+declares all capabilities and integration surfaces the package provides.</p>
+<p>The engine reads this manifest first for fast, reliable discovery instead of
+duck-typing individual exports.</p>
+<h3 id="shape">Shape</h3>
+<pre><code class="language-ts">export const pluginManifest = {
+  id: 'kl-plugin-storage-sqlite',
+  capabilities: {
+    'card.storage': ['sqlite'] as const,
+    'attachment.storage': ['sqlite'] as const,
+    'card.state': ['sqlite'] as const,
+  },
+} as const
+</code></pre>
+<p>The fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td><code>string</code></td>
+<td>yes</td>
+<td>npm package name</td>
+</tr>
+<tr>
+<td><code>capabilities</code></td>
+<td><code>Partial&lt;Record&lt;PluginCapabilityNamespace, string[]&gt;&gt;</code></td>
+<td>yes</td>
+<td>Provider IDs offered per capability namespace</td>
+</tr>
+<tr>
+<td><code>integrations</code></td>
+<td><code>('standalone.http'|'cli'|'mcp.tools'|'sdk.extension'|'event.listener')[]</code></td>
+<td>no</td>
+<td>Additional integration surfaces the package contributes</td>
+</tr>
+</tbody>
+</table>
+<h3 id="discovery-flow">Discovery flow</h3>
+<ol>
+<li>The engine checks for <code>mod.pluginManifest</code> and validates its structure.</li>
+<li>If found, it iterates only declared capabilities and resolves exports accordingly.</li>
+<li>Structural validators (<code>isValidCardStoragePluginCandidate</code>, etc.) still run on the resolved exports.</li>
+<li>If <code>pluginManifest</code> is absent, the engine falls back to exhaustive duck-typing probing for third-party compatibility.</li>
+</ol>
+<h3 id="type">Type</h3>
+<p>The <code>KLPluginPackageManifest</code> interface and <code>PluginIntegrationNamespace</code> type are
+exported from <code>kanban-lite/sdk</code> for plugin authors who want compile-time
+validation.</p>
+<p>Plugin packages should also import the shared public contracts from
+<code>kanban-lite/sdk</code> instead of re-declaring local structural copies. That
+includes provider contracts such as <code>CardStoragePlugin</code>,
+<code>AttachmentStoragePlugin</code>, <code>WebhookProviderPlugin</code>, standalone and CLI
+integration types, MCP tool registration types, auth plugin contracts, and the
+plugin-settings schema metadata types.</p>
+<hr>
 <h2 id="plugin-manifest-validation">Plugin manifest validation</h2>
 <p>Validation is intentionally simple.</p>
 <p>The loader checks:</p>
@@ -800,6 +1109,13 @@
 <li>Sibling directory <code>../{name}</code> — legacy non-monorepo checkout layout</li>
 </ol>
 <p>If the package is not found in any of these locations, the resolver throws an actionable install hint.</p>
+<p>These same locations also explain the plugin-settings install scopes:</p>
+<ul>
+<li><strong><code>workspace</code> install</strong> runs <code>npm install --ignore-scripts &lt;package&gt;</code> in the current workspace root. Use this for standalone servers, extension-hosted workspaces, or repo-local development where the runtime resolves packages from the workspace.</li>
+<li><strong><code>global</code> install</strong> runs <code>npm install --global --ignore-scripts &lt;package&gt;</code>. Use this primarily for globally installed CLI or MCP runtimes that resolve providers from global <code>node_modules</code>.</li>
+</ul>
+<p>The in-product installer is intentionally narrow. It accepts only exact unscoped <code>kl-*</code> package names and rejects version specifiers, scoped names, URLs, paths, whitespace-delimited extra arguments, and shell fragments before any subprocess is launched. The SDK constructs fixed <code>npm</code> argv arrays with <code>shell: false</code>, always disables lifecycle scripts, and redacts surfaced stdout/stderr.</p>
+<p>If a package depends on lifecycle scripts or a custom install flow, install it manually outside the in-product workflow.</p>
 <h3 id="export-shapes-supported-today">Export shapes supported today</h3>
 <p>For a card storage plugin, the loader accepts either:</p>
 <ul>
@@ -827,11 +1143,34 @@
 <li>the loader includes it in the resolved capability bag when that package is active,</li>
 <li><code>KanbanSDK.getExtension(id)</code> returns the contributed extension bag.</li>
 </ul>
+<p><code>sdkExtensionPlugin</code> may also include an optional <code>events</code> array so plugins can declare additional discoverable SDK event names. Each declaration is metadata-only and has the shape <code>{ event, phase }</code>, where <code>phase</code> is either <code>before</code> or <code>after</code>. Plugins may also include optional <code>resource</code>, <code>label</code>, and <code>apiAfter</code> metadata on those declarations.</p>
+<p>That catalog feeds the shared event-discovery surfaces:</p>
+<ul>
+<li><code>sdk.listAvailableEvents({ type?, mask? })</code></li>
+<li>CLI <code>kl events --type &lt;before|after|all&gt; --mask &lt;pattern&gt;</code></li>
+<li>standalone <code>GET /api/events?type=...&amp;mask=...</code></li>
+<li>MCP <code>list_available_events</code></li>
+</ul>
+<p>Masks follow the same dotted wildcard rules as the EventEmitter2-backed SDK event bus, so patterns such as <code>task.*</code> and <code>comment.**</code> behave consistently across discovery and subscription.</p>
 <p>Webhook migration is the first concrete use of this model.</p>
 <ul>
-<li><code>kl-webhooks-plugin</code> contributes the canonical webhook CRUD implementation through its SDK extension bag,</li>
-<li>advanced SDK consumers can call <code>sdk.getExtension('kl-webhooks-plugin')</code>,</li>
+<li><code>kl-plugin-webhook</code> contributes the canonical webhook CRUD implementation through its SDK extension bag,</li>
+<li>advanced SDK consumers can call <code>sdk.getExtension('kl-plugin-webhook')</code>,</li>
 <li>and the long-lived <code>sdk.listWebhooks()</code>, <code>sdk.createWebhook()</code>, <code>sdk.updateWebhook()</code>, and <code>sdk.deleteWebhook()</code> methods remain compatibility shims so existing callers do not need to migrate immediately.</li>
+</ul>
+<p>The same public-SDK rule now applies to plugin host contexts that expose an <code>sdk</code> value.</p>
+<ul>
+<li>CLI plugins receive the resolved public <code>KanbanSDK</code> instance when <code>context.sdk</code> is present.</li>
+<li>Standalone HTTP plugin registration and request contexts may expose that same public SDK instance.</li>
+<li>MCP tool contexts likewise expose the resolved public SDK instance.</li>
+</ul>
+<p>That means plugin code can reuse the same public methods core surfaces call — for example <code>sdk.getBoard(...)</code>, <code>sdk.getExtension(...)</code>, <code>sdk.runWithAuth(...)</code> where available on the host seam, and <code>sdk.getConfigSnapshot()</code> for config reads — instead of rebuilding helper facades or reading <code>.kanban.json</code> directly for equivalent read paths.</p>
+<p><code>sdk.getConfigSnapshot()</code> returns a cloned read-only snapshot of the current workspace config. Treat it as inspection-only state: mutating the returned object does not update persisted config or the live SDK instance.</p>
+<p>Recommended authoring rule:</p>
+<ul>
+<li>prefer public SDK methods first,</li>
+<li>then use <code>sdk.getConfigSnapshot()</code> for read-only config inspection when no narrower method exists,</li>
+<li>and keep direct plugin-owned writes only when the public SDK still has no equivalent write API.</li>
 </ul>
 <p>This keeps core as the public compatibility seam while letting plugin packages own new capabilities incrementally.</p>
 <hr>
@@ -845,7 +1184,7 @@
 </ol>
 <p>Webhook tools are the first migrated toolset on this seam.</p>
 <ul>
-<li><code>kl-webhooks-plugin</code> registers <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, and <code>remove_webhook</code>,</li>
+<li><code>kl-plugin-webhook</code> registers <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, and <code>remove_webhook</code>,</li>
 <li>the public tool names and schemas stay unchanged,</li>
 <li>and core still supplies the shared auth/error context so behavior such as secret redaction and auth mapping remains stable.</li>
 </ul>
@@ -862,7 +1201,7 @@
 <p>This is deliberate: plugin errors should be operator-friendly, not stack-trace archaeology.</p>
 <hr>
 <h2 id="compatibility-aliases">Compatibility aliases</h2>
-<p>The short provider ids <code>sqlite</code> and <code>mysql</code> are compatibility aliases. They allow existing
+<p>The short provider ids <code>sqlite</code>, <code>mysql</code>, <code>postgresql</code>, <code>mongodb</code>, and <code>redis</code> are compatibility aliases. They allow existing
 <code>.kanban.json</code> configurations to continue using the familiar short names while implementation
 ownership moves to standalone, versioned npm packages.</p>
 <table>
@@ -875,11 +1214,23 @@ ownership moves to standalone, versioned npm packages.</p>
 <tbody>
 <tr>
 <td><code>sqlite</code></td>
-<td><code>kl-sqlite-storage</code></td>
+<td><code>kl-plugin-storage-sqlite</code></td>
 </tr>
 <tr>
 <td><code>mysql</code></td>
-<td><code>kl-mysql-storage</code></td>
+<td><code>kl-plugin-storage-mysql</code></td>
+</tr>
+<tr>
+<td><code>postgresql</code></td>
+<td><code>kl-plugin-storage-postgresql</code></td>
+</tr>
+<tr>
+<td><code>mongodb</code></td>
+<td><code>kl-plugin-storage-mongodb</code></td>
+</tr>
+<tr>
+<td><code>redis</code></td>
+<td><code>kl-plugin-storage-redis</code></td>
 </tr>
 </tbody>
 </table>
@@ -891,8 +1242,8 @@ downstream tasks and tests can reference it directly.</p>
 <li>Otherwise, look up the provider id in <code>PROVIDER_ALIASES</code> and load that package.</li>
 <li>If there is no alias, treat the provider id as-is (bare npm package name).</li>
 </ol>
-<p>This means install errors for <code>sqlite</code> and <code>mysql</code> always name <code>kl-sqlite-storage</code> and
-<code>kl-mysql-storage</code>, not the short alias.</p>
+<p>This means install errors for <code>sqlite</code> and <code>mysql</code> always name <code>kl-plugin-storage-sqlite</code> and
+<code>kl-plugin-storage-mysql</code>, not the short alias.</p>
 <p>Both packages must export:</p>
 <ul>
 <li><code>cardStoragePlugin</code> — implements the <code>CardStoragePlugin</code> interface</li>
@@ -1121,7 +1472,7 @@ behavior verifiable without a running database.</p>
 <p>If you are reading the code to understand how storage works, start in
 <code>src/sdk/plugins/index.ts</code>, not in an old storage folder.</p>
 <h2 id="mysql-compatibility-alias-deep-dive">MySQL compatibility alias deep dive</h2>
-<p>Core no longer owns a first-party MySQL implementation. The provider id <code>mysql</code> is a compatibility alias for the external package <code>kl-mysql-storage</code>.</p>
+<p>Core no longer owns a first-party MySQL implementation. The provider id <code>mysql</code> is a compatibility alias for the external package <code>kl-plugin-storage-mysql</code>.</p>
 <h3 id="what-it-does">What it does</h3>
 <ul>
 <li>implements <code>StorageEngine</code></li>
@@ -1425,13 +1776,18 @@ export const attachmentStoragePlugin = { ... }
 <hr>
 <h2 id="current-limitations">Current limitations</h2>
 <p>This is important for plugin authors and operators.</p>
-<h3 id="only-two-capability-namespaces-today">Only two capability namespaces today</h3>
+<h3 id="capability-namespaces-are-still-intentionally-small">Capability namespaces are still intentionally small</h3>
 <p>Supported now:</p>
 <ul>
 <li><code>card.storage</code></li>
 <li><code>attachment.storage</code></li>
+<li><code>card.state</code></li>
+<li><code>webhook.delivery</code></li>
+<li><code>callback.runtime</code></li>
+<li><code>auth.identity</code></li>
+<li><code>auth.policy</code></li>
 </ul>
-<p>Future namespaces are possible, but not implemented yet.</p>
+<p>More namespaces are possible, but the current public surface is still intentionally focused on storage, listener-based automation, and auth.</p>
 <h3 id="public-plugin-author-api-is-still-runtime-shape-oriented">Public plugin-author API is still runtime-shape-oriented</h3>
 <p>The system is real and tested, but plugin authoring currently relies on:</p>
 <ul>
@@ -1492,11 +1848,11 @@ export const attachmentStoragePlugin = { ... }
 <h2 id="mysql-storage-requires-the-mysql2-driver">“MySQL storage requires the mysql2 driver”</h2>
 <p>Meaning:</p>
 <ul>
-<li>you selected the <code>mysql</code> compatibility provider id without installing <code>kl-mysql-storage</code>, or</li>
-<li><code>kl-mysql-storage</code> is present but its peer driver <code>mysql2</code> is missing.</li>
+<li>you selected the <code>mysql</code> compatibility provider id without installing <code>kl-plugin-storage-mysql</code>, or</li>
+<li><code>kl-plugin-storage-mysql</code> is present but its peer driver <code>mysql2</code> is missing.</li>
 </ul>
 <p>Fix:</p>
-<pre><code class="language-bash">npm install kl-mysql-storage mysql2
+<pre><code class="language-bash">npm install kl-plugin-storage-mysql mysql2
 </code></pre>
 <h2 id="watchers-don-t-refresh">Watchers don’t refresh</h2>
 <p>Check <code>getStorageStatus()</code> output:</p>
@@ -1559,7 +1915,13 @@ export const attachmentStoragePlugin = { ... }
 <li>That makes same-package resolution much smoother.</li>
 </ul>
 </li>
+<li>
+<p><strong>Import public contracts from <code>kanban-lite/sdk</code>.</strong></p>
+</li>
 </ol>
+<ul>
+<li>Do not maintain private copies of shared SDK interfaces inside plugin packages.</li>
+</ul>
 <hr>
 <h2 id="quick-reference">Quick reference</h2>
 <h2 id="core-and-compatibility-providers-2">Core and compatibility providers</h2>
@@ -1576,38 +1938,31 @@ export const attachmentStoragePlugin = { ... }
 <tbody>
 <tr>
 <td><code>card.storage</code></td>
-<td><code>markdown</code></td>
+<td><code>localfs</code></td>
 <td style="text-align:right">yes</td>
 <td><code>boards/**/*.md</code></td>
-<td>Default card provider</td>
+<td>Default card provider (markdown engine)</td>
 </tr>
 <tr>
 <td><code>card.storage</code></td>
 <td><code>sqlite</code></td>
 <td style="text-align:right">no</td>
 <td><code>null</code></td>
-<td>Compatibility id backed by <code>kl-sqlite-storage</code></td>
+<td>Compatibility id backed by <code>kl-plugin-storage-sqlite</code></td>
 </tr>
 <tr>
 <td><code>card.storage</code></td>
 <td><code>mysql</code></td>
 <td style="text-align:right">no</td>
 <td><code>null</code></td>
-<td>Compatibility id backed by <code>kl-mysql-storage</code></td>
+<td>Compatibility id backed by <code>kl-plugin-storage-mysql</code></td>
 </tr>
 <tr>
 <td><code>card.state</code></td>
-<td><code>builtin</code></td>
-<td style="text-align:right">yes</td>
+<td><em>(auto)</em></td>
+<td style="text-align:right">—</td>
 <td><code>null</code></td>
-<td>Built-in file-backed actor-scoped card-state provider</td>
-</tr>
-<tr>
-<td><code>card.state</code></td>
-<td><code>sqlite</code></td>
-<td style="text-align:right">no</td>
-<td><code>null</code></td>
-<td>First-party compatibility id backed by <code>kl-sqlite-card-state</code></td>
+<td>Auto-derived from active <code>card.storage</code> plugin; falls back to built-in file-backed provider</td>
 </tr>
 <tr>
 <td><code>attachment.storage</code></td>
@@ -1676,7 +2031,7 @@ export const attachmentStoragePlugin = { ... }
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

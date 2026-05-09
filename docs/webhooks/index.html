@@ -224,7 +224,7 @@
     <li>20+ event types covering boards, cards, columns, comments, attachments, and forms</li>
     <li>HMAC-SHA256 signature verification with optional per-webhook secrets</li>
     <li>Manage via CLI (<code>kl webhooks add</code>), REST API, SDK, or MCP tools</li>
-    <li>Powered by the external <code>kl-webhooks-plugin</code> package</li>
+    <li>Powered by the external <code>kl-plugin-webhook</code> package</li>
     <li>Registrations stored in <code>.kanban.json</code> and persist across restarts</li>
   </ul>
   <div class="usage-example">
@@ -237,37 +237,48 @@
 </div>
 
 <h1 id="webhooks-2">Webhooks</h1>
-<p>Kanban Lite fires webhooks on every mutation — task, comment, column, attachment, settings, and board changes. Webhooks are delivered via HTTP POST to any registered endpoint.</p>
+<p>Kanban Lite webhook delivery is owned by <code>kl-plugin-webhook</code>. It delivers committed SDK after-events via HTTP POST to any registered endpoint.</p>
 <h2 id="overview">Overview</h2>
 <ul>
 <li>Webhooks fire from <strong>all interfaces</strong>: REST API, CLI, MCP server, and the UI (via the standalone server).</li>
-<li>Events are emitted by the SDK event bus and delivered by the resolved <code>webhook.delivery</code> provider, ensuring consistent behavior regardless of entry point.</li>
-<li>The default runtime provider id is <code>webhooks</code>, which resolves to the external <code>kl-webhooks-plugin</code> package.</li>
-<li><code>kl-webhooks-plugin</code> owns runtime delivery plus the standalone <code>/api/webhooks</code> routes, <code>kl webhooks</code> CLI commands, and webhook MCP tools where those plugin seams are available.</li>
-<li>Advanced SDK consumers can use <code>sdk.getExtension('kl-webhooks-plugin')</code>; the direct webhook SDK methods remain stable compatibility shims.</li>
-<li>MCP uses the same active-package discovery model as CLI and standalone. <code>kl-webhooks-plugin</code> registers the public webhook tools via the narrow <code>mcpPlugin</code> seam.</li>
-<li>Webhook registrations are stored in <code>.kanban.json</code> and persist across server restarts.</li>
+<li><code>kl-plugin-webhook</code> owns runtime delivery, webhook registry CRUD, the standalone <code>/api/webhooks</code> routes, the <code>kl webhooks</code> CLI family, and webhook MCP tool registration where those plugin seams exist.</li>
+<li>Events are emitted by the SDK event bus and delivered by the resolved <code>webhook.delivery</code> provider, ensuring the same behavior regardless of entry point.</li>
+<li>The default runtime provider id is <code>webhooks</code>, which resolves to the external <code>kl-plugin-webhook</code> package.</li>
+<li>Advanced SDK consumers can use <code>sdk.getExtension('kl-plugin-webhook')</code>; the direct webhook SDK methods remain stable compatibility shims.</li>
+<li>Webhook registrations are read from <code>.kanban.json</code> <code>plugins[&quot;webhook.delivery&quot;].options.webhooks</code> when configured, and persist across server restarts.</li>
+<li>Only committed SDK after-events are delivered; before-events such as <code>form.submit</code> are not sent as outbound webhooks.</li>
 <li>Delivery is asynchronous and fire-and-forget (10-second timeout, failures are logged but do not block).</li>
-<li>Existing workspaces keep the same <code>.kanban.json</code> <code>webhooks</code> array; no migration is required.</li>
-<li>A workspace that only configures <code>webhookPlugin</code> still activates webhook package discovery for provider, standalone, CLI, and MCP surfaces.</li>
+<li>Legacy top-level <code>.kanban.json</code> <code>webhooks</code> is still supported as a compatibility fallback.</li>
+<li>A workspace that only configures <code>plugins[&quot;webhook.delivery&quot;]</code> still activates webhook package discovery for provider, standalone, CLI, and MCP surfaces.</li>
 <li>This file is generated from source metadata; do not edit <code>docs/webhooks.md</code> by hand.</li>
 </ul>
 <h2 id="install-and-linking">Install and linking</h2>
-<p>Install <code>kl-webhooks-plugin</code> in the same environment that loads Kanban Lite:</p>
-<pre><code class="language-bash">npm install kl-webhooks-plugin
+<p>Install <code>kl-plugin-webhook</code> in the same environment that loads Kanban Lite:</p>
+<pre><code class="language-bash">npm install kl-plugin-webhook
 </code></pre>
-<p>For local development, a sibling checkout at <code>../kl-webhooks-plugin</code> is resolved automatically. <code>npm link ../kl-webhooks-plugin</code> is optional when you want an explicit local package link.</p>
+<p>For local development, a sibling checkout at <code>../kl-plugin-webhook</code> is resolved automatically. <code>npm link ../kl-plugin-webhook</code> is optional when you want an explicit local package link.</p>
 <h2 id="configuration">Configuration</h2>
-<p>Webhook delivery keeps its own top-level <code>webhookPlugin</code> config key. That key is also enough to activate plugin discovery for the webhook package's standalone routes, CLI commands, and MCP tools; the persisted registrations themselves stay in the existing top-level <code>.kanban.json</code> <code>webhooks</code> array:</p>
+<p>Webhook delivery uses the capability config under <code>plugins[&quot;webhook.delivery&quot;]</code>. Persisted registrations are read from <code>plugins[&quot;webhook.delivery&quot;].options.webhooks</code> when present, with fallback to top-level <code>.kanban.json</code> <code>webhooks</code>:</p>
 <pre><code class="language-json">{
-  &quot;webhookPlugin&quot;: {
+  &quot;plugins&quot;: {
     &quot;webhook.delivery&quot;: {
-      &quot;provider&quot;: &quot;webhooks&quot;
+      &quot;provider&quot;: &quot;kl-plugin-webhook&quot;,
+      &quot;options&quot;: {
+        &quot;webhooks&quot;: [
+          {
+            &quot;id&quot;: &quot;wh_a1b2c3d4e5f67890&quot;,
+            &quot;url&quot;: &quot;https://example.com/webhook&quot;,
+            &quot;events&quot;: [&quot;task.created&quot;, &quot;task.moved&quot;],
+            &quot;secret&quot;: &quot;my-signing-key&quot;,
+            &quot;active&quot;: true
+          }
+        ]
+      }
     }
   }
 }
 </code></pre>
-<p>Registered webhooks are stored in your project's <code>.kanban.json</code> file:</p>
+<p>Legacy fallback format (still accepted):</p>
 <pre><code class="language-json">{
   &quot;webhooks&quot;: [
     {
@@ -283,9 +294,9 @@
 <h2 id="managing-webhooks">Managing Webhooks</h2>
 <h3 id="sdk">SDK</h3>
 <p>Webhook CRUD still converges on the same <code>KanbanSDK</code> methods: <code>listWebhooks()</code>, <code>createWebhook()</code>, <code>updateWebhook()</code>, <code>deleteWebhook()</code>, and <code>getWebhookStatus()</code>.</p>
-<p>For plugin-aware consumers, <code>kl-webhooks-plugin</code> also contributes an additive SDK extension bag available through <code>sdk.getExtension('kl-webhooks-plugin')</code>. Those extension methods and the direct SDK methods share the same backing store; the direct methods remain the compatibility path for existing callers.</p>
+<p>For plugin-aware consumers, <code>kl-plugin-webhook</code> also contributes an additive SDK extension bag available through <code>sdk.getExtension('kl-plugin-webhook')</code>. Those extension methods and the direct SDK methods share the same backing store; the direct methods remain the compatibility path for existing callers.</p>
 <h3 id="rest-api">REST API</h3>
-<p>These routes are plugin-owned when <code>kl-webhooks-plugin</code> is loaded by the standalone host.</p>
+<p>These routes are plugin-owned when <code>kl-plugin-webhook</code> is loaded by the standalone host.</p>
 <table>
 <thead>
 <tr>
@@ -315,10 +326,15 @@
 <td><code>/api/webhooks/:id</code></td>
 <td>Delete a webhook</td>
 </tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/api/webhooks/test</code></td>
+<td>Write a received webhook payload to the board log for local end-to-end verification</td>
+</tr>
 </tbody>
 </table>
 <h3 id="cli">CLI</h3>
-<p>These commands are plugin-owned when <code>kl-webhooks-plugin</code> is loaded by the CLI host.</p>
+<p>These commands are plugin-owned when <code>kl-plugin-webhook</code> is loaded by the CLI host.</p>
 <pre><code class="language-bash"># List webhooks
 kl webhooks
 
@@ -333,8 +349,14 @@ kl webhooks update &lt;id&gt; --events task.created,task.deleted --url https://n
 kl webhooks remove &lt;id&gt;
 </code></pre>
 <h3 id="mcp-server">MCP Server</h3>
-<p>These tools are plugin-owned when <code>kl-webhooks-plugin</code> is loaded by the MCP host through the narrow <code>mcpPlugin.registerTools(...)</code> seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, <code>remove_webhook</code></p>
-<h2 id="payload-format">Payload Format</h2>
+<p>These tools are plugin-owned when <code>kl-plugin-webhook</code> is loaded by the MCP host through the narrow <code>mcpPlugin.registerTools(...)</code> seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: <code>list_webhooks</code>, <code>add_webhook</code>, <code>update_webhook</code>, <code>remove_webhook</code></p>
+<h2 id="event-filters">Event filters</h2>
+<ul>
+<li>Exact names such as <code>task.created</code> match only that event.</li>
+<li><code>*</code> matches every supported after-event.</li>
+<li>Prefix wildcards ending in <code>.*</code> match that namespace, for example <code>task.*</code>, <code>board.*</code>, or <code>board.log.*</code>.</li>
+</ul>
+<h2 id="payload-format">Payload format</h2>
 <p>Every webhook delivery sends a JSON POST request with the following structure:</p>
 <pre><code class="language-json">{
   &quot;event&quot;: &quot;task.created&quot;,
@@ -363,9 +385,13 @@ kl webhooks remove &lt;id&gt;
 <td><code>X-Webhook-Signature</code></td>
 <td>HMAC-SHA256 signature (only if a secret is configured)</td>
 </tr>
+<tr>
+<td><code>Authorization</code></td>
+<td><code>Bearer &lt;token&gt;</code> when <code>KANBAN_LITE_TOKEN</code> is set in the webhook runtime</td>
+</tr>
 </tbody>
 </table>
-<h2 id="signature-verification">Signature Verification</h2>
+<h2 id="signature-verification">Signature verification</h2>
 <p>If you provide a <code>secret</code> when registering a webhook, every delivery includes an <code>X-Webhook-Signature</code> header with the format <code>sha256=&lt;hex-digest&gt;</code>.</p>
 <p>To verify:</p>
 <pre><code class="language-javascript">const crypto = require('crypto')
@@ -381,8 +407,9 @@ function verifySignature(payload, signature, secret) {
   )
 }
 </code></pre>
-<h2 id="delivery-behavior">Delivery Behavior</h2>
+<h2 id="delivery-behavior">Delivery behavior</h2>
 <ul>
+<li>Only committed SDK after-events are delivered.</li>
 <li>Webhooks are delivered <strong>asynchronously</strong> — the SDK operation completes without waiting for delivery.</li>
 <li>Each delivery has a <strong>10-second timeout</strong>.</li>
 <li>Failed deliveries are logged to stderr but <strong>do not retry</strong>.</li>
@@ -390,8 +417,7 @@ function verifySignature(payload, signature, secret) {
 <li>Inactive webhooks (<code>active: false</code>) are skipped.</li>
 <li>Subscribing to <code>[&quot;*&quot;]</code> matches all events.</li>
 </ul>
-<hr>
-<h2 id="event-reference">Event Reference</h2>
+<h2 id="supported-after-events">Supported after-events</h2>
 <table>
 <thead>
 <tr>
@@ -404,32 +430,27 @@ function verifySignature(payload, signature, secret) {
 <tr>
 <td><code>task.created</code></td>
 <td>Task</td>
-<td>A new task was created.</td>
-</tr>
-<tr>
-<td><code>form.submit</code></td>
-<td>Task</td>
-<td>A card form payload was validated, persisted, and submitted.</td>
+<td>A card was created.</td>
 </tr>
 <tr>
 <td><code>task.updated</code></td>
 <td>Task</td>
-<td>A task was updated (fields changed, not moved).</td>
+<td>A card changed without moving columns.</td>
 </tr>
 <tr>
 <td><code>task.moved</code></td>
 <td>Task</td>
-<td>A task was moved to a different column or transferred between boards.</td>
+<td>A card moved columns or boards.</td>
 </tr>
 <tr>
 <td><code>task.deleted</code></td>
 <td>Task</td>
-<td>A task was permanently deleted.</td>
+<td>A card was deleted.</td>
 </tr>
 <tr>
 <td><code>comment.created</code></td>
 <td>Comment</td>
-<td>A comment was added to a task.</td>
+<td>A comment was added.</td>
 </tr>
 <tr>
 <td><code>comment.updated</code></td>
@@ -439,342 +460,95 @@ function verifySignature(payload, signature, secret) {
 <tr>
 <td><code>comment.deleted</code></td>
 <td>Comment</td>
-<td>A comment was removed from a task.</td>
+<td>A comment was removed.</td>
 </tr>
 <tr>
 <td><code>column.created</code></td>
 <td>Column</td>
-<td>A new column was added to a board.</td>
+<td>A board column was added.</td>
 </tr>
 <tr>
 <td><code>column.updated</code></td>
 <td>Column</td>
-<td>A column was renamed or its color changed.</td>
+<td>A board column was renamed or recolored.</td>
 </tr>
 <tr>
 <td><code>column.deleted</code></td>
 <td>Column</td>
-<td>A column was removed from a board.</td>
+<td>A board column was removed.</td>
 </tr>
 <tr>
 <td><code>attachment.added</code></td>
 <td>Attachment</td>
-<td>A file was attached to a task.</td>
+<td>A card attachment was added.</td>
 </tr>
 <tr>
 <td><code>attachment.removed</code></td>
 <td>Attachment</td>
-<td>A file was removed from a task.</td>
+<td>A card attachment was removed.</td>
 </tr>
 <tr>
 <td><code>settings.updated</code></td>
 <td>Settings</td>
-<td>Board display settings were changed.</td>
+<td>Board display settings changed.</td>
 </tr>
 <tr>
 <td><code>board.created</code></td>
 <td>Board</td>
-<td>A new board was created.</td>
+<td>A board was created.</td>
 </tr>
 <tr>
 <td><code>board.updated</code></td>
 <td>Board</td>
-<td>A board configuration was changed.</td>
+<td>A board configuration changed.</td>
 </tr>
 <tr>
 <td><code>board.deleted</code></td>
 <td>Board</td>
 <td>A board was deleted.</td>
 </tr>
+<tr>
+<td><code>board.action</code></td>
+<td>Board</td>
+<td>A named board action was triggered.</td>
+</tr>
+<tr>
+<td><code>card.action.triggered</code></td>
+<td>Card action</td>
+<td>A named card action was triggered.</td>
+</tr>
+<tr>
+<td><code>board.log.added</code></td>
+<td>Board log</td>
+<td>A board log entry was appended.</td>
+</tr>
+<tr>
+<td><code>board.log.cleared</code></td>
+<td>Board log</td>
+<td>Board log entries were cleared.</td>
+</tr>
+<tr>
+<td><code>log.added</code></td>
+<td>Card log</td>
+<td>A card log entry was appended.</td>
+</tr>
+<tr>
+<td><code>log.cleared</code></td>
+<td>Card log</td>
+<td>Card log entries were cleared.</td>
+</tr>
+<tr>
+<td><code>storage.migrated</code></td>
+<td>Storage</td>
+<td>Card storage was migrated between providers.</td>
+</tr>
+<tr>
+<td><code>form.submitted</code></td>
+<td>Form</td>
+<td>A card form payload was validated, persisted, and submitted.</td>
+</tr>
 </tbody>
 </table>
-<h3 id="task-events">Task Events</h3>
-<h4 id="task-created"><code>task.created</code></h4>
-<p>A new task was created.</p>
-<p><strong>Trigger:</strong> Creating a task via API, CLI, MCP, or the UI.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;task.created&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
-    &quot;status&quot;: &quot;backlog&quot;,
-    &quot;priority&quot;: &quot;critical&quot;,
-    &quot;assignee&quot;: &quot;alice&quot;,
-    &quot;labels&quot;: [&quot;bug&quot;, &quot;auth&quot;],
-    &quot;dueDate&quot;: null,
-    &quot;comments&quot;: [],
-    &quot;attachments&quot;: [],
-    &quot;created&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
-    &quot;modified&quot;: &quot;2026-02-24T12:00:00.000Z&quot;
-  }
-}
-</code></pre>
-<h4 id="form-submit"><code>form.submit</code></h4>
-<p>A card form payload was validated, persisted, and submitted.</p>
-<p><strong>Trigger:</strong> Submitting an attached card form via the SDK, REST API, CLI, MCP, or the webview form tab.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;form.submit&quot;,
-  &quot;timestamp&quot;: &quot;2026-03-19T12:10:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;boardId&quot;: &quot;default&quot;,
-    &quot;card&quot;: {
-      &quot;id&quot;: &quot;investigate-outage-2026-03-19&quot;,
-      &quot;status&quot;: &quot;todo&quot;,
-      &quot;priority&quot;: &quot;high&quot;,
-      &quot;formData&quot;: {
-        &quot;incident-report&quot;: {
-          &quot;severity&quot;: &quot;critical&quot;,
-          &quot;owner&quot;: &quot;alice&quot;,
-          &quot;service&quot;: &quot;billing&quot;
-        }
-      }
-    },
-    &quot;form&quot;: {
-      &quot;id&quot;: &quot;incident-report&quot;,
-      &quot;label&quot;: &quot;incident-report&quot;,
-      &quot;fromConfig&quot;: true
-    },
-    &quot;data&quot;: {
-      &quot;severity&quot;: &quot;critical&quot;,
-      &quot;owner&quot;: &quot;alice&quot;,
-      &quot;service&quot;: &quot;billing&quot;
-    }
-  }
-}
-</code></pre>
-<h4 id="task-updated"><code>task.updated</code></h4>
-<p>A task was updated (fields changed, not moved).</p>
-<p><strong>Trigger:</strong> Updating task content, priority, assignee, labels, or due date.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;task.updated&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:05:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
-    &quot;status&quot;: &quot;backlog&quot;,
-    &quot;priority&quot;: &quot;high&quot;,
-    &quot;assignee&quot;: &quot;bob&quot;,
-    &quot;labels&quot;: [&quot;bug&quot;],
-    &quot;dueDate&quot;: &quot;2026-03-01&quot;,
-    &quot;comments&quot;: [],
-    &quot;attachments&quot;: [],
-    &quot;created&quot;: &quot;2026-02-24T12:00:00.000Z&quot;,
-    &quot;modified&quot;: &quot;2026-02-24T12:05:00.000Z&quot;
-  }
-}
-</code></pre>
-<h4 id="task-moved"><code>task.moved</code></h4>
-<p>A task was moved to a different column or transferred between boards.</p>
-<p><strong>Trigger:</strong> Moving a task to a new status, or transferring it to another board.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;task.moved&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:10:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
-    &quot;status&quot;: &quot;in-progress&quot;,
-    &quot;previousStatus&quot;: &quot;backlog&quot;,
-    &quot;priority&quot;: &quot;high&quot;,
-    &quot;assignee&quot;: &quot;bob&quot;,
-    &quot;modified&quot;: &quot;2026-02-24T12:10:00.000Z&quot;
-  }
-}
-</code></pre>
-<h4 id="task-deleted"><code>task.deleted</code></h4>
-<p>A task was permanently deleted.</p>
-<p><strong>Trigger:</strong> Deleting a task via API, CLI, MCP, or the UI.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;task.deleted&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:15:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;fix-login-bug-2026-02-24&quot;,
-    &quot;status&quot;: &quot;in-progress&quot;,
-    &quot;priority&quot;: &quot;high&quot;
-  }
-}
-</code></pre>
-<h3 id="comment-events">Comment Events</h3>
-<h4 id="comment-created"><code>comment.created</code></h4>
-<p>A comment was added to a task.</p>
-<p><strong>Trigger:</strong> Adding a comment to any task.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;comment.created&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: 1,
-    &quot;author&quot;: &quot;alice&quot;,
-    &quot;content&quot;: &quot;Looks good, needs tests&quot;,
-    &quot;date&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
-    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;
-  }
-}
-</code></pre>
-<h4 id="comment-updated"><code>comment.updated</code></h4>
-<p>A comment was edited.</p>
-<p><strong>Trigger:</strong> Updating the content of an existing comment.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;comment.updated&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:25:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: 1,
-    &quot;author&quot;: &quot;alice&quot;,
-    &quot;content&quot;: &quot;Updated: Looks great, tests added&quot;,
-    &quot;date&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
-    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;
-  }
-}
-</code></pre>
-<h4 id="comment-deleted"><code>comment.deleted</code></h4>
-<p>A comment was removed from a task.</p>
-<p><strong>Trigger:</strong> Deleting a comment from any task.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;comment.deleted&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T12:30:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: 1,
-    &quot;author&quot;: &quot;alice&quot;,
-    &quot;content&quot;: &quot;Updated: Looks great, tests added&quot;,
-    &quot;date&quot;: &quot;2026-02-24T12:20:00.000Z&quot;,
-    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;
-  }
-}
-</code></pre>
-<h3 id="column-events">Column Events</h3>
-<h4 id="column-created"><code>column.created</code></h4>
-<p>A new column was added to a board.</p>
-<p><strong>Trigger:</strong> Adding a column via API, CLI, MCP, or settings.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;column.created&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T13:00:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;testing&quot;,
-    &quot;name&quot;: &quot;Testing&quot;,
-    &quot;color&quot;: &quot;#ff9900&quot;
-  }
-}
-</code></pre>
-<h4 id="column-updated"><code>column.updated</code></h4>
-<p>A column was renamed or its color changed.</p>
-<p><strong>Trigger:</strong> Updating column name or color.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;column.updated&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T13:05:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;testing&quot;,
-    &quot;name&quot;: &quot;QA Testing&quot;,
-    &quot;color&quot;: &quot;#ff9900&quot;
-  }
-}
-</code></pre>
-<h4 id="column-deleted"><code>column.deleted</code></h4>
-<p>A column was removed from a board.</p>
-<p><strong>Trigger:</strong> Deleting an empty column.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;column.deleted&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T13:10:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;testing&quot;,
-    &quot;name&quot;: &quot;QA Testing&quot;,
-    &quot;color&quot;: &quot;#ff9900&quot;
-  }
-}
-</code></pre>
-<h3 id="attachment-events">Attachment Events</h3>
-<h4 id="attachment-added"><code>attachment.added</code></h4>
-<p>A file was attached to a task.</p>
-<p><strong>Trigger:</strong> Uploading or adding an attachment to any task.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;attachment.added&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T13:15:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;,
-    &quot;attachment&quot;: &quot;screenshot.png&quot;
-  }
-}
-</code></pre>
-<h4 id="attachment-removed"><code>attachment.removed</code></h4>
-<p>A file was removed from a task.</p>
-<p><strong>Trigger:</strong> Deleting an attachment from any task.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;attachment.removed&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T13:20:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;cardId&quot;: &quot;fix-login-bug-2026-02-24&quot;,
-    &quot;attachment&quot;: &quot;screenshot.png&quot;
-  }
-}
-</code></pre>
-<h3 id="settings-events">Settings Events</h3>
-<h4 id="settings-updated"><code>settings.updated</code></h4>
-<p>Board display settings were changed.</p>
-<p><strong>Trigger:</strong> Updating settings via API, CLI, MCP, or the UI.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;settings.updated&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T13:25:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;showPriorityBadges&quot;: true,
-    &quot;showAssignee&quot;: true,
-    &quot;showDueDate&quot;: true,
-    &quot;showLabels&quot;: true,
-    &quot;compactMode&quot;: true,
-    &quot;showFileName&quot;: false,
-    &quot;defaultPriority&quot;: &quot;medium&quot;,
-    &quot;defaultStatus&quot;: &quot;backlog&quot;
-  }
-}
-</code></pre>
-<h3 id="board-events">Board Events</h3>
-<h4 id="board-created"><code>board.created</code></h4>
-<p>A new board was created.</p>
-<p><strong>Trigger:</strong> Creating a board via API, CLI, or MCP.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;board.created&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T14:00:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;bugs&quot;,
-    &quot;name&quot;: &quot;Bug Tracker&quot;,
-    &quot;description&quot;: &quot;Track production bugs&quot;
-  }
-}
-</code></pre>
-<h4 id="board-updated"><code>board.updated</code></h4>
-<p>A board configuration was changed.</p>
-<p><strong>Trigger:</strong> Updating board name, description, or columns.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;board.updated&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T14:05:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;bugs&quot;,
-    &quot;name&quot;: &quot;Bug Tracker v2&quot;
-  }
-}
-</code></pre>
-<h4 id="board-deleted"><code>board.deleted</code></h4>
-<p>A board was deleted.</p>
-<p><strong>Trigger:</strong> Deleting an empty board via API, CLI, or MCP.</p>
-<p><strong>Example payload:</strong></p>
-<pre><code class="language-json">{
-  &quot;event&quot;: &quot;board.deleted&quot;,
-  &quot;timestamp&quot;: &quot;2026-02-24T14:10:00.000Z&quot;,
-  &quot;data&quot;: {
-    &quot;id&quot;: &quot;bugs&quot;
-  }
-}
-</code></pre>
 
 
 <div class="ref-links">
@@ -794,7 +568,7 @@ function verifySignature(payload, signature, secret) {
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

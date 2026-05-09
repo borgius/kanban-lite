@@ -336,6 +336,28 @@
 </tr>
 </tbody>
 </table>
+<h3 id="get-api-boards-overview">GET <code>/api/boards/overview</code></h3>
+<p><strong>Get boards overview</strong></p>
+<p>Returns aggregated card counts and notification summaries for all boards. Notification counts are <code>null</code> when the <code>card.state</code> plugin is not configured.</p>
+<h4 id="responses-3">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Array of board overview summaries.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>Internal error.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="get-api-boards-boardid">GET <code>/api/boards/{boardId}</code></h3>
 <p><strong>Get board</strong></p>
 <p>Returns the full configuration for a board.</p>
@@ -360,7 +382,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-3">Responses</h4>
+<h4 id="responses-4">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -405,8 +427,8 @@
 </table>
 <h4 id="request-body-2">Request Body</h4>
 <p>Required: Yes</p>
-<p>Any subset of board config fields: <code>name</code>, <code>description</code>, <code>columns</code>, <code>defaultStatus</code>, <code>defaultPriority</code>.</p>
-<h4 id="responses-4">Responses</h4>
+<p>Any subset of board config fields: <code>name</code>, <code>description</code>, <code>columns</code>, <code>metadata</code>, <code>title</code>, <code>defaultStatus</code>, <code>defaultPriority</code>.</p>
+<h4 id="responses-5">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -449,7 +471,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-5">Responses</h4>
+<h4 id="responses-6">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -492,7 +514,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-6">Responses</h4>
+<h4 id="responses-7">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -555,7 +577,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-7">Responses</h4>
+<h4 id="responses-8">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -625,7 +647,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-8">Responses</h4>
+<h4 id="responses-9">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -675,7 +697,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-9">Responses</h4>
+<h4 id="responses-10">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -725,7 +747,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-10">Responses</h4>
+<h4 id="responses-11">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -744,9 +766,9 @@
 </tr>
 </tbody>
 </table>
-<h3 id="get-api-boards-boardid-columns">GET <code>/api/boards/{boardId}/columns</code></h3>
-<p><strong>List board columns</strong></p>
-<p>Returns the ordered column definitions for the specified board, including each column's <code>id</code>, display <code>name</code>, and <code>color</code>.</p>
+<h3 id="get-api-boards-boardid-export">GET <code>/api/boards/{boardId}/export</code></h3>
+<p><strong>Export board settings</strong></p>
+<p>Exports the board configuration plus board-relevant workspace fragments (labels, forms, hook-related plugin config) as a versioned JSON archive. Card content, comments, attachments, and logs are not included.</p>
 <h4 id="parameters-9">Parameters</h4>
 <table>
 <thead>
@@ -768,7 +790,75 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-11">Responses</h4>
+<h4 id="responses-12">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Board settings archive (BoardSettingsExportV1).</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Board not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-import">POST <code>/api/boards/import</code></h3>
+<p><strong>Import board settings</strong></p>
+<p>Imports a board-settings archive produced by the export endpoint. By default, importing a board whose ID already exists returns a 400 error. Pass <code>overwrite: true</code> in the request body to replace the existing board config. Workspace fragments (labels, forms, plugin config) are merged without touching unrelated global settings.</p>
+<h4 id="request-body-5">Request Body</h4>
+<p>Required: Yes</p>
+<p>Schema: object</p>
+<h4 id="responses-13">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Imported board summary.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error or duplicate board ID.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-columns">GET <code>/api/boards/{boardId}/columns</code></h3>
+<p><strong>List board columns</strong></p>
+<p>Returns the ordered column definitions for the specified board, including each column's <code>id</code>, display <code>name</code>, and <code>color</code>.</p>
+<h4 id="parameters-10">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-14">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -791,8 +881,8 @@
 <p>Task operations on the default board</p>
 <h3 id="get-api-tasks">GET <code>/api/tasks</code></h3>
 <p><strong>List tasks</strong></p>
-<p>Returns tasks on the default board. Supports exact free-text search via <code>q</code>, optional fuzzy matching via <code>fuzzy=true</code>, and field-scoped metadata filters via <code>meta.&lt;field&gt;=value</code>. Read models include side-effect-free <code>cardState.unread</code> and <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
-<h4 id="parameters-10">Parameters</h4>
+<p>Returns tasks on the default board. Supports exact free-text search via <code>q</code>, optional fuzzy matching via <code>fuzzy=true</code>, and field-scoped metadata filters via <code>meta.&lt;field&gt;=value</code>. Read models include a server-owned <code>permissions</code> capability envelope plus side-effect-free <code>cardState.unread</code> and <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
+<h4 id="parameters-11">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -869,7 +959,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-12">Responses</h4>
+<h4 id="responses-15">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -887,7 +977,7 @@
 <h3 id="post-api-tasks">POST <code>/api/tasks</code></h3>
 <p><strong>Create task</strong></p>
 <p>Creates a task on the default board. Title is derived from the first Markdown <code># heading</code>. Omitted <code>status</code>/<code>priority</code> fall back to board defaults.</p>
-<h4 id="request-body-5">Request Body</h4>
+<h4 id="request-body-6">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -936,6 +1026,12 @@
 <td>Labels/tags.</td>
 </tr>
 <tr>
+<td><code>tasks</code></td>
+<td>string[]</td>
+<td>No</td>
+<td>Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one.</td>
+</tr>
+<tr>
 <td><code>metadata</code></td>
 <td>object</td>
 <td>No</td>
@@ -961,7 +1057,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-13">Responses</h4>
+<h4 id="responses-16">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -982,8 +1078,8 @@
 </table>
 <h3 id="get-api-tasks-active">GET <code>/api/tasks/active</code></h3>
 <p><strong>Get active task</strong></p>
-<p>Returns the currently active/open task on the default board, or <code>null</code> when no task is active. This is separate from actor-scoped <code>card.state</code> open/unread metadata.</p>
-<h4 id="responses-14">Responses</h4>
+<p>Returns the currently active/open task on the default board, or <code>null</code> when no task is active. Active-task read models include server-owned <code>permissions</code>, resolved form descriptors in <code>resolvedForms</code>, and caller-scoped <code>cardState</code> metadata.</p>
+<h4 id="responses-17">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -1000,144 +1096,8 @@
 </table>
 <h3 id="get-api-tasks-id">GET <code>/api/tasks/{id}</code></h3>
 <p><strong>Get task</strong></p>
-<p>Returns a single task from the default board. The <code>:id</code> segment supports partial ID matching. Read models include side-effect-free <code>cardState.unread</code> and <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
-<h4 id="parameters-11">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-15">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Task.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="put-api-tasks-id">PUT <code>/api/tasks/{id}</code></h3>
-<p><strong>Update task</strong></p>
-<p>Updates an existing task. Only the supplied fields are modified; omitted fields remain unchanged.</p>
+<p>Returns a single task from the default board. The <code>:id</code> segment supports partial ID matching. Read models include server-owned <code>permissions</code>, resolved form descriptors in <code>resolvedForms</code>, and side-effect-free <code>cardState.unread</code> / <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
 <h4 id="parameters-12">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="request-body-6">Request Body</h4>
-<p>Required: Yes</p>
-<p>Any subset of task fields: <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>forms</code>, <code>formData</code>, <code>actions</code>.</p>
-<h4 id="responses-16">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Updated task.</td>
-</tr>
-<tr>
-<td><code>400</code></td>
-<td>Error.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="delete-api-tasks-id">DELETE <code>/api/tasks/{id}</code></h3>
-<p><strong>Delete task</strong></p>
-<p>Soft-deletes a task by moving it into the hidden deleted column.</p>
-<h4 id="parameters-13">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-17">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Deleted.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="post-api-tasks-id-open">POST <code>/api/tasks/{id}/open</code></h3>
-<p><strong>Mark task opened</strong></p>
-<p>Persists an explicit actor-scoped open mutation through the shared SDK <code>card.state</code> APIs. This does not modify active-card UI state.</p>
-<h4 id="parameters-14">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -1169,11 +1129,7 @@
 <tbody>
 <tr>
 <td><code>200</code></td>
-<td>Card-state mutation result.</td>
-</tr>
-<tr>
-<td><code>400</code></td>
-<td>Error.</td>
+<td>Task.</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -1181,10 +1137,10 @@
 </tr>
 </tbody>
 </table>
-<h3 id="post-api-tasks-id-read">POST <code>/api/tasks/{id}/read</code></h3>
-<p><strong>Mark task read</strong></p>
-<p>Persists an explicit actor-scoped unread acknowledgement through the shared SDK <code>card.state</code> APIs. Read-only GET routes never invoke this mutation implicitly.</p>
-<h4 id="parameters-15">Parameters</h4>
+<h3 id="put-api-tasks-id">PUT <code>/api/tasks/{id}</code></h3>
+<p><strong>Update task</strong></p>
+<p>Updates an existing task. Only the supplied fields are modified; omitted fields remain unchanged.</p>
+<h4 id="parameters-13">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -1206,11 +1162,40 @@
 </tbody>
 </table>
 <h4 id="request-body-7">Request Body</h4>
-<p>Required: No</p>
+<p>Required: Yes</p>
+<p>Any subset of task fields: <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>forms</code>, <code>formData</code>, <code>actions</code>.</p>
+<h4 id="responses-19">Responses</h4>
 <table>
 <thead>
 <tr>
-<th>Field</th>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id">DELETE <code>/api/tasks/{id}</code></h3>
+<p><strong>Delete task</strong></p>
+<p>Soft-deletes a task by moving it into the hidden deleted column.</p>
+<h4 id="parameters-14">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
 <th>Type</th>
 <th>Required</th>
 <th>Description</th>
@@ -1218,14 +1203,58 @@
 </thead>
 <tbody>
 <tr>
-<td><code>readThrough</code></td>
-<td>object</td>
-<td>No</td>
-<td>Optional explicit unread cursor to acknowledge instead of the latest activity.</td>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
 </tr>
 </tbody>
 </table>
-<h4 id="responses-19">Responses</h4>
+<h4 id="responses-20">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-open">POST <code>/api/tasks/{id}/open</code></h3>
+<p><strong>Mark task opened</strong></p>
+<p>Persists an explicit actor-scoped open mutation through the shared SDK <code>card.state</code> APIs. This does not modify active-card UI state.</p>
+<h4 id="parameters-15">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-21">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -1248,9 +1277,9 @@
 </tr>
 </tbody>
 </table>
-<h3 id="post-api-tasks-id-forms-formid-submit">POST <code>/api/tasks/{id}/forms/{formId}/submit</code></h3>
-<p><strong>Submit task form</strong></p>
-<p>Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the <code>form.submit</code> webhook event.</p>
+<h3 id="post-api-tasks-id-read">POST <code>/api/tasks/{id}/read</code></h3>
+<p><strong>Mark task read</strong></p>
+<p>Persists an explicit actor-scoped unread acknowledgement through the shared SDK <code>card.state</code> APIs. Read-only GET routes never invoke this mutation implicitly.</p>
 <h4 id="parameters-16">Parameters</h4>
 <table>
 <thead>
@@ -1270,17 +1299,10 @@
 <td>Yes</td>
 <td>Task/card identifier (supports partial ID matching)</td>
 </tr>
-<tr>
-<td><code>formId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Form identifier</td>
-</tr>
 </tbody>
 </table>
 <h4 id="request-body-8">Request Body</h4>
-<p>Required: Yes</p>
+<p>Required: No</p>
 <table>
 <thead>
 <tr>
@@ -1292,14 +1314,14 @@
 </thead>
 <tbody>
 <tr>
-<td><code>data</code></td>
+<td><code>readThrough</code></td>
 <td>object</td>
-<td>Yes</td>
-<td>Submitted field values.</td>
+<td>No</td>
+<td>Optional explicit unread cursor to acknowledge instead of the latest activity.</td>
 </tr>
 </tbody>
 </table>
-<h4 id="responses-20">Responses</h4>
+<h4 id="responses-22">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -1310,18 +1332,65 @@
 <tbody>
 <tr>
 <td><code>200</code></td>
-<td>Submission result.</td>
+<td>Card-state mutation result.</td>
 </tr>
 <tr>
 <td><code>400</code></td>
-<td>Validation error.</td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
 </tr>
 </tbody>
 </table>
-<h3 id="patch-api-tasks-id-move">PATCH <code>/api/tasks/{id}/move</code></h3>
-<p><strong>Move task</strong></p>
-<p>Moves a task to a different column and/or position on the default board.</p>
+<h3 id="get-api-tasks-id-checklist">GET <code>/api/tasks/{id}/checklist</code></h3>
+<p><strong>List checklist items</strong></p>
+<p>Returns the shared checklist read model for the task on the default board.</p>
 <h4 id="parameters-17">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-23">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Checklist read model.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-checklist">POST <code>/api/tasks/{id}/checklist</code></h3>
+<p><strong>Add checklist item</strong></p>
+<p>Appends a new checklist item to the task on the default board and returns the refreshed checklist read model.</p>
+<h4 id="parameters-18">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -1355,20 +1424,20 @@
 </thead>
 <tbody>
 <tr>
-<td><code>status</code></td>
+<td><code>text</code></td>
 <td>string</td>
 <td>Yes</td>
-<td>Target column.</td>
+<td>Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.</td>
 </tr>
 <tr>
-<td><code>position</code></td>
-<td>integer</td>
-<td>No</td>
-<td>Zero-based position (default: <code>0</code>).</td>
+<td><code>expectedToken</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Checklist-wide optimistic-concurrency token returned by the latest checklist read model. Required for checklist adds to avoid lost updates.</td>
 </tr>
 </tbody>
 </table>
-<h4 id="responses-21">Responses</h4>
+<h4 id="responses-24">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -1379,7 +1448,11 @@
 <tbody>
 <tr>
 <td><code>200</code></td>
-<td>Updated task.</td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -1387,52 +1460,9 @@
 </tr>
 </tbody>
 </table>
-<h3 id="delete-api-tasks-id-permanent">DELETE <code>/api/tasks/{id}/permanent</code></h3>
-<p><strong>Permanently delete task</strong></p>
-<p>Permanently and irreversibly deletes a task from the default board. This cannot be undone.</p>
-<h4 id="parameters-18">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-22">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Deleted.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="post-api-tasks-id-actions-action">POST <code>/api/tasks/{id}/actions/{action}</code></h3>
-<p><strong>Trigger task action</strong></p>
-<p>Fires the configured webhook for the named card-level action.</p>
+<h3 id="put-api-tasks-id-checklist-index">PUT <code>/api/tasks/{id}/checklist/{index}</code></h3>
+<p><strong>Edit checklist item</strong></p>
+<p>Edits one checklist item on the task and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
 <h4 id="parameters-19">Parameters</h4>
 <table>
 <thead>
@@ -1453,166 +1483,11 @@
 <td>Task/card identifier (supports partial ID matching)</td>
 </tr>
 <tr>
-<td><code>action</code></td>
+<td><code>index</code></td>
 <td>path</td>
-<td>string</td>
+<td>integer</td>
 <td>Yes</td>
-<td>Action key</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-23">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>204</code></td>
-<td>Triggered.</td>
-</tr>
-<tr>
-<td><code>400</code></td>
-<td>Error.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h2 id="board-tasks">Board Tasks</h2>
-<p>Board-scoped task operations</p>
-<h3 id="get-api-boards-boardid-tasks">GET <code>/api/boards/{boardId}/tasks</code></h3>
-<p><strong>List tasks (board-scoped)</strong></p>
-<p>Returns tasks for the specified board. Supports the same <code>q</code>, <code>fuzzy</code>, <code>meta.*</code>, and field filters as <code>/api/tasks</code>. Read models include side-effect-free <code>cardState.unread</code> and <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
-<h4 id="parameters-20">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
-<td><code>q</code></td>
-<td>query</td>
-<td>string</td>
-<td>No</td>
-<td>Free-text search. May include inline <code>meta.field: value</code> tokens.</td>
-</tr>
-<tr>
-<td><code>fuzzy</code></td>
-<td>query</td>
-<td>boolean</td>
-<td>No</td>
-<td>Enable fuzzy matching for free-text search and metadata tokens.</td>
-</tr>
-<tr>
-<td><code>status</code></td>
-<td>query</td>
-<td>string</td>
-<td>No</td>
-<td>Filter by status.</td>
-</tr>
-<tr>
-<td><code>priority</code></td>
-<td>query</td>
-<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
-<td>No</td>
-<td>Filter by priority.</td>
-</tr>
-<tr>
-<td><code>assignee</code></td>
-<td>query</td>
-<td>string</td>
-<td>No</td>
-<td>Filter by assignee name.</td>
-</tr>
-<tr>
-<td><code>label</code></td>
-<td>query</td>
-<td>string</td>
-<td>No</td>
-<td>Filter by label.</td>
-</tr>
-<tr>
-<td><code>labelGroup</code></td>
-<td>query</td>
-<td>string</td>
-<td>No</td>
-<td>Filter by label group name.</td>
-</tr>
-<tr>
-<td><code>includeDeleted</code></td>
-<td>query</td>
-<td>boolean</td>
-<td>No</td>
-<td>Include soft-deleted tasks.</td>
-</tr>
-<tr>
-<td><code>meta.&lt;field&gt;</code></td>
-<td>query</td>
-<td>string</td>
-<td>No</td>
-<td>Field-scoped metadata filter. Repeat for multiple metadata fields.</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-24">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Task list.</td>
-</tr>
-<tr>
-<td><code>400</code></td>
-<td>Error.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="post-api-boards-boardid-tasks">POST <code>/api/boards/{boardId}/tasks</code></h3>
-<p><strong>Create task (board-scoped)</strong></p>
-<p>Creates a task on the specified board. Title is derived from the first Markdown <code># heading</code>. Omitted <code>status</code>/<code>priority</code> fall back to the board defaults.</p>
-<h4 id="parameters-21">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
+<td>Zero-based checklist item index</td>
 </tr>
 </tbody>
 </table>
@@ -1629,64 +1504,16 @@
 </thead>
 <tbody>
 <tr>
-<td><code>content</code></td>
+<td><code>text</code></td>
 <td>string</td>
 <td>Yes</td>
-<td>Markdown content. Task title is derived from the first <code># heading</code>.</td>
+<td>Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.</td>
 </tr>
 <tr>
-<td><code>status</code></td>
+<td><code>expectedRaw</code></td>
 <td>string</td>
 <td>No</td>
-<td>Initial status (defaults to board default).</td>
-</tr>
-<tr>
-<td><code>priority</code></td>
-<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
-<td>No</td>
-<td>Priority level (default: <code>medium</code>).</td>
-</tr>
-<tr>
-<td><code>assignee</code></td>
-<td>string</td>
-<td>No</td>
-<td>Assigned team member.</td>
-</tr>
-<tr>
-<td><code>dueDate</code></td>
-<td>string</td>
-<td>No</td>
-<td>Due date (ISO 8601).</td>
-</tr>
-<tr>
-<td><code>labels</code></td>
-<td>string[]</td>
-<td>No</td>
-<td>Labels/tags.</td>
-</tr>
-<tr>
-<td><code>metadata</code></td>
-<td>object</td>
-<td>No</td>
-<td>Arbitrary user-defined key/value metadata.</td>
-</tr>
-<tr>
-<td><code>forms</code></td>
-<td>array</td>
-<td>No</td>
-<td>Attached forms — named workspace references (<code>{ &quot;name&quot;: &quot;...&quot; }</code>) or inline definitions.</td>
-</tr>
-<tr>
-<td><code>formData</code></td>
-<td>object</td>
-<td>No</td>
-<td>Per-form saved data keyed by resolved form ID.</td>
-</tr>
-<tr>
-<td><code>actions</code></td>
-<td>array</td>
-<td>No</td>
-<td>Action names or map of key → title available on this card.</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the edit is applied.</td>
 </tr>
 </tbody>
 </table>
@@ -1700,19 +1527,23 @@
 </thead>
 <tbody>
 <tr>
-<td><code>201</code></td>
-<td>Created.</td>
+<td><code>200</code></td>
+<td>Updated checklist.</td>
 </tr>
 <tr>
 <td><code>400</code></td>
 <td>Validation error.</td>
 </tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
 </tbody>
 </table>
-<h3 id="get-api-boards-boardid-tasks-active">GET <code>/api/boards/{boardId}/tasks/active</code></h3>
-<p><strong>Get active task (board-scoped)</strong></p>
-<p>Returns the currently active/open task for the board, or <code>null</code> when none is active. This is separate from actor-scoped <code>card.state</code> open/unread metadata.</p>
-<h4 id="parameters-22">Parameters</h4>
+<h3 id="delete-api-tasks-id-checklist-index">DELETE <code>/api/tasks/{id}/checklist/{index}</code></h3>
+<p><strong>Delete checklist item</strong></p>
+<p>Deletes one checklist item on the task and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-20">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -1725,11 +1556,38 @@
 </thead>
 <tbody>
 <tr>
-<td><code>boardId</code></td>
+<td><code>id</code></td>
 <td>path</td>
 <td>string</td>
 <td>Yes</td>
-<td>Board identifier</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>path</td>
+<td>integer</td>
+<td>Yes</td>
+<td>Zero-based checklist item index</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-11">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expectedRaw</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.</td>
 </tr>
 </tbody>
 </table>
@@ -1744,110 +1602,11 @@
 <tbody>
 <tr>
 <td><code>200</code></td>
-<td>Active task or null.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="get-api-boards-boardid-tasks-id">GET <code>/api/boards/{boardId}/tasks/{id}</code></h3>
-<p><strong>Get task (board-scoped)</strong></p>
-<p>Returns a single task from the specified board. The <code>:id</code> segment supports partial ID matching. Read models include side-effect-free <code>cardState.unread</code> and <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
-<h4 id="parameters-23">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-27">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Task.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="put-api-boards-boardid-tasks-id">PUT <code>/api/boards/{boardId}/tasks/{id}</code></h3>
-<p><strong>Update task (board-scoped)</strong></p>
-<p>Updates fields of a task. Only supplied fields are modified; omitted fields remain unchanged.</p>
-<h4 id="parameters-24">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="request-body-11">Request Body</h4>
-<p>Required: Yes</p>
-<p>Any subset of task fields: <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>forms</code>, <code>formData</code>, <code>actions</code>.</p>
-<h4 id="responses-28">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Updated task.</td>
+<td>Updated checklist.</td>
 </tr>
 <tr>
 <td><code>400</code></td>
-<td>Error.</td>
+<td>Validation error.</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -1855,10 +1614,10 @@
 </tr>
 </tbody>
 </table>
-<h3 id="delete-api-boards-boardid-tasks-id">DELETE <code>/api/boards/{boardId}/tasks/{id}</code></h3>
-<p><strong>Delete task (board-scoped)</strong></p>
-<p>Soft-deletes the task by moving it to the hidden deleted column.</p>
-<h4 id="parameters-25">Parameters</h4>
+<h3 id="post-api-tasks-id-checklist-index-check">POST <code>/api/tasks/{id}/checklist/{index}/check</code></h3>
+<p><strong>Check checklist item</strong></p>
+<p>Marks one checklist item complete and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-21">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -1871,122 +1630,18 @@
 </thead>
 <tbody>
 <tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
 <td><code>id</code></td>
 <td>path</td>
 <td>string</td>
 <td>Yes</td>
 <td>Task/card identifier (supports partial ID matching)</td>
 </tr>
-</tbody>
-</table>
-<h4 id="responses-29">Responses</h4>
-<table>
-<thead>
 <tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Deleted.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="post-api-boards-boardid-tasks-id-open">POST <code>/api/boards/{boardId}/tasks/{id}/open</code></h3>
-<p><strong>Mark task opened (board-scoped)</strong></p>
-<p>Persists an explicit actor-scoped open mutation through the shared SDK <code>card.state</code> APIs. This does not modify active-card UI state.</p>
-<h4 id="parameters-26">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>boardId</code></td>
+<td><code>index</code></td>
 <td>path</td>
-<td>string</td>
+<td>integer</td>
 <td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
-</tr>
-</tbody>
-</table>
-<h4 id="responses-30">Responses</h4>
-<table>
-<thead>
-<tr>
-<th>Status</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>200</code></td>
-<td>Card-state mutation result.</td>
-</tr>
-<tr>
-<td><code>400</code></td>
-<td>Error.</td>
-</tr>
-<tr>
-<td><code>404</code></td>
-<td>Not found.</td>
-</tr>
-</tbody>
-</table>
-<h3 id="post-api-boards-boardid-tasks-id-read">POST <code>/api/boards/{boardId}/tasks/{id}/read</code></h3>
-<p><strong>Mark task read (board-scoped)</strong></p>
-<p>Persists an explicit actor-scoped unread acknowledgement through the shared SDK <code>card.state</code> APIs. Read-only GET routes never invoke this mutation implicitly.</p>
-<h4 id="parameters-27">Parameters</h4>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>In</th>
-<th>Type</th>
-<th>Required</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
-<td><code>id</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Task/card identifier (supports partial ID matching)</td>
+<td>Zero-based checklist item index</td>
 </tr>
 </tbody>
 </table>
@@ -2003,14 +1658,14 @@
 </thead>
 <tbody>
 <tr>
-<td><code>readThrough</code></td>
-<td>object</td>
+<td><code>expectedRaw</code></td>
+<td>string</td>
 <td>No</td>
-<td>Optional explicit unread cursor to acknowledge instead of the latest activity.</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.</td>
 </tr>
 </tbody>
 </table>
-<h4 id="responses-31">Responses</h4>
+<h4 id="responses-27">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2021,11 +1676,11 @@
 <tbody>
 <tr>
 <td><code>200</code></td>
-<td>Card-state mutation result.</td>
+<td>Updated checklist.</td>
 </tr>
 <tr>
 <td><code>400</code></td>
-<td>Error.</td>
+<td>Validation error.</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -2033,10 +1688,10 @@
 </tr>
 </tbody>
 </table>
-<h3 id="patch-api-boards-boardid-tasks-id-move">PATCH <code>/api/boards/{boardId}/tasks/{id}/move</code></h3>
-<p><strong>Move task (board-scoped)</strong></p>
-<p>Moves a task to a different column and/or position within the board.</p>
-<h4 id="parameters-28">Parameters</h4>
+<h3 id="post-api-tasks-id-checklist-index-uncheck">POST <code>/api/tasks/{id}/checklist/{index}/uncheck</code></h3>
+<p><strong>Uncheck checklist item</strong></p>
+<p>Marks one checklist item incomplete and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-22">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2049,23 +1704,23 @@
 </thead>
 <tbody>
 <tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
-<tr>
 <td><code>id</code></td>
 <td>path</td>
 <td>string</td>
 <td>Yes</td>
 <td>Task/card identifier (supports partial ID matching)</td>
 </tr>
+<tr>
+<td><code>index</code></td>
+<td>path</td>
+<td>integer</td>
+<td>Yes</td>
+<td>Zero-based checklist item index</td>
+</tr>
 </tbody>
 </table>
 <h4 id="request-body-13">Request Body</h4>
-<p>Required: Yes</p>
+<p>Required: No</p>
 <table>
 <thead>
 <tr>
@@ -2077,20 +1732,14 @@
 </thead>
 <tbody>
 <tr>
-<td><code>status</code></td>
+<td><code>expectedRaw</code></td>
 <td>string</td>
-<td>Yes</td>
-<td>Target column.</td>
-</tr>
-<tr>
-<td><code>position</code></td>
-<td>integer</td>
 <td>No</td>
-<td>Zero-based position (default: <code>0</code>).</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.</td>
 </tr>
 </tbody>
 </table>
-<h4 id="responses-32">Responses</h4>
+<h4 id="responses-28">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2101,7 +1750,11 @@
 <tbody>
 <tr>
 <td><code>200</code></td>
-<td>Updated task.</td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
 </tr>
 <tr>
 <td><code>404</code></td>
@@ -2109,10 +1762,10 @@
 </tr>
 </tbody>
 </table>
-<h3 id="post-api-boards-boardid-tasks-id-forms-formid-submit">POST <code>/api/boards/{boardId}/tasks/{id}/forms/{formId}/submit</code></h3>
-<p><strong>Submit task form (board-scoped)</strong></p>
+<h3 id="post-api-tasks-id-forms-formid-submit">POST <code>/api/tasks/{id}/forms/{formId}/submit</code></h3>
+<p><strong>Submit task form</strong></p>
 <p>Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the <code>form.submit</code> webhook event.</p>
-<h4 id="parameters-29">Parameters</h4>
+<h4 id="parameters-23">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2124,13 +1777,6 @@
 </tr>
 </thead>
 <tbody>
-<tr>
-<td><code>boardId</code></td>
-<td>path</td>
-<td>string</td>
-<td>Yes</td>
-<td>Board identifier</td>
-</tr>
 <tr>
 <td><code>id</code></td>
 <td>path</td>
@@ -2167,7 +1813,1341 @@
 </tr>
 </tbody>
 </table>
+<h4 id="responses-29">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Submission result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="patch-api-tasks-id-move">PATCH <code>/api/tasks/{id}/move</code></h3>
+<p><strong>Move task</strong></p>
+<p>Moves a task to a different column and/or position on the default board.</p>
+<h4 id="parameters-24">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-15">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Target column.</td>
+</tr>
+<tr>
+<td><code>position</code></td>
+<td>integer</td>
+<td>No</td>
+<td>Zero-based position (default: <code>0</code>).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-30">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-tasks-id-permanent">DELETE <code>/api/tasks/{id}/permanent</code></h3>
+<p><strong>Permanently delete task</strong></p>
+<p>Permanently and irreversibly deletes a task from the default board. This cannot be undone.</p>
+<h4 id="parameters-25">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-31">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-tasks-id-actions-action">POST <code>/api/tasks/{id}/actions/{action}</code></h3>
+<p><strong>Trigger task action</strong></p>
+<p>Fires the configured webhook for the named card-level action.</p>
+<h4 id="parameters-26">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Action key</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-32">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>204</code></td>
+<td>Triggered.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="board-tasks">Board Tasks</h2>
+<p>Board-scoped task operations</p>
+<h3 id="get-api-boards-boardid-tasks">GET <code>/api/boards/{boardId}/tasks</code></h3>
+<p><strong>List tasks (board-scoped)</strong></p>
+<p>Returns tasks for the specified board. Supports the same <code>q</code>, <code>fuzzy</code>, <code>meta.*</code>, and field filters as <code>/api/tasks</code>. Read models include a server-owned <code>permissions</code> capability envelope plus side-effect-free <code>cardState.unread</code> and <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
+<h4 id="parameters-27">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>q</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Free-text search. May include inline <code>meta.field: value</code> tokens.</td>
+</tr>
+<tr>
+<td><code>fuzzy</code></td>
+<td>query</td>
+<td>boolean</td>
+<td>No</td>
+<td>Enable fuzzy matching for free-text search and metadata tokens.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by status.</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td>query</td>
+<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
+<td>No</td>
+<td>Filter by priority.</td>
+</tr>
+<tr>
+<td><code>assignee</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by assignee name.</td>
+</tr>
+<tr>
+<td><code>label</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by label.</td>
+</tr>
+<tr>
+<td><code>labelGroup</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Filter by label group name.</td>
+</tr>
+<tr>
+<td><code>includeDeleted</code></td>
+<td>query</td>
+<td>boolean</td>
+<td>No</td>
+<td>Include soft-deleted tasks.</td>
+</tr>
+<tr>
+<td><code>meta.&lt;field&gt;</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Field-scoped metadata filter. Repeat for multiple metadata fields.</td>
+</tr>
+</tbody>
+</table>
 <h4 id="responses-33">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Task list.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks">POST <code>/api/boards/{boardId}/tasks</code></h3>
+<p><strong>Create task (board-scoped)</strong></p>
+<p>Creates a task on the specified board. Title is derived from the first Markdown <code># heading</code>. Omitted <code>status</code>/<code>priority</code> fall back to the board defaults.</p>
+<h4 id="parameters-28">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-16">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Markdown content. Task title is derived from the first <code># heading</code>.</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>No</td>
+<td>Initial status (defaults to board default).</td>
+</tr>
+<tr>
+<td><code>priority</code></td>
+<td><code>critical</code> | <code>high</code> | <code>medium</code> | <code>low</code></td>
+<td>No</td>
+<td>Priority level (default: <code>medium</code>).</td>
+</tr>
+<tr>
+<td><code>assignee</code></td>
+<td>string</td>
+<td>No</td>
+<td>Assigned team member.</td>
+</tr>
+<tr>
+<td><code>dueDate</code></td>
+<td>string</td>
+<td>No</td>
+<td>Due date (ISO 8601).</td>
+</tr>
+<tr>
+<td><code>labels</code></td>
+<td>string[]</td>
+<td>No</td>
+<td>Labels/tags.</td>
+</tr>
+<tr>
+<td><code>tasks</code></td>
+<td>string[]</td>
+<td>No</td>
+<td>Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one.</td>
+</tr>
+<tr>
+<td><code>metadata</code></td>
+<td>object</td>
+<td>No</td>
+<td>Arbitrary user-defined key/value metadata.</td>
+</tr>
+<tr>
+<td><code>forms</code></td>
+<td>array</td>
+<td>No</td>
+<td>Attached forms — named workspace references (<code>{ &quot;name&quot;: &quot;...&quot; }</code>) or inline definitions.</td>
+</tr>
+<tr>
+<td><code>formData</code></td>
+<td>object</td>
+<td>No</td>
+<td>Per-form saved data keyed by resolved form ID.</td>
+</tr>
+<tr>
+<td><code>actions</code></td>
+<td>array</td>
+<td>No</td>
+<td>Action names or map of key → title available on this card.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-34">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>201</code></td>
+<td>Created.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-tasks-active">GET <code>/api/boards/{boardId}/tasks/active</code></h3>
+<p><strong>Get active task (board-scoped)</strong></p>
+<p>Returns the currently active/open task for the board, or <code>null</code> when none is active. Active-task read models include server-owned <code>permissions</code>, resolved form descriptors in <code>resolvedForms</code>, and caller-scoped <code>cardState</code> metadata.</p>
+<h4 id="parameters-29">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-35">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Active task or null.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-tasks-id">GET <code>/api/boards/{boardId}/tasks/{id}</code></h3>
+<p><strong>Get task (board-scoped)</strong></p>
+<p>Returns a single task from the specified board. The <code>:id</code> segment supports partial ID matching. Read models include server-owned <code>permissions</code>, resolved form descriptors in <code>resolvedForms</code>, and side-effect-free <code>cardState.unread</code> / <code>cardState.open</code> metadata for the current actor; this is separate from active-task UI state.</p>
+<h4 id="parameters-30">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-36">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-boards-boardid-tasks-id">PUT <code>/api/boards/{boardId}/tasks/{id}</code></h3>
+<p><strong>Update task (board-scoped)</strong></p>
+<p>Updates fields of a task. Only supplied fields are modified; omitted fields remain unchanged.</p>
+<h4 id="parameters-31">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-17">Request Body</h4>
+<p>Required: Yes</p>
+<p>Any subset of task fields: <code>content</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>dueDate</code>, <code>labels</code>, <code>metadata</code>, <code>forms</code>, <code>formData</code>, <code>actions</code>.</p>
+<h4 id="responses-37">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid-tasks-id">DELETE <code>/api/boards/{boardId}/tasks/{id}</code></h3>
+<p><strong>Delete task (board-scoped)</strong></p>
+<p>Soft-deletes the task by moving it to the hidden deleted column.</p>
+<h4 id="parameters-32">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-38">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Deleted.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-open">POST <code>/api/boards/{boardId}/tasks/{id}/open</code></h3>
+<p><strong>Mark task opened (board-scoped)</strong></p>
+<p>Persists an explicit actor-scoped open mutation through the shared SDK <code>card.state</code> APIs. This does not modify active-card UI state.</p>
+<h4 id="parameters-33">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-39">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Card-state mutation result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-read">POST <code>/api/boards/{boardId}/tasks/{id}/read</code></h3>
+<p><strong>Mark task read (board-scoped)</strong></p>
+<p>Persists an explicit actor-scoped unread acknowledgement through the shared SDK <code>card.state</code> APIs. Read-only GET routes never invoke this mutation implicitly.</p>
+<h4 id="parameters-34">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-18">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>readThrough</code></td>
+<td>object</td>
+<td>No</td>
+<td>Optional explicit unread cursor to acknowledge instead of the latest activity.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-40">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Card-state mutation result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-boards-boardid-tasks-id-checklist">GET <code>/api/boards/{boardId}/tasks/{id}/checklist</code></h3>
+<p><strong>List checklist items (board-scoped)</strong></p>
+<p>Returns the shared checklist read model for one task on the specified board.</p>
+<h4 id="parameters-35">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-41">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Checklist read model.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-checklist">POST <code>/api/boards/{boardId}/tasks/{id}/checklist</code></h3>
+<p><strong>Add checklist item (board-scoped)</strong></p>
+<p>Appends a new checklist item to the task on the specified board and returns the refreshed checklist read model.</p>
+<h4 id="parameters-36">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-19">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.</td>
+</tr>
+<tr>
+<td><code>expectedToken</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Checklist-wide optimistic-concurrency token returned by the latest checklist read model. Required for checklist adds to avoid lost updates.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-42">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-boards-boardid-tasks-id-checklist-index">PUT <code>/api/boards/{boardId}/tasks/{id}/checklist/{index}</code></h3>
+<p><strong>Edit checklist item (board-scoped)</strong></p>
+<p>Edits one checklist item on the specified board and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-37">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>path</td>
+<td>integer</td>
+<td>Yes</td>
+<td>Zero-based checklist item index</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-20">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>text</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.</td>
+</tr>
+<tr>
+<td><code>expectedRaw</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the edit is applied.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-43">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-boards-boardid-tasks-id-checklist-index">DELETE <code>/api/boards/{boardId}/tasks/{id}/checklist/{index}</code></h3>
+<p><strong>Delete checklist item (board-scoped)</strong></p>
+<p>Deletes one checklist item on the specified board and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-38">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>path</td>
+<td>integer</td>
+<td>Yes</td>
+<td>Zero-based checklist item index</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-21">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expectedRaw</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-44">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-checklist-index-check">POST <code>/api/boards/{boardId}/tasks/{id}/checklist/{index}/check</code></h3>
+<p><strong>Check checklist item (board-scoped)</strong></p>
+<p>Marks one checklist item complete and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-39">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>path</td>
+<td>integer</td>
+<td>Yes</td>
+<td>Zero-based checklist item index</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-22">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expectedRaw</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-45">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-checklist-index-uncheck">POST <code>/api/boards/{boardId}/tasks/{id}/checklist/{index}/uncheck</code></h3>
+<p><strong>Uncheck checklist item (board-scoped)</strong></p>
+<p>Marks one checklist item incomplete and returns the refreshed checklist read model. Supply <code>expectedRaw</code> to guard against stale concurrent edits.</p>
+<h4 id="parameters-40">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>index</code></td>
+<td>path</td>
+<td>integer</td>
+<td>Yes</td>
+<td>Zero-based checklist item index</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-23">Request Body</h4>
+<p>Required: No</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>expectedRaw</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-46">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated checklist.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Validation error.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="patch-api-boards-boardid-tasks-id-move">PATCH <code>/api/boards/{boardId}/tasks/{id}/move</code></h3>
+<p><strong>Move task (board-scoped)</strong></p>
+<p>Moves a task to a different column and/or position within the board.</p>
+<h4 id="parameters-41">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-24">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>status</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Target column.</td>
+</tr>
+<tr>
+<td><code>position</code></td>
+<td>integer</td>
+<td>No</td>
+<td>Zero-based position (default: <code>0</code>).</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-47">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated task.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Not found.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-boards-boardid-tasks-id-forms-formid-submit">POST <code>/api/boards/{boardId}/tasks/{id}/forms/{formId}/submit</code></h3>
+<p><strong>Submit task form (board-scoped)</strong></p>
+<p>Validates and persists a card form submission. Merge order: config defaults → card attachment defaults / existing formData → matching card metadata → submitted data. Emits the <code>form.submit</code> webhook event.</p>
+<h4 id="parameters-42">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>boardId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Board identifier</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Task/card identifier (supports partial ID matching)</td>
+</tr>
+<tr>
+<td><code>formId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Form identifier</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-25">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>data</code></td>
+<td>object</td>
+<td>Yes</td>
+<td>Submitted field values.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-48">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2189,7 +3169,7 @@
 <h3 id="post-api-boards-boardid-tasks-id-actions-action">POST <code>/api/boards/{boardId}/tasks/{id}/actions/{action}</code></h3>
 <p><strong>Trigger task action (board-scoped)</strong></p>
 <p>Fires the configured webhook for the named card-level action.</p>
-<h4 id="parameters-30">Parameters</h4>
+<h4 id="parameters-43">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2224,7 +3204,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-34">Responses</h4>
+<h4 id="responses-49">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2250,7 +3230,7 @@
 <h3 id="delete-api-boards-boardid-tasks-id-permanent">DELETE <code>/api/boards/{boardId}/tasks/{id}/permanent</code></h3>
 <p><strong>Permanently delete task (board-scoped)</strong></p>
 <p>Permanently and irreversibly removes the task. This cannot be undone.</p>
-<h4 id="parameters-31">Parameters</h4>
+<h4 id="parameters-44">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2278,7 +3258,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-35">Responses</h4>
+<h4 id="responses-50">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2300,7 +3280,7 @@
 <h3 id="post-api-boards-boardid-tasks-id-transfer">POST <code>/api/boards/{boardId}/tasks/{id}/transfer</code></h3>
 <p><strong>Transfer task to another board</strong></p>
 <p>Moves a task from the current board context to the specified destination board. The <code>:boardId</code> path segment is the <strong>destination</strong> board. The source board is the server's currently active board context.</p>
-<h4 id="parameters-32">Parameters</h4>
+<h4 id="parameters-45">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2328,7 +3308,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-15">Request Body</h4>
+<h4 id="request-body-26">Request Body</h4>
 <p>Required: No</p>
 <table>
 <thead>
@@ -2348,7 +3328,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-36">Responses</h4>
+<h4 id="responses-51">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2372,7 +3352,7 @@
 <h3 id="get-api-columns">GET <code>/api/columns</code></h3>
 <p><strong>List columns</strong></p>
 <p>Returns the ordered column definitions for the default board.</p>
-<h4 id="responses-37">Responses</h4>
+<h4 id="responses-52">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2390,7 +3370,7 @@
 <h3 id="post-api-columns">POST <code>/api/columns</code></h3>
 <p><strong>Add column</strong></p>
 <p>Creates a new column on the default board. New columns are appended to the end of the board's current column order.</p>
-<h4 id="request-body-16">Request Body</h4>
+<h4 id="request-body-27">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2422,7 +3402,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-38">Responses</h4>
+<h4 id="responses-53">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2444,7 +3424,7 @@
 <h3 id="put-api-columns-reorder">PUT <code>/api/columns/reorder</code></h3>
 <p><strong>Reorder columns</strong></p>
 <p>Reorders the columns for the specified board (or default board if <code>boardId</code> is omitted).</p>
-<h4 id="parameters-33">Parameters</h4>
+<h4 id="parameters-46">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2465,7 +3445,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-17">Request Body</h4>
+<h4 id="request-body-28">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2485,7 +3465,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-39">Responses</h4>
+<h4 id="responses-54">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2507,7 +3487,7 @@
 <h3 id="put-api-columns-minimized">PUT <code>/api/columns/minimized</code></h3>
 <p><strong>Set minimized columns</strong></p>
 <p>Sets which columns are minimized for the specified board (or default board if <code>boardId</code> is omitted).</p>
-<h4 id="parameters-34">Parameters</h4>
+<h4 id="parameters-47">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2528,7 +3508,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-18">Request Body</h4>
+<h4 id="request-body-29">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2548,7 +3528,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-40">Responses</h4>
+<h4 id="responses-55">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2570,7 +3550,7 @@
 <h3 id="put-api-columns-id">PUT <code>/api/columns/{id}</code></h3>
 <p><strong>Update column</strong></p>
 <p>Updates a column's display name and/or color on the default board.</p>
-<h4 id="parameters-35">Parameters</h4>
+<h4 id="parameters-48">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2591,7 +3571,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-19">Request Body</h4>
+<h4 id="request-body-30">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2617,7 +3597,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-41">Responses</h4>
+<h4 id="responses-56">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2639,7 +3619,7 @@
 <h3 id="delete-api-columns-id">DELETE <code>/api/columns/{id}</code></h3>
 <p><strong>Delete column</strong></p>
 <p>Deletes a column on the default board. Fails if the column still contains tasks.</p>
-<h4 id="parameters-36">Parameters</h4>
+<h4 id="parameters-49">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2660,7 +3640,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-42">Responses</h4>
+<h4 id="responses-57">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2684,7 +3664,7 @@
 <h3 id="get-api-tasks-id-comments">GET <code>/api/tasks/{id}/comments</code></h3>
 <p><strong>List comments</strong></p>
 <p>Returns all comments currently attached to the task, in stored order.</p>
-<h4 id="parameters-37">Parameters</h4>
+<h4 id="parameters-50">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2705,7 +3685,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-43">Responses</h4>
+<h4 id="responses-58">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2727,7 +3707,7 @@
 <h3 id="post-api-tasks-id-comments">POST <code>/api/tasks/{id}/comments</code></h3>
 <p><strong>Add comment</strong></p>
 <p>Adds a new comment to the task and emits the <code>comment.created</code> webhook event.</p>
-<h4 id="parameters-38">Parameters</h4>
+<h4 id="parameters-51">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2748,7 +3728,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-20">Request Body</h4>
+<h4 id="request-body-31">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2774,7 +3754,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-44">Responses</h4>
+<h4 id="responses-59">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2800,7 +3780,7 @@
 <h3 id="put-api-tasks-id-comments-commentid">PUT <code>/api/tasks/{id}/comments/{commentId}</code></h3>
 <p><strong>Update comment</strong></p>
 <p>Updates the Markdown content of an existing comment.</p>
-<h4 id="parameters-39">Parameters</h4>
+<h4 id="parameters-52">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2828,7 +3808,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-21">Request Body</h4>
+<h4 id="request-body-32">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2848,7 +3828,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-45">Responses</h4>
+<h4 id="responses-60">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2870,7 +3850,7 @@
 <h3 id="delete-api-tasks-id-comments-commentid">DELETE <code>/api/tasks/{id}/comments/{commentId}</code></h3>
 <p><strong>Delete comment</strong></p>
 <p>Deletes the specified comment from the task.</p>
-<h4 id="parameters-40">Parameters</h4>
+<h4 id="parameters-53">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2898,7 +3878,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-46">Responses</h4>
+<h4 id="responses-61">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2922,7 +3902,7 @@
 <h3 id="post-api-tasks-id-attachments">POST <code>/api/tasks/{id}/attachments</code></h3>
 <p><strong>Upload attachments</strong></p>
 <p>Uploads one or more files as task attachments. Files are sent as base64-encoded strings in a JSON body and stored through the active attachment-storage provider.</p>
-<h4 id="parameters-41">Parameters</h4>
+<h4 id="parameters-54">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -2943,7 +3923,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-22">Request Body</h4>
+<h4 id="request-body-33">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -2963,7 +3943,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-47">Responses</h4>
+<h4 id="responses-62">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -2989,7 +3969,7 @@
 <h3 id="get-api-tasks-id-attachments-filename">GET <code>/api/tasks/{id}/attachments/{filename}</code></h3>
 <p><strong>Download attachment</strong></p>
 <p>Materializes and streams the named attachment back to the client. Most browsers render known types (PDFs, images) inline unless <code>?download=1</code> is set.</p>
-<h4 id="parameters-42">Parameters</h4>
+<h4 id="parameters-55">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3024,7 +4004,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-48">Responses</h4>
+<h4 id="responses-63">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3050,7 +4030,7 @@
 <h3 id="delete-api-tasks-id-attachments-filename">DELETE <code>/api/tasks/{id}/attachments/{filename}</code></h3>
 <p><strong>Delete attachment</strong></p>
 <p>Removes the named attachment from the task and deletes the provider-backed payload when supported.</p>
-<h4 id="parameters-43">Parameters</h4>
+<h4 id="parameters-56">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3078,7 +4058,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-49">Responses</h4>
+<h4 id="responses-64">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3102,7 +4082,7 @@
 <h3 id="get-api-boards-boardid-logs">GET <code>/api/boards/{boardId}/logs</code></h3>
 <p><strong>List board logs</strong></p>
 <p>Returns all board-level log entries.</p>
-<h4 id="parameters-44">Parameters</h4>
+<h4 id="parameters-57">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3123,7 +4103,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-50">Responses</h4>
+<h4 id="responses-65">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3141,7 +4121,7 @@
 <h3 id="post-api-boards-boardid-logs">POST <code>/api/boards/{boardId}/logs</code></h3>
 <p><strong>Add board log</strong></p>
 <p>Appends a log entry to the board.</p>
-<h4 id="parameters-45">Parameters</h4>
+<h4 id="parameters-58">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3162,7 +4142,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-23">Request Body</h4>
+<h4 id="request-body-34">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -3200,7 +4180,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-51">Responses</h4>
+<h4 id="responses-66">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3222,7 +4202,7 @@
 <h3 id="delete-api-boards-boardid-logs">DELETE <code>/api/boards/{boardId}/logs</code></h3>
 <p><strong>Clear board logs</strong></p>
 <p>Removes all board-level log entries.</p>
-<h4 id="parameters-46">Parameters</h4>
+<h4 id="parameters-59">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3243,7 +4223,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-52">Responses</h4>
+<h4 id="responses-67">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3261,7 +4241,7 @@
 <h3 id="get-api-tasks-id-logs">GET <code>/api/tasks/{id}/logs</code></h3>
 <p><strong>List task logs</strong></p>
 <p>Returns all log entries for the task.</p>
-<h4 id="parameters-47">Parameters</h4>
+<h4 id="parameters-60">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3282,7 +4262,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-53">Responses</h4>
+<h4 id="responses-68">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3304,7 +4284,7 @@
 <h3 id="post-api-tasks-id-logs">POST <code>/api/tasks/{id}/logs</code></h3>
 <p><strong>Add task log</strong></p>
 <p>Appends a log entry to the task.</p>
-<h4 id="parameters-48">Parameters</h4>
+<h4 id="parameters-61">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3325,7 +4305,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-24">Request Body</h4>
+<h4 id="request-body-35">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -3363,7 +4343,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-54">Responses</h4>
+<h4 id="responses-69">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3389,7 +4369,7 @@
 <h3 id="delete-api-tasks-id-logs">DELETE <code>/api/tasks/{id}/logs</code></h3>
 <p><strong>Clear task logs</strong></p>
 <p>Removes all log entries for the task.</p>
-<h4 id="parameters-49">Parameters</h4>
+<h4 id="parameters-62">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3410,7 +4390,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-55">Responses</h4>
+<h4 id="responses-70">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3434,7 +4414,7 @@
 <h3 id="get-api-settings">GET <code>/api/settings</code></h3>
 <p><strong>Get settings</strong></p>
 <p>Returns the workspace's current display and behavior settings used by the UI surfaces.</p>
-<h4 id="responses-56">Responses</h4>
+<h4 id="responses-71">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3452,7 +4432,7 @@
 <h3 id="put-api-settings">PUT <code>/api/settings</code></h3>
 <p><strong>Update settings</strong></p>
 <p>Updates workspace display settings and immediately broadcasts the change to connected WebSocket clients.</p>
-<h4 id="request-body-25">Request Body</h4>
+<h4 id="request-body-36">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -3495,12 +4475,6 @@
 <td>—</td>
 </tr>
 <tr>
-<td><code>compactMode</code></td>
-<td>boolean</td>
-<td>No</td>
-<td>—</td>
-</tr>
-<tr>
 <td><code>showDeletedColumn</code></td>
 <td>boolean</td>
 <td>No</td>
@@ -3532,7 +4506,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-57">Responses</h4>
+<h4 id="responses-72">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3551,12 +4525,306 @@
 </tr>
 </tbody>
 </table>
+<h2 id="plugins">Plugins</h2>
+<p>Plugin discovery, selection, options, and guarded installation</p>
+<h3 id="get-api-plugin-settings">GET <code>/api/plugin-settings</code></h3>
+<p><strong>List plugin providers</strong></p>
+<p>Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. <code>config.storage</code> rows include configured-versus-effective resolution details, including explicit failure or degraded/read-only state when the SDK reports one. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform <code>plugin-settings.read</code>; redaction supplements authorization rather than replacing it.</p>
+<h4 id="responses-73">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Capability-grouped plugin inventory.</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Authentication required.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Authenticated caller is not allowed to perform <code>plugin-settings.read</code>.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>Unable to list plugin settings.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-plugin-settings-capability-providerid">GET <code>/api/plugin-settings/{capability}/{providerId}</code></h3>
+<p><strong>Read plugin settings</strong></p>
+<p>Returns the redacted plugin-settings read model for one provider. <code>config.storage</code> reads include configured-versus-effective resolution details so clients can distinguish explicit configured state from the current effective provider and any surfaced failure/degraded mode. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform <code>plugin-settings.read</code>; allowed reads remain redacted.</p>
+<h4 id="parameters-63">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capability</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Plugin capability namespace (for example <code>auth.identity</code>, <code>card.storage</code>, or <code>config.storage</code>).</td>
+</tr>
+<tr>
+<td><code>providerId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Plugin provider identifier within the selected capability.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-74">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Redacted provider read model.</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Authentication required.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Authenticated caller is not allowed to perform <code>plugin-settings.read</code>.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Provider not found for the requested capability.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>Unable to read plugin settings.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-plugin-settings-capability-providerid-select">PUT <code>/api/plugin-settings/{capability}/{providerId}/select</code></h3>
+<p><strong>Select plugin provider</strong></p>
+<p>Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation. For <code>config.storage</code>, Worker topology-changing updates are rejected as explicit runtime-mutation errors instead of silently swapping the effective provider.</p>
+<h4 id="parameters-64">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capability</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Plugin capability namespace (for example <code>auth.identity</code>, <code>card.storage</code>, or <code>config.storage</code>).</td>
+</tr>
+<tr>
+<td><code>providerId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Plugin provider identifier within the selected capability.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-75">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated redacted provider read model after selection.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Rejected runtime mutation or invalid request payload.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Forbidden.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Provider not found for the requested capability.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>Unable to persist the selected provider.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="put-api-plugin-settings-capability-providerid-options">PUT <code>/api/plugin-settings/{capability}/{providerId}/options</code></h3>
+<p><strong>Update plugin options</strong></p>
+<p>Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets. <code>config.storage</code> responses continue to surface configured-versus-effective resolution and any explicit failure/degraded state reported by the SDK.</p>
+<h4 id="parameters-65">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>capability</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Plugin capability namespace (for example <code>auth.identity</code>, <code>card.storage</code>, or <code>config.storage</code>).</td>
+</tr>
+<tr>
+<td><code>providerId</code></td>
+<td>path</td>
+<td>string</td>
+<td>Yes</td>
+<td>Plugin provider identifier within the selected capability.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="request-body-37">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>options</code></td>
+<td>object</td>
+<td>No</td>
+<td>Provider options payload to persist under the selected capability/provider pair.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-76">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Updated redacted provider read model after persisting options.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Invalid options payload or rejected runtime mutation.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Forbidden.</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>Provider not found for the requested capability.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>Unable to persist plugin options.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-plugin-settings-install">POST <code>/api/plugin-settings/install</code></h3>
+<p><strong>Install plugin package</strong></p>
+<p>Runs the guarded in-product installer for exact unscoped <code>kl-*</code> package names only. Responses surface redacted diagnostics and never expose raw installer stdout/stderr.</p>
+<h4 id="request-body-38">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>packageName</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Exact unscoped <code>kl-*</code> package name.</td>
+</tr>
+<tr>
+<td><code>scope</code></td>
+<td><code>workspace</code> | <code>global</code></td>
+<td>Yes</td>
+<td>Install destination.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-77">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Redacted install result.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Rejected input or redacted install failure.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Forbidden.</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>Unexpected installer error.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="labels">Labels</h2>
 <p>Label definitions and cascading renames</p>
 <h3 id="get-api-labels">GET <code>/api/labels</code></h3>
 <p><strong>List labels</strong></p>
 <p>Returns all label definitions with their colors and groups.</p>
-<h4 id="responses-58">Responses</h4>
+<h4 id="responses-78">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3574,7 +4842,7 @@
 <h3 id="put-api-labels-name">PUT <code>/api/labels/{name}</code></h3>
 <p><strong>Set label</strong></p>
 <p>Creates or updates a label definition (color and optional group).</p>
-<h4 id="parameters-50">Parameters</h4>
+<h4 id="parameters-66">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3595,7 +4863,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-26">Request Body</h4>
+<h4 id="request-body-39">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -3621,7 +4889,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-59">Responses</h4>
+<h4 id="responses-79">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3643,7 +4911,7 @@
 <h3 id="patch-api-labels-name">PATCH <code>/api/labels/{name}</code></h3>
 <p><strong>Rename label</strong></p>
 <p>Renames a label and cascades the change to all cards that use it.</p>
-<h4 id="parameters-51">Parameters</h4>
+<h4 id="parameters-67">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3664,7 +4932,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-27">Request Body</h4>
+<h4 id="request-body-40">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -3684,7 +4952,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-60">Responses</h4>
+<h4 id="responses-80">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3706,7 +4974,7 @@
 <h3 id="delete-api-labels-name">DELETE <code>/api/labels/{name}</code></h3>
 <p><strong>Delete label</strong></p>
 <p>Deletes a label definition and removes it from all cards that reference it.</p>
-<h4 id="parameters-52">Parameters</h4>
+<h4 id="parameters-68">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3727,7 +4995,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-61">Responses</h4>
+<h4 id="responses-81">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3751,7 +5019,7 @@
 <h3 id="get-api-card-state-status">GET <code>/api/card-state/status</code></h3>
 <p><strong>Get card-state status</strong></p>
 <p>Returns the active <code>card.state</code> provider status for the standalone runtime, including backend family, availability, the stable auth-absent default actor contract, and whether a configured <code>auth.identity</code> provider is currently causing <code>identity-unavailable</code> failures.</p>
-<h4 id="responses-62">Responses</h4>
+<h4 id="responses-82">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3768,8 +5036,8 @@
 </table>
 <h3 id="get-api-workspace">GET <code>/api/workspace</code></h3>
 <p><strong>Get workspace info</strong></p>
-<p>Returns workspace-level connection metadata plus resolved storage, auth, webhook, and <code>card.state</code> provider information, including filesystem watcher support.</p>
-<h4 id="responses-63">Responses</h4>
+<p>Returns workspace-level connection metadata plus resolved storage, auth, webhook, and <code>card.state</code> provider information, including filesystem watcher support and the configured-versus-effective <code>config.storage</code> resolution state.</p>
+<h4 id="responses-83">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3787,7 +5055,7 @@
 <h3 id="get-api-auth">GET <code>/api/auth</code></h3>
 <p><strong>Get auth status</strong></p>
 <p>Returns auth provider metadata plus safe request-scoped token diagnostics for the current standalone HTTP request.</p>
-<h4 id="responses-64">Responses</h4>
+<h4 id="responses-84">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3804,8 +5072,8 @@
 </table>
 <h3 id="get-api-storage">GET <code>/api/storage</code></h3>
 <p><strong>Get storage status</strong></p>
-<p>Returns the active card, attachment, webhook, and <code>card.state</code> provider IDs plus host-facing file/watch metadata.</p>
-<h4 id="responses-65">Responses</h4>
+<p>Returns the active storage providers plus host-facing file/watch metadata and the configured-versus-effective <code>config.storage</code> resolution, including explicit failure or degraded/read-only state when present.</p>
+<h4 id="responses-85">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3820,10 +5088,60 @@
 </tr>
 </tbody>
 </table>
+<h3 id="get-api-events">GET <code>/api/events</code></h3>
+<p><strong>List available events</strong></p>
+<p>Returns discoverable SDK events, including built-in before/after events and any plugin-declared additions. Supports filtering by phase and wildcard mask.</p>
+<h4 id="parameters-69">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>type</code></td>
+<td>query</td>
+<td><code>before</code> | <code>after</code> | <code>all</code></td>
+<td>No</td>
+<td>Optional event phase filter. Defaults to <code>all</code>.</td>
+</tr>
+<tr>
+<td><code>mask</code></td>
+<td>query</td>
+<td>string</td>
+<td>No</td>
+<td>Optional EventEmitter2-style wildcard mask such as <code>task.*</code> or <code>comment.**</code>.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-86">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Available event descriptors.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Invalid type filter.</td>
+</tr>
+</tbody>
+</table>
 <h3 id="post-api-storage-migrate-to-sqlite">POST <code>/api/storage/migrate-to-sqlite</code></h3>
 <p><strong>Migrate to SQLite</strong></p>
-<p>Migrates cards from the built-in markdown provider to the first-party <code>sqlite</code> compatibility provider (<code>kl-sqlite-storage</code>) and updates compatibility config fields in <code>.kanban.json</code>. This endpoint does not migrate into arbitrary external providers.</p>
-<h4 id="request-body-28">Request Body</h4>
+<p>Migrates cards from the built-in markdown provider to the first-party <code>sqlite</code> compatibility provider (<code>kl-plugin-storage-sqlite</code>) and updates compatibility config fields in <code>.kanban.json</code>. This endpoint does not migrate into arbitrary external providers.</p>
+<h4 id="request-body-41">Request Body</h4>
 <p>Required: No</p>
 <table>
 <thead>
@@ -3843,7 +5161,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-66">Responses</h4>
+<h4 id="responses-87">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3865,7 +5183,7 @@
 <h3 id="post-api-storage-migrate-to-markdown">POST <code>/api/storage/migrate-to-markdown</code></h3>
 <p><strong>Migrate to Markdown</strong></p>
 <p>Migrates cards from the built-in SQLite provider back to markdown files and updates compatibility config fields. Existing source data is left in place as a manual backup.</p>
-<h4 id="responses-67">Responses</h4>
+<h4 id="responses-88">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3887,7 +5205,7 @@
 <h3 id="get-api-resolve-path">GET <code>/api/resolve-path</code></h3>
 <p><strong>Resolve path</strong></p>
 <p>Resolves a workspace-relative, absolute, or <code>~</code>-prefixed path to its canonical absolute filesystem path.</p>
-<h4 id="parameters-53">Parameters</h4>
+<h4 id="parameters-70">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -3908,7 +5226,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-68">Responses</h4>
+<h4 id="responses-89">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3927,12 +5245,203 @@
 </tr>
 </tbody>
 </table>
+<h2 id="mobile">Mobile</h2>
+<p>Minimal mobile bootstrap and opaque local-session contract for the Expo field app.</p>
+<h3 id="post-api-mobile-bootstrap">POST <code>/api/mobile/bootstrap</code></h3>
+<p><strong>Resolve mobile workspace bootstrap</strong></p>
+<p>Normalizes a typed workspace origin, deep link, or QR payload into the canonical local-auth mobile bootstrap contract. When a one-time bootstrap token is present, the response keeps the client on the token-redemption branch instead of inventing a second login abstraction.</p>
+<h4 id="request-body-42">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>workspaceOrigin</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Typed workspace origin, app base URL, or canonical link origin.</td>
+</tr>
+<tr>
+<td><code>bootstrapToken</code></td>
+<td>string</td>
+<td>No</td>
+<td>Optional one-time bootstrap token carried by a deep link or QR code.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-90">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Canonical workspace bootstrap metadata.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Invalid workspace origin or request payload.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="post-api-mobile-session">POST <code>/api/mobile/session</code></h3>
+<p><strong>Create a mobile opaque bearer session</strong></p>
+<p>Available when the local standalone auth provider is active. Exchanges local credentials or a validated one-time bootstrap token for a server-backed opaque mobile bearer session without reusing the browser cookie transport.</p>
+<h4 id="request-body-43">Request Body</h4>
+<p>Required: Yes</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>workspaceOrigin</code></td>
+<td>string</td>
+<td>Yes</td>
+<td>Workspace origin to bind to the created mobile session.</td>
+</tr>
+<tr>
+<td><code>username</code></td>
+<td>string</td>
+<td>No</td>
+<td>Local username for direct mobile login.</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>string</td>
+<td>No</td>
+<td>Local password for direct mobile login.</td>
+</tr>
+<tr>
+<td><code>bootstrapToken</code></td>
+<td>string</td>
+<td>No</td>
+<td>One-time bootstrap token to redeem instead of sending credentials.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-91">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Opaque mobile session created successfully.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Invalid payload or missing required fields.</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Invalid credentials or bootstrap token.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Bootstrap token or session is not valid for the requested workspace.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="get-api-mobile-session">GET <code>/api/mobile/session</code></h3>
+<p><strong>Validate a stored mobile session</strong></p>
+<p>Validates a previously issued opaque mobile bearer token for cold-start and resume gating. Shared automation tokens and browser cookie sessions are not accepted here.</p>
+<h4 id="parameters-71">Parameters</h4>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>In</th>
+<th>Type</th>
+<th>Required</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>workspaceOrigin</code></td>
+<td>query</td>
+<td>string</td>
+<td>Yes</td>
+<td>Workspace origin expected by the mobile cache namespace.</td>
+</tr>
+</tbody>
+</table>
+<h4 id="responses-92">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Mobile session is valid for the requested workspace.</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>Missing or invalid workspaceOrigin query parameter.</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Opaque mobile bearer token is missing, invalid, or expired.</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>Session belongs to a different workspace namespace.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="delete-api-mobile-session">DELETE <code>/api/mobile/session</code></h3>
+<p><strong>Revoke a stored mobile session</strong></p>
+<p>Revokes the current opaque mobile bearer token for mobile logout. Shared automation tokens and browser cookie sessions are not accepted here.</p>
+<h4 id="responses-93">Responses</h4>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>200</code></td>
+<td>Mobile session revoked successfully.</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>Opaque mobile bearer token is missing, invalid, or expired.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="webhooks">Webhooks</h2>
 <p>Webhook registration endpoints. These routes are registered by the active standalone webhook plugin while preserving the public <code>/api/webhooks</code> contract.</p>
 <h3 id="get-api-webhooks">GET <code>/api/webhooks</code></h3>
 <p><strong>List webhooks</strong></p>
 <p>Returns all registered webhooks. Runtime ownership stays on the active standalone webhook plugin, which preserves this public path.</p>
-<h4 id="responses-69">Responses</h4>
+<h4 id="responses-94">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -3958,7 +5467,7 @@
 <h3 id="post-api-webhooks">POST <code>/api/webhooks</code></h3>
 <p><strong>Create webhook</strong></p>
 <p>Registers a new webhook endpoint through the active standalone webhook plugin.</p>
-<h4 id="request-body-29">Request Body</h4>
+<h4 id="request-body-44">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -3990,7 +5499,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-70">Responses</h4>
+<h4 id="responses-95">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -4020,7 +5529,7 @@
 <h3 id="put-api-webhooks-id">PUT <code>/api/webhooks/{id}</code></h3>
 <p><strong>Update webhook</strong></p>
 <p>Updates an existing webhook by id through the active standalone webhook plugin.</p>
-<h4 id="parameters-54">Parameters</h4>
+<h4 id="parameters-72">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -4041,7 +5550,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="request-body-30">Request Body</h4>
+<h4 id="request-body-45">Request Body</h4>
 <p>Required: Yes</p>
 <table>
 <thead>
@@ -4079,7 +5588,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-71">Responses</h4>
+<h4 id="responses-96">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -4109,7 +5618,7 @@
 <h3 id="delete-api-webhooks-id">DELETE <code>/api/webhooks/{id}</code></h3>
 <p><strong>Delete webhook</strong></p>
 <p>Deletes a webhook by id through the active standalone webhook plugin.</p>
-<h4 id="parameters-55">Parameters</h4>
+<h4 id="parameters-73">Parameters</h4>
 <table>
 <thead>
 <tr>
@@ -4130,7 +5639,7 @@
 </tr>
 </tbody>
 </table>
-<h4 id="responses-72">Responses</h4>
+<h4 id="responses-97">Responses</h4>
 <table>
 <thead>
 <tr>
@@ -4176,7 +5685,7 @@
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

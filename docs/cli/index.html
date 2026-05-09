@@ -303,6 +303,8 @@ kl attach remove implement-search screenshot.png        # Remove attachment
 kl comment implement-search                             # List comments
 kl comment add implement-search --author alice \
   --body &quot;Looks good, needs tests&quot;                      # Add a comment
+kl comment stream implement-search --author agent       # Stream comment from stdin
+echo &quot;Analysis complete&quot; | kl comment stream 42 --author ci  # Pipe output as comment
 kl comment edit implement-search c1 --body &quot;Updated&quot;    # Edit a comment
 kl comment remove implement-search c1                   # Remove a comment
 
@@ -332,7 +334,11 @@ kl boards add --id bugs --name &quot;Bug Tracker&quot;            # Create a boa
 kl boards show bugs                                     # Show board details
 kl boards remove bugs                                   # Remove an empty board
 kl boards default bugs                                  # Set default board
-kl transfer card-42 --from default --to bugs            # Transfer card between boards
+kl boards export                                        # Export default board settings to stdout (JSON)
+kl boards export bugs --out bugs-settings.json         # Export a named board to a file
+kl boards import bugs-settings.json                    # Import board settings from a file
+kl boards import bugs-settings.json --overwrite        # Import and overwrite if board ID already exists
+kl transfer card-42 --to bugs                           # Transfer card between boards
 
 # Target a specific board (works with most commands)
 kl list --board bugs                                    # List cards in a board
@@ -357,7 +363,19 @@ kl webhooks remove wh_abc123                            # Remove webhook
 kl settings                                             # Show current settings
 kl settings update --compactMode true                   # Update a setting
 
+# Plugin settings
+kl plugin-settings list                                # List capability-grouped providers
+kl plugin-settings show auth.identity local            # Read one provider's redacted state
+kl plugin-settings select callback.runtime callbacks   # Enable the callback runtime provider
+kl plugin-settings select auth.identity local          # Select one provider for a capability
+kl plugin-settings select webhook.delivery none        # Explicitly disable webhook runtime delivery
+kl plugin-settings update-options auth.identity local \
+  --options '{&quot;apiToken&quot;:&quot;••••••&quot;}'                  # Persist provider options (masked secrets keep existing values)
+kl plugin-settings install kl-plugin-auth --scope workspace  # Safe install into the workspace runtime
+
 # Workspace
+kl events                                               # List built-in and plugin-declared events
+kl events --type before --mask &quot;task.*&quot;                # Filter by phase + wildcard mask
 kl pwd                                                  # Print workspace root path
 
 # Storage providers
@@ -409,7 +427,7 @@ kl help api                                             # Show REST API document
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

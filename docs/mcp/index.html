@@ -218,7 +218,6 @@
         </aside>
         <article class="docs-content prose">
           <div class="ref-intro">
-  <h1 id="mcp-server">MCP Server</h1>
   <p>Kanban Lite ships a first-class <a href="https://modelcontextprotocol.io/" rel="noopener noreferrer">Model Context Protocol</a> server so AI agents can read and mutate your boards using natural language. Works with Claude Code, Cursor, OpenCode, and any MCP-compatible client.</p>
   <ul class="capability-list">
     <li>40+ tools covering boards, cards, columns, comments, logs, attachments, webhooks, and storage</li>
@@ -241,228 +240,520 @@
   </div>
 </div>
 
-<h2 id="mcp-server-2">MCP Server</h2>
-<p>Expose your kanban board to AI agents (Claude, Cursor, etc.) via the <a href="https://modelcontextprotocol.io/">Model Context Protocol</a>.</p>
-<h3 id="setup-with-claude-code">Setup with Claude Code</h3>
-<p>Add to your <code>.claude/settings.json</code>:</p>
+<h1 id="mcp-server">MCP Server</h1>
+<p>The MCP server is the agent-native interface for Kanban Lite. It runs over stdio, delegates its built-in operations to the same <code>KanbanSDK</code> methods used by the CLI and standalone server, and can be extended by active plugin packages.</p>
+<h2 id="starting-the-server">Starting the server</h2>
+<pre><code class="language-bash">kl mcp
+kl mcp --dir .kanban
+kanban-mcp --dir .kanban
+npx kanban-lite mcp
+</code></pre>
+<p>The current implementation exposes <strong>stdio transport only</strong>.</p>
+<p>When the server starts, it resolves the workspace in this order:</p>
+<ol>
+<li><code>--dir &lt;path&gt;</code></li>
+<li><code>KANBAN_DIR</code></li>
+<li><code>KANBAN_FEATURES_DIR</code> (legacy alias)</li>
+<li>optional <code>--config &lt;path&gt;</code> during auto-detection</li>
+<li>auto-detect from the current working directory</li>
+</ol>
+<p>If your MCP client does not inherit your shell environment, pass the directory and token explicitly in the client config:</p>
 <pre><code class="language-json">{
   &quot;mcpServers&quot;: {
     &quot;kanban&quot;: {
       &quot;type&quot;: &quot;stdio&quot;,
-      &quot;command&quot;: &quot;npx&quot;,
-      &quot;args&quot;: [&quot;kanban-lite&quot;, &quot;mcp&quot;],
+      &quot;command&quot;: &quot;kl&quot;,
+      &quot;args&quot;: [&quot;mcp&quot;, &quot;--dir&quot;, &quot;/absolute/path/to/project/.kanban&quot;],
       &quot;env&quot;: {
-        &quot;KANBAN_DIR&quot;: &quot;/path/to/your/project/.kanban&quot;
+        &quot;KANBAN_LITE_TOKEN&quot;: &quot;kl-your-token&quot;
       }
     }
   }
 }
 </code></pre>
-<p>Or run directly:</p>
-<pre><code class="language-bash">kl mcp                          # Auto-detect directory
-kl mcp --dir .kanban            # Explicit directory
-kanban-mcp --dir .kanban        # Via dedicated binary
+<h2 id="authentication-and-environment">Authentication and environment</h2>
+<p>The MCP server itself does not prompt for credentials. It reads auth state from the process environment and the workspace configuration:</p>
+<ul>
+<li><code>KANBAN_LITE_TOKEN</code> is the preferred token environment variable.</li>
+<li><code>KANBAN_TOKEN</code> is still accepted as a compatibility alias.</li>
+<li>If no auth providers are configured for the workspace, MCP access remains open just like the CLI and SDK.</li>
+<li>If auth is enabled, pass the token through your MCP client config or launch the server from a shell that already exports it.</li>
+</ul>
+<p>Useful diagnostics:</p>
+<ul>
+<li><code>get_auth_status</code> — shows active auth providers plus safe token-source metadata</li>
+<li><code>get_workspace_info</code> — includes auth, storage, workspace root, and kanban directory details</li>
+</ul>
+<p>For the full auth model and the <code>local</code> / <code>rbac</code> provider details, see <code>docs/auth.md</code>.</p>
+<h2 id="tool-conventions">Tool conventions</h2>
+<p>A few conventions make the MCP surface easier to work with:</p>
+<ul>
+<li><strong>Tool names use snake_case.</strong></li>
+<li><strong>Inputs are mostly camelCase</strong>, with one notable exception: <code>trigger_action</code> expects <code>card_id</code>.</li>
+<li>Most tools return <strong>pretty-printed JSON inside a text content block</strong>. Some mutation tools return a short success string instead.</li>
+<li>Errors are returned as MCP tool errors (<code>isError: true</code>). Auth and plugin-setting failures may return structured JSON payloads instead of plain text.</li>
+<li>Board/listing tools still accept <code>boardId</code> when board scope matters. Card-focused tools resolve the owning board from <code>cardId</code> automatically and no longer require a <code>boardId</code> input.</li>
+<li>Most card-focused tools support <strong>partial card ID matching</strong>. If zero cards or multiple cards match, the tool returns an error and asks for a more specific ID.</li>
+<li><code>delete_card</code> is a <strong>soft delete</strong> that moves the card to the deleted column. Use <code>permanent_delete_card</code> for irreversible deletion.</li>
+<li><code>add_attachment</code> requires an <strong>absolute host file path</strong> that is readable by the machine running the MCP server.</li>
+<li>Built-in and plugin-owned mutations run through the same SDK event/auth pipeline as the CLI and REST API, so webhooks, callbacks, auth checks, and storage providers behave consistently across interfaces.</li>
+</ul>
+<h2 id="search-and-filtering">Search and filtering</h2>
+<p><code>list_cards</code> is the main discovery tool. It returns a <strong>summary list</strong> (<code>id</code>, rendered <code>title</code>, <code>status</code>, <code>priority</code>, <code>assignee</code>, <code>labels</code>, <code>dueDate</code>) rather than the full card body. Use <code>get_card</code> when you want the full record.</p>
+<p>Search behavior matches the CLI and REST API:</p>
+<ul>
+<li><code>searchQuery</code> — free-text search across card content and metadata values</li>
+<li>inline metadata tokens inside <code>searchQuery</code> such as <code>meta.team: backend</code></li>
+<li><code>fuzzy: true</code> — typo-tolerant matching across text and metadata values</li>
+<li><code>metaFilter</code> — structured field filtering using dot-notation keys like <code>{&quot;links.jira&quot;:&quot;PROJ-123&quot;}</code></li>
+<li><code>sort</code> — one of <code>created:asc</code>, <code>created:desc</code>, <code>modified:asc</code>, or <code>modified:desc</code></li>
+</ul>
+<p>Example input for <code>list_cards</code>:</p>
+<pre><code class="language-json">{
+  &quot;boardId&quot;: &quot;default&quot;,
+  &quot;searchQuery&quot;: &quot;release meta.team: backnd&quot;,
+  &quot;fuzzy&quot;: true,
+  &quot;metaFilter&quot;: {
+    &quot;links.jira&quot;: &quot;PROJ-123&quot;
+  },
+  &quot;sort&quot;: &quot;modified:desc&quot;
+}
 </code></pre>
-<h3 id="available-tools">Available Tools</h3>
+<h2 id="built-in-tools">Built-in tools</h2>
+<p>The core MCP server currently registers the following built-in tools. Active plugins may add more.</p>
+<h3 id="boards-and-board-actions">Boards and board actions</h3>
 <table>
 <thead>
 <tr>
 <th>Tool</th>
-<th>Description</th>
+<th>Purpose</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>list_boards</code></td>
-<td>List all boards in the workspace</td>
+<td>List all boards in the workspace.</td>
 </tr>
 <tr>
 <td><code>create_board</code></td>
-<td>Create a new board with optional custom columns</td>
+<td>Create a new board with optional description and custom columns.</td>
 </tr>
 <tr>
 <td><code>get_board</code></td>
-<td>Get board configuration and details</td>
+<td>Return board details for a specific <code>boardId</code>.</td>
 </tr>
 <tr>
 <td><code>delete_board</code></td>
-<td>Delete an empty board</td>
-</tr>
-<tr>
-<td><code>list_board_actions</code></td>
-<td>List all named actions defined on a board</td>
-</tr>
-<tr>
-<td><code>add_board_action</code></td>
-<td>Add or update a named board action</td>
-</tr>
-<tr>
-<td><code>remove_board_action</code></td>
-<td>Remove a named board action</td>
-</tr>
-<tr>
-<td><code>trigger_board_action</code></td>
-<td>Trigger a board action webhook event</td>
+<td>Delete an empty board.</td>
 </tr>
 <tr>
 <td><code>transfer_card</code></td>
-<td>Move a card from one board to another</td>
+<td>Move a card from one board to another, optionally changing its status in the target board.</td>
 </tr>
 <tr>
-<td><code>list_cards</code></td>
-<td>List/filter cards by status, priority, assignee, label, <code>searchQuery</code>, <code>fuzzy</code>, and <code>metaFilter</code></td>
+<td><code>list_board_actions</code></td>
+<td>List named board-level actions.</td>
 </tr>
 <tr>
-<td><code>get_card</code></td>
-<td>Get full details of a card (supports partial ID matching)</td>
+<td><code>add_board_action</code></td>
+<td>Add or update a board action key/title pair.</td>
 </tr>
 <tr>
-<td><code>get_card_state_status</code></td>
-<td>Get the active <code>card.state</code> provider status for the workspace</td>
+<td><code>remove_board_action</code></td>
+<td>Remove a board action.</td>
 </tr>
 <tr>
-<td><code>get_card_state</code></td>
-<td>Get the side-effect-free unread/open summary for one card</td>
-</tr>
-<tr>
-<td><code>open_card</code></td>
-<td>Explicitly acknowledge unread activity and persist actor-scoped open-card state</td>
-</tr>
-<tr>
-<td><code>read_card</code></td>
-<td>Explicitly acknowledge unread activity without changing open-card state</td>
-</tr>
-<tr>
-<td><code>get_active_card</code></td>
-<td>Get the currently active/open card, or <code>null</code> if none is active</td>
-</tr>
-<tr>
-<td><code>create_card</code></td>
-<td>Create a new card with title, body, status, priority, metadata, forms, and formData</td>
-</tr>
-<tr>
-<td><code>update_card</code></td>
-<td>Update fields of an existing card, including forms and formData</td>
-</tr>
-<tr>
-<td><code>submit_card_form</code></td>
-<td>Validate and submit a card form payload through the shared SDK workflow</td>
-</tr>
-<tr>
-<td><code>move_card</code></td>
-<td>Move a card to a different status column</td>
-</tr>
-<tr>
-<td><code>delete_card</code></td>
-<td>Permanently delete a card</td>
-</tr>
-<tr>
-<td><code>trigger_action</code></td>
-<td>Trigger a named action on a card, calling the configured action webhook</td>
-</tr>
-<tr>
-<td><code>list_attachments</code></td>
-<td>List attachments on a card</td>
-</tr>
-<tr>
-<td><code>add_attachment</code></td>
-<td>Attach a file to a card (copies to card directory)</td>
-</tr>
-<tr>
-<td><code>remove_attachment</code></td>
-<td>Remove an attachment reference from a card</td>
-</tr>
-<tr>
-<td><code>list_comments</code></td>
-<td>List comments on a card</td>
-</tr>
-<tr>
-<td><code>add_comment</code></td>
-<td>Add a comment to a card</td>
-</tr>
-<tr>
-<td><code>update_comment</code></td>
-<td>Edit a comment's content</td>
-</tr>
-<tr>
-<td><code>delete_comment</code></td>
-<td>Remove a comment from a card</td>
-</tr>
-<tr>
-<td><code>list_logs</code></td>
-<td>List log entries on a card</td>
-</tr>
-<tr>
-<td><code>add_log</code></td>
-<td>Add a log entry to a card</td>
-</tr>
-<tr>
-<td><code>clear_logs</code></td>
-<td>Clear all log entries from a card</td>
-</tr>
-<tr>
-<td><code>list_board_logs</code></td>
-<td>List board-level log entries</td>
-</tr>
-<tr>
-<td><code>add_board_log</code></td>
-<td>Add a board-level log entry</td>
-</tr>
-<tr>
-<td><code>clear_board_logs</code></td>
-<td>Clear all board-level log entries</td>
-</tr>
-<tr>
-<td><code>list_columns</code></td>
-<td>List all board columns</td>
-</tr>
-<tr>
-<td><code>add_column</code></td>
-<td>Add a new column to the board</td>
-</tr>
-<tr>
-<td><code>update_column</code></td>
-<td>Update a column's name or color</td>
-</tr>
-<tr>
-<td><code>remove_column</code></td>
-<td>Remove a column (must be empty)</td>
-</tr>
-<tr>
-<td><code>get_settings</code></td>
-<td>Get board display settings</td>
-</tr>
-<tr>
-<td><code>update_settings</code></td>
-<td>Update board display settings</td>
-</tr>
-<tr>
-<td><code>list_webhooks</code></td>
-<td>List registered webhooks</td>
-</tr>
-<tr>
-<td><code>add_webhook</code></td>
-<td>Register a new webhook</td>
-</tr>
-<tr>
-<td><code>update_webhook</code></td>
-<td>Update a webhook (url, events, secret, active)</td>
-</tr>
-<tr>
-<td><code>remove_webhook</code></td>
-<td>Remove a webhook</td>
-</tr>
-<tr>
-<td><code>get_workspace_info</code></td>
-<td>Get workspace root path, kanban directory, and active storage provider metadata</td>
+<td><code>trigger_board_action</code></td>
+<td>Fire a board action event for automation/webhook flows.</td>
 </tr>
 </tbody>
 </table>
-<p>For agent-driven search, pass <code>searchQuery</code> for free text (including inline tokens like <code>meta.team: backend</code>), set <code>fuzzy: true</code> to widen matching across text and metadata values, or use <code>metaFilter</code> when you want structured dot-notation field filters.
-| <code>get_storage_status</code> | Get current card/attachment storage provider status |
-| <code>migrate_to_sqlite</code> | Migrate all card data from markdown to SQLite |
-| <code>migrate_to_markdown</code> | Migrate all card data from SQLite back to markdown files |</p>
-<p>All card, column, comment, and attachment tools accept an optional <code>boardId</code> parameter to target a specific board.</p>
+<h3 id="cards-forms-and-actor-scoped-card-state">Cards, forms, and actor-scoped card state</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_cards</code></td>
+<td>List card summaries with filtering and search support.</td>
+</tr>
+<tr>
+<td><code>get_card</code></td>
+<td>Return the full card payload; supports partial card IDs.</td>
+</tr>
+<tr>
+<td><code>get_active_card</code></td>
+<td>Return the currently active/open card, or <code>null</code> if none is active.</td>
+</tr>
+<tr>
+<td><code>create_card</code></td>
+<td>Create a card with title/body plus optional status, priority, assignee, labels, seeded checklist <code>tasks</code>, metadata, actions, forms, and <code>formData</code>.</td>
+</tr>
+<tr>
+<td><code>list_card_checklist_items</code></td>
+<td>Return the shared checklist read model for a card, including the checklist-wide add token.</td>
+</tr>
+<tr>
+<td><code>add_card_checklist_item</code></td>
+<td>Append one checklist item to a card using the latest <code>expectedToken</code> from <code>list_card_checklist_items</code>.</td>
+</tr>
+<tr>
+<td><code>edit_card_checklist_item</code></td>
+<td>Edit one checklist item with optional <code>expectedRaw</code> optimistic-concurrency checks.</td>
+</tr>
+<tr>
+<td><code>delete_card_checklist_item</code></td>
+<td>Remove one checklist item with optional <code>expectedRaw</code> optimistic-concurrency checks.</td>
+</tr>
+<tr>
+<td><code>check_card_checklist_item</code></td>
+<td>Mark one checklist item complete with optional <code>expectedRaw</code> optimistic-concurrency checks.</td>
+</tr>
+<tr>
+<td><code>uncheck_card_checklist_item</code></td>
+<td>Mark one checklist item incomplete with optional <code>expectedRaw</code> optimistic-concurrency checks.</td>
+</tr>
+<tr>
+<td><code>update_card</code></td>
+<td>Patch selected card fields; also supports replacing forms and <code>formData</code>.</td>
+</tr>
+<tr>
+<td><code>submit_card_form</code></td>
+<td>Validate and persist a card form submission through the shared SDK form pipeline.</td>
+</tr>
+<tr>
+<td><code>move_card</code></td>
+<td>Move a card to a new status column.</td>
+</tr>
+<tr>
+<td><code>delete_card</code></td>
+<td>Soft-delete a card by moving it to the deleted status.</td>
+</tr>
+<tr>
+<td><code>permanent_delete_card</code></td>
+<td>Permanently remove a card from disk/storage.</td>
+</tr>
+<tr>
+<td><code>trigger_action</code></td>
+<td>Fire a named card action. This tool uses the <code>card_id</code> input name.</td>
+</tr>
+<tr>
+<td><code>get_card_state_status</code></td>
+<td>Show the active <code>card.state</code> backend status for the workspace.</td>
+</tr>
+<tr>
+<td><code>get_card_state</code></td>
+<td>Read the side-effect-free unread/open summary for a card.</td>
+</tr>
+<tr>
+<td><code>open_card</code></td>
+<td>Acknowledge unread activity and persist explicit actor-scoped open-card state.</td>
+</tr>
+<tr>
+<td><code>read_card</code></td>
+<td>Acknowledge unread activity without changing actor-scoped open-card state.</td>
+</tr>
+</tbody>
+</table>
+<p><code>get_active_card</code> and the <code>card.state</code> tools are related but not identical:</p>
+<ul>
+<li><code>get_active_card</code> reflects workspace/UI-style active-card selection</li>
+<li><code>get_card_state</code>, <code>open_card</code>, and <code>read_card</code> work with actor-scoped unread/open state managed by the shared card-state backend</li>
+</ul>
+<h3 id="attachments-comments-and-logs">Attachments, comments, and logs</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_attachments</code></td>
+<td>List attachments for a card.</td>
+</tr>
+<tr>
+<td><code>add_attachment</code></td>
+<td>Copy a file into the card's attachment storage. Requires an absolute host path.</td>
+</tr>
+<tr>
+<td><code>remove_attachment</code></td>
+<td>Remove an attachment reference from a card.</td>
+</tr>
+<tr>
+<td><code>list_comments</code></td>
+<td>List card comments.</td>
+</tr>
+<tr>
+<td><code>add_comment</code></td>
+<td>Add a markdown comment to a card.</td>
+</tr>
+<tr>
+<td><code>stream_comment</code></td>
+<td>Write a comment through the streaming path so connected viewers can see it arrive live.</td>
+</tr>
+<tr>
+<td><code>update_comment</code></td>
+<td>Update an existing comment by <code>commentId</code>.</td>
+</tr>
+<tr>
+<td><code>delete_comment</code></td>
+<td>Delete a comment.</td>
+</tr>
+<tr>
+<td><code>list_logs</code></td>
+<td>List card-level log entries.</td>
+</tr>
+<tr>
+<td><code>add_log</code></td>
+<td>Append a card log entry with optional <code>source</code> and structured <code>object</code> data.</td>
+</tr>
+<tr>
+<td><code>clear_logs</code></td>
+<td>Delete the card <code>.log</code> file so the log starts fresh.</td>
+</tr>
+<tr>
+<td><code>list_board_logs</code></td>
+<td>List board-level log entries.</td>
+</tr>
+<tr>
+<td><code>add_board_log</code></td>
+<td>Append a board-level log entry.</td>
+</tr>
+<tr>
+<td><code>clear_board_logs</code></td>
+<td>Clear the board log file.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="columns-labels-and-display-settings">Columns, labels, and display settings</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_columns</code></td>
+<td>List board columns.</td>
+</tr>
+<tr>
+<td><code>add_column</code></td>
+<td>Add a column with <code>id</code>, <code>name</code>, and <code>color</code>.</td>
+</tr>
+<tr>
+<td><code>update_column</code></td>
+<td>Change a column's display name or color.</td>
+</tr>
+<tr>
+<td><code>remove_column</code></td>
+<td>Remove a column if it is empty.</td>
+</tr>
+<tr>
+<td><code>reorder_columns</code></td>
+<td>Persist a full ordered list of column IDs.</td>
+</tr>
+<tr>
+<td><code>set_minimized_columns</code></td>
+<td>Persist the minimized-column rails for a board.</td>
+</tr>
+<tr>
+<td><code>cleanup_column</code></td>
+<td>Move every card in a column into the deleted column without removing the column itself.</td>
+</tr>
+<tr>
+<td><code>list_labels</code></td>
+<td>List label definitions.</td>
+</tr>
+<tr>
+<td><code>set_label</code></td>
+<td>Create or update a label definition.</td>
+</tr>
+<tr>
+<td><code>rename_label</code></td>
+<td>Rename a label and cascade that rename to cards.</td>
+</tr>
+<tr>
+<td><code>delete_label</code></td>
+<td>Remove a label definition and strip it from cards.</td>
+</tr>
+<tr>
+<td><code>get_settings</code></td>
+<td>Read current board display settings.</td>
+</tr>
+<tr>
+<td><code>update_settings</code></td>
+<td>Update board display settings.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="workspace-diagnostics-plugin-settings-and-storage">Workspace diagnostics, plugin settings, and storage</h3>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>list_plugin_settings</code></td>
+<td>List capability-grouped plugin provider inventory for the workspace.</td>
+</tr>
+<tr>
+<td><code>select_plugin_settings_provider</code></td>
+<td>Select the active provider for a capability such as <code>auth.identity</code> or <code>card.storage</code>.</td>
+</tr>
+<tr>
+<td><code>update_plugin_settings_options</code></td>
+<td>Persist provider options for a capability/provider pair and return the redacted read model.</td>
+</tr>
+<tr>
+<td><code>install_plugin_settings_package</code></td>
+<td>Install an allowed <code>kl-*</code> package into <code>workspace</code> or <code>global</code> scope using the guarded installer.</td>
+</tr>
+<tr>
+<td><code>list_available_events</code></td>
+<td>List built-in and plugin-declared SDK events, optionally filtered by phase or wildcard mask.</td>
+</tr>
+<tr>
+<td><code>get_auth_status</code></td>
+<td>Show auth provider and token-source diagnostics for MCP.</td>
+</tr>
+<tr>
+<td><code>get_workspace_info</code></td>
+<td>Show workspace root, kanban dir, port, auth summary, and active storage/provider metadata.</td>
+</tr>
+<tr>
+<td><code>get_storage_status</code></td>
+<td>Show the active storage engine/provider details.</td>
+</tr>
+<tr>
+<td><code>migrate_to_sqlite</code></td>
+<td>Migrate card data from markdown-backed storage to SQLite.</td>
+</tr>
+<tr>
+<td><code>migrate_to_markdown</code></td>
+<td>Migrate card data from SQLite back to markdown files.</td>
+</tr>
+</tbody>
+</table>
+<p>A few plugin-settings guardrails are worth calling out:</p>
+<ul>
+<li><code>install_plugin_settings_package</code> only accepts <strong>exact unscoped <code>kl-*</code> package names</strong></li>
+<li>install <code>scope</code> must be either <code>workspace</code> or <code>global</code></li>
+<li>returned option payloads are redacted for secret safety</li>
+</ul>
+<h2 id="plugin-contributed-mcp-tools">Plugin-contributed MCP tools</h2>
+<p>The built-in tool list above is not the whole story. Active plugins can contribute additional MCP tools through the narrow <code>mcpPlugin.registerTools(ctx)</code> seam.</p>
+<p>Current first-party example:</p>
+<ul>
+<li><a href="https://www.npmjs.com/package/kl-plugin-webhook"><code>kl-plugin-webhook</code></a> adds:
+<ul>
+<li><code>list_webhooks</code></li>
+<li><code>add_webhook</code></li>
+<li><code>update_webhook</code></li>
+<li><code>remove_webhook</code></li>
+</ul>
+</li>
+</ul>
+<p>A few important notes:</p>
+<ul>
+<li>Plugin packages must be installed in the <strong>same runtime environment</strong> that launches the MCP server.
+<ul>
+<li>If you run <code>kl mcp</code> from a project-local install, install plugins in that workspace.</li>
+<li>If you run a global binary, install plugins globally or otherwise make them resolvable from that runtime.</li>
+</ul>
+</li>
+<li>Plugin-contributed tools receive the same SDK instance, auth wrapper, workspace paths, and error-helper behavior as built-in tools.</li>
+<li>Duplicate MCP tool names are rejected during server startup.</li>
+</ul>
+<p>For the broader plugin model, see <code>docs/plugins.md</code>. For webhook-specific behavior, see <code>docs/webhooks.md</code>.</p>
+<h2 id="common-call-patterns">Common call patterns</h2>
+<h3 id="create-a-form-aware-card">Create a form-aware card</h3>
+<p>Tool: <code>create_card</code></p>
+<pre><code class="language-json">{
+  &quot;boardId&quot;: &quot;default&quot;,
+  &quot;title&quot;: &quot;Investigate outage&quot;,
+  &quot;body&quot;: &quot;Collect incident details and assign an owner.&quot;,
+  &quot;status&quot;: &quot;todo&quot;,
+  &quot;priority&quot;: &quot;high&quot;,
+  &quot;tasks&quot;: [&quot;Draft incident summary&quot;, &quot;- [x] Page on-call&quot;],
+  &quot;actions&quot;: [&quot;retry&quot;, &quot;notify&quot;],
+  &quot;forms&quot;: [
+    { &quot;name&quot;: &quot;incident-report&quot; }
+  ],
+  &quot;formData&quot;: {
+    &quot;incident-report&quot;: {
+      &quot;service&quot;: &quot;billing&quot;
+    }
+  }
+}
+</code></pre>
+<h3 id="submit-a-card-form">Submit a card form</h3>
+<p>Tool: <code>submit_card_form</code></p>
+<pre><code class="language-json">{
+  &quot;cardId&quot;: &quot;investigate-outage&quot;,
+  &quot;formId&quot;: &quot;incident-report&quot;,
+  &quot;data&quot;: {
+    &quot;severity&quot;: &quot;critical&quot;,
+    &quot;owner&quot;: &quot;alice&quot;
+  }
+}
+</code></pre>
+<h3 id="acknowledge-unread-activity-without-changing-open-card-state">Acknowledge unread activity without changing open-card state</h3>
+<p>Tool: <code>read_card</code></p>
+<pre><code class="language-json">{
+  &quot;cardId&quot;: &quot;investigate-outage&quot;
+}
+</code></pre>
+<h3 id="configure-a-plugin-provider">Configure a plugin provider</h3>
+<p>Tool: <code>select_plugin_settings_provider</code></p>
+<pre><code class="language-json">{
+  &quot;capability&quot;: &quot;auth.identity&quot;,
+  &quot;providerId&quot;: &quot;local&quot;
+}
+</code></pre>
+<p>Tool: <code>update_plugin_settings_options</code></p>
+<pre><code class="language-json">{
+  &quot;capability&quot;: &quot;auth.identity&quot;,
+  &quot;providerId&quot;: &quot;local&quot;,
+  &quot;options&quot;: {
+    &quot;users&quot;: [
+      {
+        &quot;username&quot;: &quot;alice&quot;,
+        &quot;password&quot;: &quot;••••••&quot;,
+        &quot;role&quot;: &quot;admin&quot;
+      }
+    ]
+  }
+}
+</code></pre>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<ul>
+<li><strong>Tool says a card was not found or matched multiple cards</strong> — pass a more specific <code>cardId</code> (the full card ID if needed). Card-focused tools now resolve board scope from the card itself.</li>
+<li><strong>Auth-denied errors</strong> — confirm the client passes <code>KANBAN_LITE_TOKEN</code> (or <code>KANBAN_TOKEN</code>) into the MCP process and inspect <code>get_auth_status</code>.</li>
+<li><strong>A plugin tool is missing</strong> — install the plugin package in the same runtime environment as the MCP server and verify the workspace/plugin configuration selects it.</li>
+<li><strong><code>add_attachment</code> fails</strong> — use an absolute path on the host machine that is readable from the MCP process.</li>
+<li><strong>You expected a hard delete</strong> — <code>delete_card</code> only soft-deletes; use <code>permanent_delete_card</code> to remove the card entirely.</li>
+<li><strong>Your token is in <code>.env</code> but MCP still cannot see it</strong> — MCP clients do not automatically load workspace <code>.env</code> files unless the launch command or wrapper shell exports them first.</li>
+</ul>
+<h2 id="related-docs">Related docs</h2>
+<ul>
+<li><code>README.md</code> — quick-start and cross-interface overview</li>
+<li><code>docs/auth.md</code> — auth providers, token handling, and diagnostics</li>
+<li><code>docs/forms.md</code> — shared form model used by <code>create_card</code>, <code>update_card</code>, and <code>submit_card_form</code></li>
+<li><code>docs/plugins.md</code> — plugin discovery, provider selection, and MCP registration seam</li>
+<li><code>docs/webhooks.md</code> — webhook delivery and plugin-owned webhook MCP tools</li>
+<li><code>docs/sdk.md</code> — underlying SDK methods that the MCP server delegates to</li>
+</ul>
 
 
 <div class="ref-links">
@@ -481,7 +772,7 @@ kanban-mcp --dir .kanban        # Via dedicated binary
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

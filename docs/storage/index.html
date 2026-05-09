@@ -219,7 +219,7 @@
         <article class="docs-content prose">
           <div class="ref-intro">
   <h1 id="storage-providers">Storage Providers</h1>
-  <p>Kanban Lite decouples <em>what</em> you store from <em>where</em> you store it through the capability-based plugin system. Two namespaces control storage: <code>card.storage</code> for cards and comments, and <code>attachment.storage</code> for file attachments. Swap providers in <code>.kanban.json</code> without changing any application code.</p>
+  <p>Kanban Lite decouples <em>what</em> you store from <em>where</em> you store it through the capability-based plugin system. <code>card.storage</code> owns cards and comments, while <code>attachment.storage</code> can override attachment handling when you want a different backend such as S3. For first-party storage plugins, attachments are normally auto-derived from the active <code>card.storage</code> provider and reuse the same options.</p>
   <div class="capability-grid">
     <div class="capability-card">
       <strong>markdown <span class="badge badge--default">default</span></strong>
@@ -227,14 +227,14 @@
     </div>
     <div class="capability-card">
       <strong>sqlite</strong>
-      <span>Built-in SQLite provider via <code>kl-sqlite-storage</code>. Better query performance for large boards. Single-file database.</span>
+      <span>Built-in SQLite provider via <code>kl-plugin-storage-sqlite</code>. Better query performance for large boards. Single-file database.</span>
     </div>
     <div class="capability-card">
-      <strong>kl-mysql-storage</strong>
+      <strong>kl-plugin-storage-mysql</strong>
       <span>External npm package for MySQL/MariaDB-backed card storage. Suitable for shared team deployments.</span>
     </div>
     <div class="capability-card">
-      <strong>kl-s3-attachment-storage</strong>
+      <strong>kl-plugin-attachment-s3</strong>
       <span>External npm package — store attachments in S3 or any S3-compatible object storage (MinIO, Cloudflare R2, etc.).</span>
     </div>
   </div>
@@ -245,7 +245,7 @@
 <pre><code>{
   "storage": {
     "card.storage":        { "provider": "sqlite" },
-    "attachment.storage": { "provider": "kl-s3-attachment-storage" }
+    "attachment.storage": { "provider": "kl-plugin-attachment-s3" }
   }
 }</code></pre>
 
@@ -266,11 +266,11 @@ POST /api/storage/migrate-to-markdown</code></pre>
 
 <h2 id="s3-minio-attachment-storage">S3 / MinIO attachment storage</h2>
 <p>Install the package and point it at any S3-compatible endpoint via environment variables or <code>.kanban.json</code>:</p>
-<pre><code>npm install kl-s3-attachment-storage</code></pre>
+<pre><code>npm install kl-plugin-attachment-s3</code></pre>
 <pre><code>{
   "storage": {
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage",
+      "provider": "kl-plugin-attachment-s3",
       "config": {
         "endpoint": "http://127.0.0.1:9000",
         "bucket":   "kanban",
@@ -291,7 +291,7 @@ POST /api/storage/migrate-to-markdown</code></pre>
 
 <h3 id="sqlite-card-storage-attachment-storage">SQLite (<code>card.storage</code> + <code>attachment.storage</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-sqlite-storage better-sqlite3
+npm install kl-plugin-storage-sqlite better-sqlite3
 
 # Migrate existing cards into SQLite
 kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db</code></pre>
@@ -303,16 +303,14 @@ kl storage migrate-to-sqlite --sqlite-path .kanban/kanban.db</code></pre>
       "options": {
         "sqlitePath": ".kanban/kanban.db"
       }
-    },
-    "attachment.storage": {
-      "provider": "sqlite"
     }
   }
 }</code></pre>
+<p>The matching <code>attachment.storage</code> and <code>card.state</code> providers are auto-derived from the same SQLite package/options, so no extra provider block is needed unless you intentionally choose a different attachment backend.</p>
 
 <h3 id="mysql-card-storage">MySQL (<code>card.storage</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-mysql-storage mysql2</code></pre>
+npm install kl-plugin-storage-mysql mysql2</code></pre>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
@@ -328,11 +326,11 @@ npm install kl-mysql-storage mysql2</code></pre>
     }
   }
 }</code></pre>
-<p>Required option: <code>database</code>. All other options (<code>host</code>, <code>port</code>, <code>user</code>, <code>password</code>, <code>ssl</code>) have sensible defaults. Attachments remain on the local filesystem; pair with <code>kl-s3-attachment-storage</code> for cloud attachments.</p>
+<p>Required option: <code>database</code>. All other options (<code>host</code>, <code>port</code>, <code>user</code>, <code>password</code>, <code>ssl</code>) have sensible defaults. Attachments remain on the local filesystem; pair with <code>kl-plugin-attachment-s3</code> for cloud attachments.</p>
 
 <h3 id="s3-attachment-storage-attachment-storage">S3 Attachment Storage (<code>attachment.storage</code>)</h3>
 <pre><code class="language-bash"># Install
-npm install kl-s3-attachment-storage
+npm install kl-plugin-attachment-s3
 
 # Set required environment variables
 export KL_S3_BUCKET=my-kanban-attachments
@@ -346,30 +344,29 @@ export AWS_REGION=us-east-1
   "version": 2,
   "plugins": {
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage"
+      "provider": "kl-plugin-attachment-s3"
     }
   }
 }</code></pre>
 <p>All credentials and endpoint configuration are read from environment variables — nothing sensitive goes into <code>.kanban.json</code>.</p>
+<p>The shared <strong>Plugin Options</strong> form only edits non-secret settings. Keep <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, and any default region such as <code>AWS_REGION</code> in the host environment or workspace <code>.env</code>.</p>
 
-<h3 id="sqlite-card-state-card-state">SQLite Card State (<code>card.state</code>)</h3>
-<pre><code class="language-bash"># Install
-npm install kl-sqlite-card-state</code></pre>
+<h3 id="storage-backed-card-state-card-state">Storage-backed Card State (<code>card.state</code>)</h3>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
-    "card.state": {
+    "card.storage": {
       "provider": "sqlite",
       "options": {
-        "sqlitePath": ".kanban/card-state.db"
+        "sqlitePath": ".kanban/kanban.db"
       }
     }
   }
 }</code></pre>
-<p>Stores actor-scoped unread and open-card state in a lightweight SQLite database. Independent of the <code>card.storage</code> provider — works with markdown, SQLite, or MySQL cards.</p>
+<p>Actor-scoped unread and open-card state is automatically derived from the active <code>card.storage</code> plugin. Use the same storage package and connection settings — there is no separate <code>card.state</code> package install or second database form to configure.</p>
 
 <h3 id="combined-example">Combined Example</h3>
-<p>Use multiple providers together — for example MySQL cards with S3 attachments and SQLite card state:</p>
+<p>Use multiple providers together — for example MySQL cards/state with S3 attachments:</p>
 <pre><code class="language-json">{
   "version": 2,
   "plugins": {
@@ -381,13 +378,7 @@ npm install kl-sqlite-card-state</code></pre>
       }
     },
     "attachment.storage": {
-      "provider": "kl-s3-attachment-storage"
-    },
-    "card.state": {
-      "provider": "sqlite",
-      "options": {
-        "sqlitePath": ".kanban/card-state.db"
-      }
+      "provider": "kl-plugin-attachment-s3"
     }
   }
 }</code></pre>
@@ -412,7 +403,7 @@ npm install kl-sqlite-card-state</code></pre>
         <p>
           <a href="https://github.com/borgius/kanban-lite">GitHub</a> ·
           <a href="https://www.npmjs.com/package/kanban-lite">npm</a> ·
-          MIT licensed · v1.2.1
+          MIT licensed · v1.2.22
         </p>
         <p>&copy; 2026 Kanban Lite contributors.</p>
       </div>

@@ -183,25 +183,31 @@ export class KanbanPanel {
             await this._saveCardContent(message.cardId, message.content, message.frontmatter)
             break
           case 'addChecklistItem':
-            await this._addChecklistItem(message.cardId, message.title, message.description, message.expectedToken, message.boardId)
+            await this._addChecklistItem(message.cardId, message.title, message.description, message.expectedToken)
             break
           case 'editChecklistItem':
-            await this._editChecklistItem(message.cardId, message.index, message.title, message.description, message.modifiedAt, message.boardId)
+            await this._editChecklistItem(message.cardId, message.index, message.title, message.description, message.modifiedAt)
             break
           case 'deleteChecklistItem':
-            await this._deleteChecklistItem(message.cardId, message.index, message.modifiedAt, message.boardId)
+            await this._deleteChecklistItem(message.cardId, message.index, message.modifiedAt)
             break
           case 'checkChecklistItem':
-            await this._checkChecklistItem(message.cardId, message.index, message.modifiedAt, message.boardId)
+            await this._checkChecklistItem(message.cardId, message.index, message.modifiedAt)
             break
           case 'uncheckChecklistItem':
-            await this._uncheckChecklistItem(message.cardId, message.index, message.modifiedAt, message.boardId)
+            await this._uncheckChecklistItem(message.cardId, message.index, message.modifiedAt)
             break
           case 'closeCard':
-            this._currentEditingCardId = null
             {
+              const closingCardId = this._currentEditingCardId
+              this._currentEditingCardId = null
               const sdk = this._getSDK()
-              if (sdk) void sdk.clearActiveCard(this._currentBoardId).catch(() => {})
+              if (sdk && closingCardId) {
+                void this._runWithAuth(sdk, async () => {
+                  const closingCard = await sdk.getCard(closingCardId)
+                  await sdk.clearActiveCard(closingCard?.boardId)
+                }).catch(() => {})
+              }
             }
             this._cleanupTempFile()
             break
@@ -317,7 +323,6 @@ export class KanbanPanel {
             if (!uploadSdk) break
 
             try {
-              const targetBoardId = message.boardId ?? this._currentBoardId
               const safeFilename = path.basename(message.filename) || 'voice-comment.webm'
               const attachmentData = Buffer.from(message.dataBase64, 'base64')
 
@@ -327,7 +332,6 @@ export class KanbanPanel {
                   message.cardId,
                   safeFilename,
                   attachmentData,
-                  targetBoardId,
                 ))
                 const idx = this._cards.findIndex(f => f.id === message.cardId)
                 if (idx !== -1) this._cards[idx] = updated
@@ -359,11 +363,9 @@ export class KanbanPanel {
             if (!playbackSdk) break
 
             try {
-              const targetBoardId = message.boardId ?? this._currentBoardId
               const attachment = await this._runWithAuth(playbackSdk, () => playbackSdk.getAttachmentData(
                 message.cardId,
                 message.attachment,
-                targetBoardId,
               ))
 
               if (!attachment) {
@@ -450,7 +452,6 @@ export class KanbanPanel {
             try {
               await this._runWithAuth(sdk, () => sdk.transferCard(
                 message.cardId,
-                fromBoard,
                 toBoard,
                 message.targetStatus,
               ))
@@ -607,7 +608,7 @@ export class KanbanPanel {
             const triggerSdk = this._getSDK()
             if (!triggerSdk) break
             try {
-              await this._runWithAuth(triggerSdk, () => triggerSdk.triggerAction(cardId, action, undefined))
+              await this._runWithAuth(triggerSdk, () => triggerSdk.triggerAction(cardId, action))
               await this._loadCards()
               this._sendCardsToWebview()
               if (this._currentEditingCardId === cardId) {
@@ -632,7 +633,7 @@ export class KanbanPanel {
             break
           }
           case 'submitForm': {
-            const { cardId, formId, callbackKey, boardId } = message as SubmitFormMessage
+            const { cardId, formId, callbackKey } = message as SubmitFormMessage
             const submitSdk = this._getSDK()
             if (!submitSdk) break
             try {
@@ -640,7 +641,6 @@ export class KanbanPanel {
                 cardId,
                 formId,
                 data: (message as SubmitFormMessage).data,
-                boardId: boardId ?? this._currentBoardId,
               }))
               await this._loadCards()
               this._sendCardsToWebview()
@@ -1142,7 +1142,7 @@ export class KanbanPanel {
       return this._cards.find((card) => card.id === cardId) ?? null
     }
 
-    const card = await this._runWithAuth(sdk, () => sdk.getCard(cardId, this._currentBoardId))
+    const card = await this._runWithAuth(sdk, () => sdk.getCard(cardId))
     const existingIndex = this._cards.findIndex((cachedCard) => cachedCard.id === cardId)
 
     if (!card) {
@@ -1150,6 +1150,13 @@ export class KanbanPanel {
         this._cards.splice(existingIndex, 1)
       }
       return null
+    }
+
+    if (this._currentBoardId && card.boardId !== this._currentBoardId) {
+      if (existingIndex !== -1) {
+        this._cards.splice(existingIndex, 1)
+      }
+      return card
     }
 
     if (existingIndex !== -1) {
@@ -1183,7 +1190,6 @@ export class KanbanPanel {
       sdk,
       (fn) => this._runWithAuth(sdk, fn),
       cardId,
-      this._currentBoardId,
     )
 
     if (warning) {
@@ -1233,7 +1239,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await this._runWithAuth(sdk, () => sdk.moveCard(cardId, newStatus, newOrder, this._currentBoardId))
+      const updated = await this._runWithAuth(sdk, () => sdk.moveCard(cardId, newStatus, newOrder))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
       this._sendCardsToWebview()
@@ -1247,7 +1253,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await this._runWithAuth(sdk, () => sdk.deleteCard(cardId, this._currentBoardId))
+      await this._runWithAuth(sdk, () => sdk.deleteCard(cardId))
       await this._loadCards()
       this._sendCardsToWebview()
     } catch (err) {
@@ -1260,7 +1266,7 @@ export class KanbanPanel {
     if (!sdk) return
 
     try {
-      await this._runWithAuth(sdk, () => sdk.permanentlyDeleteCard(cardId, this._currentBoardId))
+      await this._runWithAuth(sdk, () => sdk.permanentlyDeleteCard(cardId))
       this._cards = this._cards.filter(f => f.id !== cardId)
       this._sendCardsToWebview()
     } catch (err) {
@@ -1287,7 +1293,7 @@ export class KanbanPanel {
 
     try {
       const settings = sdk.getSettings()
-      await this._runWithAuth(sdk, () => sdk.updateCard(cardId, { status: settings.defaultStatus }, this._currentBoardId))
+      await this._runWithAuth(sdk, () => sdk.updateCard(cardId, { status: settings.defaultStatus }))
       await this._loadCards()
       this._sendCardsToWebview()
     } catch (err) {
@@ -1301,7 +1307,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await this._runWithAuth(sdk, () => sdk.updateCard(cardId, updates, this._currentBoardId))
+      const updated = await this._runWithAuth(sdk, () => sdk.updateCard(cardId, updates))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
       this._sendCardsToWebview()
@@ -1369,7 +1375,7 @@ export class KanbanPanel {
               dueDate: parsed.dueDate,
               labels: parsed.labels,
               metadata: parsed.metadata,
-            }, this._currentBoardId))
+            }))
             const idx = this._cards.findIndex(f => f.id === cardId)
             if (idx !== -1) this._cards[idx] = updated
             this._sendCardsToWebview()
@@ -1462,7 +1468,7 @@ export class KanbanPanel {
         actions: frontmatter.actions,
         forms: frontmatter.forms,
         formData: frontmatter.formData,
-      }, this._currentBoardId))
+      }))
       this._lastWrittenContent = serializeCard(updated)
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
@@ -1474,8 +1480,7 @@ export class KanbanPanel {
 
   private async _mutateChecklistCard(
     cardId: string,
-    mutate: (sdk: KanbanSDK, boardId: string | undefined) => Promise<Card>,
-    boardId?: string,
+    mutate: (sdk: KanbanSDK) => Promise<Card>,
   ): Promise<void> {
     const sdk = this._getSDK()
     if (!sdk) return
@@ -1483,8 +1488,8 @@ export class KanbanPanel {
     this._migrating = true
     try {
       const updated = typeof (sdk as unknown as { runWithAuth?: unknown }).runWithAuth === 'function'
-        ? await sdk.runWithAuth(await this._getAuthContext(), () => mutate(sdk, boardId))
-        : await mutate(sdk, boardId)
+        ? await sdk.runWithAuth(await this._getAuthContext(), () => mutate(sdk))
+        : await mutate(sdk)
       const idx = this._cards.findIndex((card) => card.id === cardId)
       if (idx !== -1) {
         this._cards[idx] = updated
@@ -1497,8 +1502,8 @@ export class KanbanPanel {
     }
   }
 
-  private async _addChecklistItem(cardId: string, title: string, description: string, expectedToken: string, boardId?: string): Promise<void> {
-    await this._mutateChecklistCard(cardId, (sdk, activeBoardId) => sdk.addChecklistItem(cardId, title, description, expectedToken, activeBoardId), boardId)
+  private async _addChecklistItem(cardId: string, title: string, description: string, expectedToken: string): Promise<void> {
+    await this._mutateChecklistCard(cardId, (sdk) => sdk.addChecklistItem(cardId, title, description, expectedToken))
   }
 
   private async _editChecklistItem(
@@ -1507,12 +1512,10 @@ export class KanbanPanel {
     title: string,
     description: string,
     modifiedAt?: string,
-    boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.editChecklistItem(cardId, index, title, description, modifiedAt, activeBoardId),
-      boardId,
+      (sdk) => sdk.editChecklistItem(cardId, index, title, description, modifiedAt),
     )
   }
 
@@ -1520,12 +1523,10 @@ export class KanbanPanel {
     cardId: string,
     index: number,
     modifiedAt?: string,
-    boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.deleteChecklistItem(cardId, index, modifiedAt, activeBoardId),
-      boardId,
+      (sdk) => sdk.deleteChecklistItem(cardId, index, modifiedAt),
     )
   }
 
@@ -1533,12 +1534,10 @@ export class KanbanPanel {
     cardId: string,
     index: number,
     modifiedAt?: string,
-    boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.checkChecklistItem(cardId, index, modifiedAt, activeBoardId),
-      boardId,
+      (sdk) => sdk.checkChecklistItem(cardId, index, modifiedAt),
     )
   }
 
@@ -1546,12 +1545,10 @@ export class KanbanPanel {
     cardId: string,
     index: number,
     modifiedAt?: string,
-    boardId?: string,
   ): Promise<void> {
     await this._mutateChecklistCard(
       cardId,
-      (sdk, activeBoardId) => sdk.uncheckChecklistItem(cardId, index, modifiedAt, activeBoardId),
-      boardId,
+      (sdk) => sdk.uncheckChecklistItem(cardId, index, modifiedAt),
     )
   }
 
@@ -1593,7 +1590,7 @@ export class KanbanPanel {
     try {
       let updated = card
       for (const uri of uris) {
-        updated = await this._runWithAuth(sdk, () => sdk.addAttachment(cardId, uri.fsPath, this._currentBoardId))
+        updated = await this._runWithAuth(sdk, () => sdk.addAttachment(cardId, uri.fsPath))
       }
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
@@ -1615,7 +1612,7 @@ export class KanbanPanel {
     if (!card) return
 
     // Resolve attachment directory via SDK (handles both markdown and SQLite paths)
-    const attachmentDir = await this._runWithAuth(sdk, () => sdk.getAttachmentDir(cardId, this._currentBoardId))
+    const attachmentDir = await this._runWithAuth(sdk, () => sdk.getAttachmentDir(cardId))
     if (!attachmentDir) {
       vscode.window.showWarningMessage('The active attachment provider does not expose a local file path to open.')
       return
@@ -1647,7 +1644,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await this._runWithAuth(sdk, () => sdk.removeAttachment(cardId, attachment, this._currentBoardId))
+      const updated = await this._runWithAuth(sdk, () => sdk.removeAttachment(cardId, attachment))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1666,7 +1663,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await this._runWithAuth(sdk, () => sdk.addComment(cardId, author, content, this._currentBoardId))
+      const updated = await this._runWithAuth(sdk, () => sdk.addComment(cardId, author, content))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1685,7 +1682,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await this._runWithAuth(sdk, () => sdk.updateComment(cardId, commentId, content, this._currentBoardId))
+      const updated = await this._runWithAuth(sdk, () => sdk.updateComment(cardId, commentId, content))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1704,7 +1701,7 @@ export class KanbanPanel {
 
     this._migrating = true
     try {
-      const updated = await this._runWithAuth(sdk, () => sdk.deleteComment(cardId, commentId, this._currentBoardId))
+      const updated = await this._runWithAuth(sdk, () => sdk.deleteComment(cardId, commentId))
       const idx = this._cards.findIndex(f => f.id === cardId)
       if (idx !== -1) this._cards[idx] = updated
 
@@ -1721,7 +1718,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return []
     try {
-      return await this._runWithAuth(sdk, () => sdk.listLogs(cardId, this._currentBoardId))
+      return await this._runWithAuth(sdk, () => sdk.listLogs(cardId))
     } catch {
       return []
     }
@@ -1731,7 +1728,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await this._runWithAuth(sdk, () => sdk.addLog(cardId, text, { source, object, timestamp }, this._currentBoardId))
+      await this._runWithAuth(sdk, () => sdk.addLog(cardId, text, { source, object, timestamp }))
       await this._sendLogs(cardId)
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to add log: ${getErrorMessage(err)}`)
@@ -1742,7 +1739,7 @@ export class KanbanPanel {
     const sdk = this._getSDK()
     if (!sdk) return
     try {
-      await this._runWithAuth(sdk, () => sdk.clearLogs(cardId, this._currentBoardId))
+      await this._runWithAuth(sdk, () => sdk.clearLogs(cardId))
       await this._sendLogs(cardId)
     } catch (err) {
       vscode.window.showErrorMessage(`Failed to clear logs: ${getErrorMessage(err)}`)

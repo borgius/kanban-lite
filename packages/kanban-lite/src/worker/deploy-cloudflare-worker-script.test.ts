@@ -204,12 +204,18 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     const entryPath = await createGeneratedWorker(tempDir, options)
     const entrySource = fs.readFileSync(entryPath, 'utf8')
 
-    expect(entrySource).toContain('queue: createCloudflareWorkerQueueHandler')
+    expect(entrySource).toContain('const workerFetch = createCloudflareWorkerFetchHandler')
+    expect(entrySource).toContain('const workerQueue = createCloudflareWorkerQueueHandler')
+    expect(entrySource).toContain('queue: workerQueue')
     expect(entrySource).toContain('sdkModule: sdkRuntimeModule')
+    expect(entrySource).toContain('export { workerFetch as fetch, workerQueue as queue }')
     expect(entrySource).toContain(JSON.stringify('./callbacks/deliver.ts'))
     expect(entrySource).toMatch(/"bindingHandles": \{\s+"database": "KANBAN_DB",\s+"callbacks": "KANBAN_QUEUE"\s+\}/)
     expect(entrySource).toMatch(/"revisionSource": \{\s+"kind": "binding",\s+"binding": "KANBAN_CONFIG_REVISION"\s+\}/)
-    expect(entrySource).not.toContain('packages/kl-plugin-cloudflare/src/index.ts')
+    expect(entrySource).toMatch(/"kl-plugin-cloudflare": moduleRegistryEntry\d+/)
+    expect(entrySource).toContain('packages/kl-plugin-cloudflare/src/index.ts')
+    expect(entrySource).not.toMatch(/from "cloudflare"/)
+    expect(entrySource).not.toMatch(/"cloudflare": moduleRegistryEntry\d+/)
     expect(entrySource).not.toContain('from "./workspace/callbacks/disabled.ts"')
     expect(entrySource).not.toContain('"./callbacks/disabled.ts": moduleRegistryEntry')
 
@@ -471,7 +477,10 @@ describe('deploy-cloudflare-worker callback module contract', () => {
     const entryPath = await createGeneratedWorker(tempDir, options)
     const entrySource = fs.readFileSync(entryPath, 'utf8')
 
-    expect(entrySource).not.toContain('queue: createCloudflareWorkerQueueHandler')
+    expect(entrySource).toContain('const workerFetch = createCloudflareWorkerFetchHandler')
+    expect(entrySource).not.toContain('const workerQueue = createCloudflareWorkerQueueHandler')
+    expect(entrySource).not.toContain('queue: workerQueue')
+    expect(entrySource).toContain('export { workerFetch as fetch }')
     expect(entrySource).not.toMatch(/import \* as moduleRegistryEntry\d+ from "\.\/workspace\/callbacks\/deliver\.ts"/)
     expect(entrySource).not.toMatch(/"\.\/callbacks\/deliver\.ts": moduleRegistryEntry\d+/)
 

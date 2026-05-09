@@ -234,7 +234,7 @@ kl boards export                                        # Export default board s
 kl boards export bugs --out bugs-settings.json         # Export a named board to a file
 kl boards import bugs-settings.json                    # Import board settings from a file
 kl boards import bugs-settings.json --overwrite        # Import and overwrite if board ID already exists
-kl transfer card-42 --from default --to bugs            # Transfer card between boards
+kl transfer card-42 --to bugs                           # Transfer card between boards
 
 # Target a specific board (works with most commands)
 kl list --board bugs                                    # List cards in a board
@@ -744,7 +744,7 @@ After a successful submission, Kanban Lite also appends a card log entry contain
 
 ### Programmatic submission surfaces
 
-- **SDK**: `await sdk.submitForm({ cardId, formId, data, boardId? })`
+- **SDK**: `await sdk.submitForm({ cardId, formId, data })`
 - **CLI**: `kl form submit <cardId> <formId> --data '<json|@file>'`
 - **REST API**: `POST /api/tasks/:id/forms/:formId/submit`
 - **Board-scoped REST API**: `POST /api/boards/:boardId/tasks/:id/forms/:formId/submit`
@@ -1061,7 +1061,7 @@ For agent-driven search, pass `searchQuery` for free text (including inline toke
 | `migrate_to_sqlite` | Migrate all card data from markdown to SQLite |
 | `migrate_to_markdown` | Migrate all card data from SQLite back to markdown files |
 
-All card, column, comment, and attachment tools accept an optional `boardId` parameter to target a specific board.
+Board-scoped discovery tools such as `list_cards` still accept an optional `boardId` parameter. Card-scoped tools now resolve the real board directly from the globally unique `cardId`, so you do not need to pass `boardId` for checklist, comment, attachment, log, action, form-submit, move, delete, transfer, or card-state operations.
 
 ## SDK
 
@@ -1075,10 +1075,10 @@ const sdk = new KanbanSDK('/path/to/.kanban')
 // Boards
 const boards = sdk.listBoards()
 sdk.createBoard('bugs', 'Bug Tracker', { description: 'Track production bugs' })
-await sdk.transferCard('42', 'default', 'bugs')
+await sdk.transferCard('42', 'bugs')
 await sdk.deleteBoard('bugs')
 
-// Cards (all accept optional boardId as last argument)
+// Cards (card-scoped methods resolve the board from cardId automatically)
 const cards = await sdk.listCards()
 const activeCard = await sdk.getActiveCard()
 const card = await sdk.createCard({ content: '# My Task', status: 'todo', priority: 'high' })

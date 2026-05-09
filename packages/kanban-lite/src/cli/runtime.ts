@@ -20,6 +20,7 @@ import {
   getCliAuthStatus,
   handleCardStateError,
   parseJsonObjectFlag,
+  resolveCardId,
   runWithCliAuth,
   type Flags,
 } from './shared'
@@ -177,11 +178,11 @@ export async function cmdCardState(sdk: KanbanSDK, positional: string[], flags: 
     process.exit(1)
   }
 
-  try {
+  const runCardStateCommand = async (resolvedId: string): Promise<void> => {
     if (sub === 'status') {
       const payload = await runWithCliAuth(sdk, flags, async () => {
-        const unread = await sdk.getUnreadSummary(cardId, boardId)
-        const open = await sdk.getCardState(cardId, boardId, CARD_STATE_OPEN_DOMAIN)
+        const unread = await sdk.getUnreadSummary(resolvedId)
+        const open = await sdk.getCardState(unread.cardId, CARD_STATE_OPEN_DOMAIN)
         return {
           cardId: unread.cardId,
           boardId: unread.boardId,
@@ -198,8 +199,8 @@ export async function cmdCardState(sdk: KanbanSDK, positional: string[], flags: 
 
     if (sub === 'open') {
       const payload = await runWithCliAuth(sdk, flags, async () => {
-        const unread = await sdk.markCardOpened(cardId, boardId)
-        const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN)
+        const unread = await sdk.markCardOpened(resolvedId)
+        const open = await sdk.getCardState(unread.cardId, CARD_STATE_OPEN_DOMAIN)
         return { unread, cardState: { unread, open } }
       })
       if (flags.json) {
@@ -212,8 +213,8 @@ export async function cmdCardState(sdk: KanbanSDK, positional: string[], flags: 
 
     if (sub === 'read') {
       const payload = await runWithCliAuth(sdk, flags, async () => {
-        const unread = await sdk.markCardRead(cardId, boardId)
-        const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN)
+        const unread = await sdk.markCardRead(resolvedId)
+        const open = await sdk.getCardState(unread.cardId, CARD_STATE_OPEN_DOMAIN)
         return { unread, cardState: { unread, open } }
       })
       if (flags.json) {
@@ -227,6 +228,19 @@ export async function cmdCardState(sdk: KanbanSDK, positional: string[], flags: 
     console.error(red(`Unknown card-state sub-command: ${sub}`))
     console.error('Usage: kl card-state <status [id]|open <id>|read <id>>')
     process.exit(1)
+  }
+
+  try {
+    try {
+      await runCardStateCommand(cardId)
+      return
+    } catch (err) {
+      if (err instanceof CardStateError) handleCardStateError(err, flags)
+      if (!(err instanceof Error) || !err.message.startsWith('Card not found:')) throw err
+    }
+
+    const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
+    await runCardStateCommand(resolvedId)
   } catch (err) {
     if (err instanceof CardStateError) handleCardStateError(err, flags)
     throw err

@@ -8,12 +8,12 @@ import type { SDKContext } from './context'
 /**
  * Adds a file attachment to a card.
  */
-export async function addAttachment(ctx: SDKContext, { cardId, sourcePath, boardId }: { cardId: string; sourcePath: string; boardId?: string }): Promise<Card> {
-  const visibleCard = await ctx.getCard(cardId, boardId)
+export async function addAttachment(ctx: SDKContext, { cardId, sourcePath }: { cardId: string; sourcePath: string }): Promise<Card> {
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
   const fileName = path.basename(sourcePath)
   const data = await fs.readFile(sourcePath)
-  return addAttachmentData(ctx, { cardId, filename: fileName, data, boardId })
+  return addAttachmentData(ctx, { cardId, filename: fileName, data })
 }
 
 /**
@@ -25,12 +25,11 @@ export async function addAttachmentData(
     cardId,
     filename,
     data,
-    boardId,
-  }: { cardId: string; filename: string; data: string | Uint8Array; boardId?: string },
+  }: { cardId: string; filename: string; data: string | Uint8Array },
 ): Promise<Card> {
-  const visibleCard = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const fileName = path.basename(filename)
@@ -50,10 +49,10 @@ export async function addAttachmentData(
 /**
  * Removes an attachment reference from a card's metadata.
  */
-export async function removeAttachment(ctx: SDKContext, { cardId, attachment, boardId }: { cardId: string; attachment: string; boardId?: string }): Promise<Card> {
-  const visibleCard = await ctx.getCard(cardId, boardId)
+export async function removeAttachment(ctx: SDKContext, { cardId, attachment }: { cardId: string; attachment: string }): Promise<Card> {
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   card.attachments = card.attachments.filter(a => a !== attachment)
@@ -66,8 +65,8 @@ export async function removeAttachment(ctx: SDKContext, { cardId, attachment, bo
 /**
  * Lists all attachment filenames for a card.
  */
-export async function listAttachments(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<string[]> {
-  const card = await ctx.getCard(cardId, boardId)
+export async function listAttachments(ctx: SDKContext, { cardId }: { cardId: string }): Promise<string[]> {
+  const card = await ctx.getCard(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
   return card.attachments
 }
@@ -77,9 +76,9 @@ export async function listAttachments(ctx: SDKContext, { cardId, boardId }: { ca
  */
 export async function getAttachmentData(
   ctx: SDKContext,
-  { cardId, filename, boardId }: { cardId: string; filename: string; boardId?: string },
+  { cardId, filename }: { cardId: string; filename: string },
 ): Promise<{ data: Uint8Array; contentType?: string } | null> {
-  const card = await ctx.getCard(cardId, boardId)
+  const card = await ctx.getCard(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
   if (!card.attachments.includes(filename)) {
     return null
@@ -90,8 +89,8 @@ export async function getAttachmentData(
 /**
  * Returns the absolute path to the attachment directory for a card.
  */
-export async function getAttachmentDir(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<string | null> {
-  const card = await ctx.getCard(cardId, boardId)
+export async function getAttachmentDir(ctx: SDKContext, { cardId }: { cardId: string }): Promise<string | null> {
+  const card = await ctx.getCard(cardId)
   if (!card) return null
   return ctx.getAttachmentStoragePath(card)
 }

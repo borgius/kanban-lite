@@ -1,19 +1,15 @@
-import { createAjv } from '@jsonforms/core'
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
-import type { Card, CardFormAttachment, CardSortOption, CardTask, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../../../shared/types'
-import { getTitleFromContent, generateCardFilename, extractNumericId, DELETED_STATUS_ID, CARD_FORMAT_VERSION, generateSlug, formatFormDisplayName } from '../../../shared/types'
+import type { Card, CardSortOption, CardTask } from '../../../shared/types'
+import { getTitleFromContent, generateCardFilename, extractNumericId, CARD_FORMAT_VERSION } from '../../../shared/types'
 import { readConfig, allocateCardId, syncCardIdCounter } from '../../../shared/config'
-import { buildCardInterpolationContext, prepareFormData } from '../../../shared/formDataPreparation'
 import { getCardFilePath } from '../../fileUtils'
 import { createCardSearchPredicate } from '../../metaUtils'
-import type { AuthIdentity, AuthVisibilityFilterInput } from '../../plugins'
-import { sanitizeCard } from '../../types'
-import type { AuthContext, CreateCardInput, FormSubmitEvent, SubmitFormInput, SubmitFormResult } from '../../types'
+import type { CreateCardInput } from '../../types'
 import type { SDKContext } from '../context'
-import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistTasks, projectCardChecklistState } from '../checklist'
+import { buildChecklistTask, normalizeCardChecklistState, normalizeChecklistTasks, projectCardChecklistState } from '../checklist'
 import { appendActivityLog } from '../logs'
 
-import { writeActiveCardState, readActiveCardState, clearPersistedActiveCardState, resolveCardForms, buildTaskPermissionsReadModel, assertChecklistReservedLabelUpdateAllowed, canShowChecklist, applyCardVisibilityFilter, getQualifyingCardEditFields, requireExpectedChecklistToken, requireExpectedModifiedAt } from './helpers'
+import { writeActiveCardState, readActiveCardState, clearPersistedActiveCardState, assertChecklistReservedLabelUpdateAllowed, canShowChecklist, applyCardVisibilityFilter, getQualifyingCardEditFields, requireExpectedChecklistToken, requireExpectedModifiedAt } from './helpers'
 
 // --- Card CRUD ---
 
@@ -105,18 +101,23 @@ export async function listCardsRaw(
   return cards
 }
 
-/**
- * Retrieves a single card by its ID.
- *
- * When the active storage engine implements `getCardById`, this bypasses the
- * full-board `scanCards` and performs a targeted O(1) lookup instead.
- */
-export async function getCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+function getCardLookupBoardIds(ctx: SDKContext, preferredBoardId?: string): string[] {
+  const resolvedPreferredBoardId = preferredBoardId ? ctx._resolveBoardId(preferredBoardId) : undefined
+
+  const config = readConfig(ctx.workspaceRoot)
+  const orderedBoardIds = [resolvedPreferredBoardId, config.defaultBoard, ...Object.keys(config.boards)]
+  return orderedBoardIds.filter((candidate, index): candidate is string => (
+    typeof candidate === 'string'
+    && candidate.length > 0
+    && orderedBoardIds.indexOf(candidate) === index
+  ))
+}
+
+async function getVisibleCardForBoard(ctx: SDKContext, cardId: string, boardId: string): Promise<Card | null> {
   if (ctx._storage.getCardById) {
     await ctx._ensureMigrated()
     const boardDir = ctx._boardDir(boardId)
-    const resolvedBoardId = ctx._resolveBoardId(boardId)
-    const raw = await ctx._storage.getCardById(boardDir, resolvedBoardId, cardId)
+    const raw = await ctx._storage.getCardById(boardDir, boardId, cardId)
     if (!raw) return null
     const normalized = normalizeCardChecklistState(raw)
     const checklistVisible = await canShowChecklist(ctx)
@@ -124,30 +125,58 @@ export async function getCard(ctx: SDKContext, { cardId, boardId }: { cardId: st
     const visible = await applyCardVisibilityFilter(ctx, [projected])
     return visible[0] ?? null
   }
+
   const cards = await listCards(ctx, { boardId })
-  return cards.find(c => c.id === cardId) || null
+  return cards.find(card => card.id === cardId) ?? null
 }
 
-export async function getCardRaw(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
+async function getRawCardForBoard(ctx: SDKContext, cardId: string, boardId: string): Promise<Card | null> {
   if (ctx._storage.getCardById) {
     await ctx._ensureMigrated()
     const boardDir = ctx._boardDir(boardId)
-    const resolvedBoardId = ctx._resolveBoardId(boardId)
-    const raw = await ctx._storage.getCardById(boardDir, resolvedBoardId, cardId)
+    const raw = await ctx._storage.getCardById(boardDir, boardId, cardId)
     if (!raw) return null
     return normalizeCardChecklistState(raw)
   }
+
   const cards = await listCardsRaw(ctx, { boardId })
-  return cards.find(c => c.id === cardId) || null
+  return cards.find(card => card.id === cardId) ?? null
 }
 
-export async function getMutableCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card | null> {
-  const visibleCard = await getCard(ctx, { cardId, boardId })
+/**
+ * Retrieves a single card by its ID.
+ *
+ * Searches boards in config order until it finds the globally unique matching
+ * card and returns it from that board.
+ *
+ * When the active storage engine implements `getCardById`, this bypasses the
+ * full-board `scanCards` and performs a targeted O(1) lookup instead.
+ */
+export async function getCard(ctx: SDKContext, { cardId }: { cardId: string }): Promise<Card | null> {
+  for (const candidateBoardId of getCardLookupBoardIds(ctx)) {
+    const card = await getVisibleCardForBoard(ctx, cardId, candidateBoardId)
+    if (card) return card
+  }
+
+  return null
+}
+
+export async function getCardRaw(ctx: SDKContext, { cardId }: { cardId: string }): Promise<Card | null> {
+  for (const candidateBoardId of getCardLookupBoardIds(ctx)) {
+    const card = await getRawCardForBoard(ctx, cardId, candidateBoardId)
+    if (card) return card
+  }
+
+  return null
+}
+
+export async function getMutableCard(ctx: SDKContext, { cardId }: { cardId: string }): Promise<Card | null> {
+  const visibleCard = await getCard(ctx, { cardId })
   if (!visibleCard) {
     return null
   }
 
-  return getCardRaw(ctx, { cardId, boardId })
+  return getCardRaw(ctx, { cardId })
 }
 
 /**
@@ -161,7 +190,7 @@ export async function getActiveCard(ctx: SDKContext, { boardId }: { boardId?: st
     return null
   }
 
-  const card = await getCard(ctx, { cardId: state.cardId, boardId: state.boardId })
+  const card = await getCard(ctx, { cardId: state.cardId })
   if (!card) {
     await clearActiveCard(ctx, { boardId: state.boardId })
     return null
@@ -173,13 +202,13 @@ export async function getActiveCard(ctx: SDKContext, { boardId }: { boardId?: st
 /**
  * Marks a card as the active/open card for this workspace.
  */
-export async function setActiveCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Card> {
-  const card = await getCard(ctx, { cardId, boardId })
+export async function setActiveCard(ctx: SDKContext, { cardId }: { cardId: string }): Promise<Card> {
+  const card = await getCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   await writeActiveCardState(ctx, {
     cardId: card.id,
-    boardId: card.boardId || ctx._resolveBoardId(boardId),
+    boardId: card.boardId || ctx._resolveBoardId(),
     updatedAt: new Date().toISOString(),
   })
 
@@ -264,12 +293,12 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
  */
 export async function updateCard(
   ctx: SDKContext,
-  { cardId, updates, boardId }: { cardId: string; updates: Partial<Card>; boardId?: string }
+  { cardId, updates }: { cardId: string; updates: Partial<Card> }
 ): Promise<Card> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId()
   const boardDir = ctx._boardDir(resolvedBoardId)
   const oldStatus = card.status
   const oldTitle = getTitleFromContent(card.content)
@@ -312,7 +341,6 @@ export async function updateCard(
   if (oldStatus !== nextCard.status) {
     await appendActivityLog(ctx, {
       cardId: nextCard.id,
-      boardId: resolvedBoardId,
       eventType: 'card.status.changed',
       text: `Status changed: \`${oldStatus}\` → \`${nextCard.status}\``,
       metadata: {
@@ -323,7 +351,6 @@ export async function updateCard(
   } else if (qualifyingFields.length > 0) {
     await appendActivityLog(ctx, {
       cardId: nextCard.id,
-      boardId: resolvedBoardId,
       eventType: 'card.updated',
       text: `Card updated: ${qualifyingFields.join(', ')}`,
       metadata: {
@@ -353,9 +380,9 @@ async function writeChecklistCard(ctx: SDKContext, card: Card): Promise<Card> {
 /** Adds a new checklist item to a card. */
 export async function addChecklistItem(
   ctx: SDKContext,
-  { cardId, title, description = '', createdBy = '', expectedToken, boardId }: { cardId: string; title: string; description?: string; createdBy?: string; expectedToken?: string; boardId?: string }
+  { cardId, title, description = '', createdBy = '', expectedToken }: { cardId: string; title: string; description?: string; createdBy?: string; expectedToken?: string }
 ): Promise<Card> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const currentTasks = normalizeChecklistTasks(card.tasks) ?? []
@@ -368,9 +395,9 @@ export async function addChecklistItem(
 /** Edits the title/description of an existing checklist item while preserving its checked state. */
 export async function editChecklistItem(
   ctx: SDKContext,
-  { cardId, index, title, description = '', modifiedBy = '', modifiedAt, boardId }: { cardId: string; index: number; title: string; description?: string; modifiedBy?: string; modifiedAt?: string; boardId?: string }
+  { cardId, index, title, description = '', modifiedBy = '', modifiedAt }: { cardId: string; index: number; title: string; description?: string; modifiedBy?: string; modifiedAt?: string }
 ): Promise<Card> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
@@ -387,9 +414,9 @@ export async function editChecklistItem(
 /** Deletes an existing checklist item by index with stale-write protection. */
 export async function deleteChecklistItem(
   ctx: SDKContext,
-  { cardId, index, modifiedAt, boardId }: { cardId: string; index: number; modifiedAt?: string; boardId?: string }
+  { cardId, index, modifiedAt }: { cardId: string; index: number; modifiedAt?: string }
 ): Promise<Card> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
@@ -409,9 +436,9 @@ export async function deleteChecklistItem(
 /** Marks an existing checklist item complete with stale-write protection. */
 export async function checkChecklistItem(
   ctx: SDKContext,
-  { cardId, index, modifiedAt, modifiedBy = '', boardId }: { cardId: string; index: number; modifiedAt?: string; modifiedBy?: string; boardId?: string }
+  { cardId, index, modifiedAt, modifiedBy = '' }: { cardId: string; index: number; modifiedAt?: string; modifiedBy?: string }
 ): Promise<Card> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)
@@ -426,9 +453,9 @@ export async function checkChecklistItem(
 /** Marks an existing checklist item incomplete with stale-write protection. */
 export async function uncheckChecklistItem(
   ctx: SDKContext,
-  { cardId, index, modifiedAt, modifiedBy = '', boardId }: { cardId: string; index: number; modifiedAt?: string; modifiedBy?: string; boardId?: string }
+  { cardId, index, modifiedAt, modifiedBy = '' }: { cardId: string; index: number; modifiedAt?: string; modifiedBy?: string }
 ): Promise<Card> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const current = getChecklistTaskAt(card, index)

@@ -298,7 +298,7 @@ export async function importBoardSettings(
     await Promise.all(
       existingCards
         .filter(c => c.status !== DELETED_STATUS_ID)
-        .map(c => permanentlyDeleteCard(ctx, { cardId: c.id, boardId })),
+        .map(c => permanentlyDeleteCard(ctx, { cardId: c.id })),
     )
   }
 

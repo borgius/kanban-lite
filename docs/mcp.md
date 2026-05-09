@@ -59,10 +59,10 @@ For the full auth model and the `local` / `rbac` provider details, see `docs/aut
 A few conventions make the MCP surface easier to work with:
 
 - **Tool names use snake_case.**
-- **Inputs are mostly camelCase**, with one notable exception: `trigger_action` expects `card_id` and `board_id`.
+- **Inputs are mostly camelCase**, with one notable exception: `trigger_action` expects `card_id`.
 - Most tools return **pretty-printed JSON inside a text content block**. Some mutation tools return a short success string instead.
 - Errors are returned as MCP tool errors (`isError: true`). Auth and plugin-setting failures may return structured JSON payloads instead of plain text.
-- Unless a tool explicitly requires a board identifier, omitting `boardId` uses the workspace default board.
+- Board/listing tools still accept `boardId` when board scope matters. Card-focused tools resolve the owning board from `cardId` automatically and no longer require a `boardId` input.
 - Most card-focused tools support **partial card ID matching**. If zero cards or multiple cards match, the tool returns an error and asks for a more specific ID.
 - `delete_card` is a **soft delete** that moves the card to the deleted column. Use `permanent_delete_card` for irreversible deletion.
 - `add_attachment` requires an **absolute host file path** that is readable by the machine running the MCP server.
@@ -131,7 +131,7 @@ The core MCP server currently registers the following built-in tools. Active plu
 | `move_card` | Move a card to a new status column. |
 | `delete_card` | Soft-delete a card by moving it to the deleted status. |
 | `permanent_delete_card` | Permanently remove a card from disk/storage. |
-| `trigger_action` | Fire a named card action. This tool uses `card_id` / `board_id` input names. |
+| `trigger_action` | Fire a named card action. This tool uses the `card_id` input name. |
 | `get_card_state_status` | Show the active `card.state` backend status for the workspace. |
 | `get_card_state` | Read the side-effect-free unread/open summary for a card. |
 | `open_card` | Acknowledge unread activity and persist explicit actor-scoped open-card state. |
@@ -304,7 +304,7 @@ Tool: `update_plugin_settings_options`
 
 ## Troubleshooting
 
-- **Tool says a card was not found or matched multiple cards** — pass a more specific `cardId`, and add `boardId` when multiple boards contain similar card IDs.
+- **Tool says a card was not found or matched multiple cards** — pass a more specific `cardId` (the full card ID if needed). Card-focused tools now resolve board scope from the card itself.
 - **Auth-denied errors** — confirm the client passes `KANBAN_LITE_TOKEN` (or `KANBAN_TOKEN`) into the MCP process and inspect `get_auth_status`.
 - **A plugin tool is missing** — install the plugin package in the same runtime environment as the MCP server and verify the workspace/plugin configuration selects it.
 - **`add_attachment` fails** — use an absolute path on the host machine that is readable from the MCP process.

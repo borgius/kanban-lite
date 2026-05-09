@@ -16,6 +16,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.mjs.d.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.integration.test.ts"]
 }

@@ -86,6 +86,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Card-targeted contracts now use `cardId` as the source of board truth**: Redundant `boardId`/`fromBoard` parameters were removed from card-scoped SDK methods and propagated through the CLI, MCP tools, extension bridge, standalone routes, and shared tests/docs. Card actions, checklist edits, comments, attachments, logs, form submits, card-state mutations, moves, deletes, and transfers now resolve the owning board from the card itself instead of requiring callers to thread board context separately.
+
+- **Card-scoped operations now resolve the real board when `boardId` is omitted**: SDK card lookups and card-scoped mutations now derive the board from the matching card instead of falling back to the current/default board. The same fix now flows through the standalone REST routes, WebSocket handlers, and VS Code webview bridge, so comments, logs, attachments, checklist edits, form submits, transfers, and card moves keep targeting the right board when callers only have a globally unique `cardId`.
+
 - **Cloudflare Worker D1 board-config merge on redeploy**: When `config.storage` uses the Cloudflare D1 bridge, Worker refreshes now merge boards already created at runtime and persisted in D1 with boards that arrive in a newly deployed bootstrap config. Redeploying a Worker no longer drops API-created boards, and newly shipped board definitions appear alongside the persisted runtime boards.
 
 - **Shared settings panel parity**: Restored the missing **Board → Title** and **Board → Actions** sub-tabs in the shared settings UI, re-synced routed board-settings deep links with the left-rail sub-tab selection, brought back support-flag-controlled `showBuildWithAI` / `markdownEditorMode` controls, and kept Plugin Options rows distinct by `capability + providerId` so same-package variants stay selectable.

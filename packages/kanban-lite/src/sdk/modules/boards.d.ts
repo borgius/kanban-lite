@@ -74,9 +74,8 @@ export declare function triggerBoardAction(ctx: SDKContext, { boardId, actionKey
 /**
  * Transfers a card from one board to another.
  */
-export declare function transferCard(ctx: SDKContext, { cardId, fromBoardId, toBoardId, targetStatus }: {
+export declare function transferCard(ctx: SDKContext, { cardId, toBoardId, targetStatus }: {
     cardId: string;
-    fromBoardId: string;
     toBoardId: string;
     targetStatus?: string;
 }): Promise<Card>;

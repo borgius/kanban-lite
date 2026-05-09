@@ -31,7 +31,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
   }
 
   const requestAuth = extractAuthContext(req)
-  const openCard = await ctx.sdk.runWithAuth(requestAuth, () => ctx.sdk.getCard(cardId, ctx.currentBoardId))
+  const openCard = await ctx.sdk.runWithAuth(requestAuth, () => ctx.sdk.getCard(cardId))
   if (!openCard) {
     jsonError(res, 404, 'Card not found')
     return true
@@ -95,7 +95,7 @@ export async function handleCardFileRoute(request: StandaloneRequestContext): Pr
             dueDate: parsed.dueDate,
             labels: parsed.labels,
             metadata: parsed.metadata,
-          }, ctx.currentBoardId))
+          }))
           const cardIndex = ctx.cards.findIndex(card => card.id === currentCardId)
           if (cardIndex !== -1) ctx.cards[cardIndex] = updated
           broadcast(ctx, { type: 'cardsUpdated' })

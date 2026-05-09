@@ -289,12 +289,19 @@ class CloudflareCallbackListenerPlugin implements CloudflareCallbackQueueConsume
     this._unsubscribe = bus.onAny((eventName, payload) => {
       if (!isAfterEventPayload(payload.data) || payload.data.event !== eventName) return
 
-      void this.enqueueCommittedEvent(payload.data).catch((error) => {
+      const enqueueOperation = this.enqueueCommittedEvent(payload.data).catch((error) => {
         logCloudflareCallbackError(
           `failed to enqueue durable callback event for "${eventName}"`,
           error,
         )
       })
+
+      if (typeof this._worker?.waitUntil === 'function') {
+        this._worker.waitUntil(enqueueOperation)
+        return
+      }
+
+      void enqueueOperation
     })
   }
 

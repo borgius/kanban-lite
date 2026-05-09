@@ -8,8 +8,8 @@ import { appendActivityLog } from './logs'
 /**
  * Lists all comments on a card.
  */
-export async function listComments(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<Comment[]> {
-  const card = await ctx.getCard(cardId, boardId)
+export async function listComments(ctx: SDKContext, { cardId }: { cardId: string }): Promise<Comment[]> {
+  const card = await ctx.getCard(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
   return card.comments || []
 }
@@ -19,12 +19,12 @@ export async function listComments(ctx: SDKContext, { cardId, boardId }: { cardI
  */
 export async function addComment(
   ctx: SDKContext,
-  { cardId, author, content, boardId }: { cardId: string; author: string; content: string; boardId?: string }
+  { cardId, author, content }: { cardId: string; author: string; content: string }
 ): Promise<Card> {
   if (!content?.trim()) throw new Error('Comment content cannot be empty')
-  const visibleCard = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   if (!card.comments) card.comments = []
@@ -46,7 +46,6 @@ export async function addComment(
   await ctx._storage.writeCard(card)
   await appendActivityLog(ctx, {
     cardId: card.id,
-    boardId: card.boardId || ctx._resolveBoardId(boardId),
     eventType: 'comment.created',
     text: `Comment added by \`${author}\``,
     metadata: {
@@ -64,11 +63,11 @@ export async function addComment(
  */
 export async function updateComment(
   ctx: SDKContext,
-  { cardId, commentId, content, boardId }: { cardId: string; commentId: string; content: string; boardId?: string }
+  { cardId, commentId, content }: { cardId: string; commentId: string; content: string }
 ): Promise<Card> {
-  const visibleCard = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const comment = (card.comments || []).find(c => c.id === commentId)
@@ -80,7 +79,6 @@ export async function updateComment(
   await ctx._storage.writeCard(card)
   await appendActivityLog(ctx, {
     cardId: card.id,
-    boardId: card.boardId || ctx._resolveBoardId(boardId),
     eventType: 'comment.updated',
     text: `Comment updated: \`${comment.id}\``,
     metadata: {
@@ -106,7 +104,6 @@ export async function updateComment(
  * @param options.cardId - ID of the card to comment on.
  * @param options.author - Display name of the author.
  * @param options.stream - Async iterable that yields text chunks.
- * @param options.boardId - Optional board ID override.
  * @param options.onStart - Called once before iteration with the allocated
  *   comment ID and author so the caller can broadcast a stream-start event.
  * @param options.onChunk - Called for each chunk with the comment ID and the
@@ -124,14 +121,12 @@ export async function streamComment(
   {
     cardId,
     author,
-    boardId,
     stream,
     onStart,
     onChunk,
   }: {
     cardId: string
     author: string
-    boardId?: string
     stream: AsyncIterable<string>
     onStart?: (commentId: string, author: string, created: string) => void
     onChunk?: (commentId: string, chunk: string) => void
@@ -139,9 +134,9 @@ export async function streamComment(
 ): Promise<Card> {
   if (!author?.trim()) throw new Error('Comment author cannot be empty')
 
-  const visibleCard = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   if (!card.comments) card.comments = []
@@ -174,7 +169,6 @@ export async function streamComment(
   await ctx._storage.writeCard(card)
   await appendActivityLog(ctx, {
     cardId: card.id,
-    boardId: card.boardId || ctx._resolveBoardId(boardId),
     eventType: 'comment.created',
     text: `Comment added by \`${author}\` (streamed)`,
     metadata: {
@@ -192,11 +186,11 @@ export async function streamComment(
  */
 export async function deleteComment(
   ctx: SDKContext,
-  { cardId, commentId, boardId }: { cardId: string; commentId: string; boardId?: string }
+  { cardId, commentId }: { cardId: string; commentId: string }
 ): Promise<Card> {
-  const visibleCard = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const comment = (card.comments || []).find(c => c.id === commentId)
@@ -219,7 +213,6 @@ export async function deleteComment(
   if (comment) {
     await appendActivityLog(ctx, {
       cardId: card.id,
-      boardId: card.boardId || ctx._resolveBoardId(boardId),
       eventType: 'comment.deleted',
       text: `Comment deleted: \`${comment.id}\``,
       metadata: {

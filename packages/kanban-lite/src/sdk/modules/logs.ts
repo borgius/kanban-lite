@@ -107,21 +107,19 @@ async function appendPersistedLogEntry(
     cardId,
     text,
     options,
-    boardId,
   }: {
     cardId: string
     text: string
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> }
-    boardId?: string
   },
 ): Promise<{ card: Card; boardId: string; entry: LogEntry }> {
   if (!text?.trim()) throw new Error('Log text cannot be empty')
-  const visibleCard = await ctx.getCard(cardId, boardId)
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId()
   const entry: LogEntry = {
     timestamp: options?.timestamp || new Date().toISOString(),
     source: options?.source || 'default',
@@ -156,8 +154,8 @@ async function appendPersistedLogEntry(
 /**
  * Returns the absolute path to the log file for a card.
  */
-export async function getLogFilePath(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<string | null> {
-  const card = await ctx.getCard(cardId, boardId)
+export async function getLogFilePath(ctx: SDKContext, { cardId }: { cardId: string }): Promise<string | null> {
+  const card = await ctx.getCard(cardId)
   if (!card) return null
   return resolveExistingLogPath(ctx, card)
 }
@@ -165,8 +163,8 @@ export async function getLogFilePath(ctx: SDKContext, { cardId, boardId }: { car
 /**
  * Lists all log entries for a card.
  */
-export async function listLogs(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<LogEntry[]> {
-  const card = await ctx.getCard(cardId, boardId)
+export async function listLogs(ctx: SDKContext, { cardId }: { cardId: string }): Promise<LogEntry[]> {
+  const card = await ctx.getCard(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const content = await readLogText(ctx, card)
@@ -199,17 +197,15 @@ export async function listLogsForCard(ctx: SDKContext, card: Card): Promise<LogE
  */
 export async function addLog(
   ctx: SDKContext,
-  { cardId, text, options, boardId }: {
+  { cardId, text, options }: {
     cardId: string
     text: string
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> }
-    boardId?: string
   }
 ): Promise<LogEntry> {
   const result = await appendPersistedLogEntry(ctx, {
     cardId,
     text,
-    boardId,
     options: {
       ...options,
       object: mergeActivityMetadata(
@@ -235,7 +231,6 @@ export async function appendActivityLog(
     text,
     eventType,
     metadata,
-    boardId,
     source,
     timestamp,
   }: {
@@ -243,15 +238,14 @@ export async function appendActivityLog(
     text: string
     eventType: string
     metadata?: Record<string, unknown>
-    boardId?: string
     source?: string
     timestamp?: string
   },
 ): Promise<PersistedActivityBoundary> {
-  const card = await ctx.getCard(cardId, boardId)
+  const card = await ctx.getCard(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId()
   const logEntry = await ctx.addLog(
     cardId,
     text,
@@ -266,7 +260,6 @@ export async function appendActivityLog(
         },
       ),
     },
-    resolvedBoardId,
   )
 
   return {
@@ -280,10 +273,10 @@ export async function appendActivityLog(
 /**
  * Clears all log entries for a card by deleting the `.log` file.
  */
-export async function clearLogs(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
-  const visibleCard = await ctx.getCard(cardId, boardId)
+export async function clearLogs(ctx: SDKContext, { cardId }: { cardId: string }): Promise<void> {
+  const visibleCard = await ctx.getCard(cardId)
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
-  const card = await ctx._getCardRaw(cardId, boardId)
+  const card = await ctx._getCardRaw(cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const logFileName = getLogFileName(card)

@@ -121,7 +121,18 @@ function buildHttpSyncMessages(message: unknown): unknown[] {
     && msgType !== 'switchBoard'
     && msgType !== 'createBoard'
   ) {
-    messages.push(replayedOpenCardMessage)
+    if (
+      replayedSwitchBoardMessage
+      && typeof replayedSwitchBoardMessage.boardId === 'string'
+      && !('boardId' in replayedOpenCardMessage)
+    ) {
+      messages.push({
+        ...replayedOpenCardMessage,
+        boardId: replayedSwitchBoardMessage.boardId,
+      })
+    } else {
+      messages.push(replayedOpenCardMessage)
+    }
   }
 
   messages.push(message)

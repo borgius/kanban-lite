@@ -1,0 +1,15 @@
+export type KanbanSdkRuntimeModule = typeof import('kanban-lite/sdk')
+
+export declare const sdkRuntime: KanbanSdkRuntimeModule
+export declare const assertCallableCallbackModuleExport: KanbanSdkRuntimeModule['assertCallableCallbackModuleExport']
+export declare const buildCallbackExecutionPlan: KanbanSdkRuntimeModule['buildCallbackExecutionPlan']
+export declare const buildCallbackHandlerRevisionInput: KanbanSdkRuntimeModule['buildCallbackHandlerRevisionInput']
+export declare const createCloudflareCallbackQueueMessageEnvelope: KanbanSdkRuntimeModule['createCloudflareCallbackQueueMessageEnvelope']
+export declare const createDurableCallbackDispatchMetadata: KanbanSdkRuntimeModule['createDurableCallbackDispatchMetadata']
+export declare const createDurableCallbackHandlerClaims: KanbanSdkRuntimeModule['createDurableCallbackHandlerClaims']
+export declare const createDurableCallbackHandlerRevision: KanbanSdkRuntimeModule['createDurableCallbackHandlerRevision']
+export declare const getDurableCallbackDispatchMetadata: KanbanSdkRuntimeModule['getDurableCallbackDispatchMetadata']
+export declare const normalizeCallbackHandlers: KanbanSdkRuntimeModule['normalizeCallbackHandlers']
+export declare const readConfig: KanbanSdkRuntimeModule['readConfig']
+export declare const resolveCallbackModuleTarget: KanbanSdkRuntimeModule['resolveCallbackModuleTarget']
+export declare const resolveCallbackRuntimeModule: KanbanSdkRuntimeModule['resolveCallbackRuntimeModule']

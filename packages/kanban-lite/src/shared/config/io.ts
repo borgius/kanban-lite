@@ -43,6 +43,9 @@ const DEFAULT_BOARD_CONFIG: BoardConfig = {
   defaultPriority: 'medium'
 }
 
+type RawKanbanColumn = Pick<KanbanColumn, 'id' | 'name'> & Partial<Pick<KanbanColumn, 'color'>>
+type RawBoardConfig = Omit<BoardConfig, 'columns'> & { columns: RawKanbanColumn[] }
+
 function isConfigRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -51,14 +54,14 @@ function hasRawBoardsRecord(value: unknown): value is Record<string, unknown> {
   return isConfigRecord(value)
 }
 
-function isKanbanColumnRecord(value: unknown): value is KanbanColumn {
+function isKanbanColumnRecord(value: unknown): value is RawKanbanColumn {
   return isConfigRecord(value)
     && typeof value.id === 'string'
     && typeof value.name === 'string'
-    && typeof value.color === 'string'
+    && (value.color === undefined || typeof value.color === 'string')
 }
 
-function isBoardConfigRecord(value: unknown): value is BoardConfig {
+function isBoardConfigRecord(value: unknown): value is RawBoardConfig {
   return isConfigRecord(value)
     && typeof value.name === 'string'
     && Array.isArray(value.columns)
@@ -67,6 +70,18 @@ function isBoardConfigRecord(value: unknown): value is BoardConfig {
     && typeof value.defaultStatus === 'string'
     && typeof value.defaultPriority === 'string'
     && VALID_BOARD_PRIORITIES.includes(value.defaultPriority as Priority)
+}
+
+function normalizeBoardColumns(columns: readonly RawKanbanColumn[]): KanbanColumn[] {
+  const defaultColumns = createDefaultColumns()
+  const defaultColor = defaultColumns[0]?.color ?? '#6b7280'
+
+  return columns.map((column, index) => ({
+    ...column,
+    color: typeof column.color === 'string' && column.color.trim().length > 0
+      ? column.color
+      : defaultColumns[index]?.color ?? defaultColor,
+  }))
 }
 
 function resolveBoardsConfig(
@@ -84,11 +99,13 @@ function resolveBoardsConfig(
   }
 
   const boards = entries.every(([, board]) => isBoardConfigRecord(board))
-    ? Object.fromEntries(entries) as KanbanConfig['boards']
-    : defaults
+    ? Object.fromEntries(entries) as Record<string, RawBoardConfig>
+    : defaults as unknown as Record<string, RawBoardConfig>
 
   // Migrate old string[] metadata to Record<string, BoardMetaFieldDef>
-  for (const board of Object.values(boards) as BoardConfig[]) {
+  for (const board of Object.values(boards)) {
+    board.columns = normalizeBoardColumns(board.columns)
+
     if (Array.isArray(board.metadata)) {
       const migrated: Record<string, BoardMetaFieldDef> = {}
       for (const key of board.metadata as unknown as string[]) {
@@ -98,7 +115,7 @@ function resolveBoardsConfig(
     }
   }
 
-  return boards
+  return boards as KanbanConfig['boards']
 }
 
 /**

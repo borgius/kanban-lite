@@ -999,12 +999,12 @@ export declare class KanbanSDK {
      *
      * @example
      * ```ts
-     * const card = await sdk.transferCard('42', 'inbox', 'bugs', 'triage')
+    * const card = await sdk.transferCard('42', 'bugs', 'triage')
      * console.log(card.boardId) // 'bugs'
      * console.log(card.status)  // 'triage'
      * ```
      */
-    transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card>;
+    transferCard(cardId: string, toBoardId: string, targetStatus?: string): Promise<Card>;
     /**
      * Lists all cards on a board, optionally filtered by column/status and search criteria.
      *
@@ -1076,11 +1076,9 @@ export declare class KanbanSDK {
     /**
      * Retrieves a single card by its ID.
      *
-     * Supports partial ID matching -- the provided `cardId` is matched against
-     * all cards on the board.
+    * Supports partial ID matching against globally unique card IDs across the workspace.
      *
-     * @param cardId - The full or partial ID of the card to retrieve.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The full or partial ID of the card to retrieve.
      * @returns A promise resolving to the matching {@link Card} card, or `null` if not found.
      *
      * @example
@@ -1091,7 +1089,7 @@ export declare class KanbanSDK {
      * }
      * ```
      */
-    getCard(cardId: string, boardId?: string): Promise<Card | null>;
+    getCard(cardId: string): Promise<Card | null>;
     /**
      * Retrieves the card currently marked as active/open in this workspace.
      *
@@ -1113,7 +1111,7 @@ export declare class KanbanSDK {
      */
     getActiveCard(boardId?: string): Promise<Card | null>;
     /** @internal */
-    setActiveCard(cardId: string, boardId?: string): Promise<Card>;
+    setActiveCard(cardId: string): Promise<Card>;
     /** @internal */
     clearActiveCard(boardId?: string): Promise<void>;
     /**
@@ -1165,8 +1163,7 @@ export declare class KanbanSDK {
     * `dueDate`, `labels`, `metadata`, `actions`, `forms`, and `formData`.
      *
      * @param cardId - The ID of the card to update.
-     * @param updates - A partial {@link Card} object with the fields to update.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param updates - A partial {@link Card} object with the fields to update.
      * @returns A promise resolving to the updated {@link Card} card.
      * @throws {Error} If the card is not found.
      *
@@ -1179,7 +1176,7 @@ export declare class KanbanSDK {
      * })
      * ```
      */
-    updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card>;
+    updateCard(cardId: string, updates: Partial<Card>): Promise<Card>;
     /**
      * Validates and persists a form submission for a card, then emits `form.submit`
      * through the normal SDK event/webhook pipeline.
@@ -1211,8 +1208,7 @@ export declare class KanbanSDK {
      * @param input - The form submission input.
      * @param input.cardId - ID of the card that owns the target form.
      * @param input.formId - Resolved form ID/name to submit.
-     * @param input.data - Submitted field values to merge over the resolved base payload.
-     * @param input.boardId - Optional board ID. Defaults to the workspace default board.
+    * @param input.data - Submitted field values to merge over the resolved base payload.
      * @returns The canonical persisted payload and event context. `result.data` is
      *   always the full merged and validated object (never a partial snapshot).
      * @throws {Error} If the card or form cannot be found, or if validation fails.
@@ -1235,19 +1231,18 @@ export declare class KanbanSDK {
      * `card.action.triggered` after-event so registered webhooks receive
      * the action payload automatically.
      *
-     * @param cardId - The ID of the card to trigger the action for.
-     * @param action - The action name string (e.g. `'retry'`, `'sendEmail'`).
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to trigger the action for.
+    * @param action - The action name string (e.g. `'retry'`, `'sendEmail'`).
      * @returns A promise that resolves when the action has been processed.
      * @throws {Error} If the card is not found.
      *
      * @example
      * ```ts
-     * await sdk.triggerAction('42', 'retry')
-     * await sdk.triggerAction('42', 'sendEmail', 'bugs')
+    * await sdk.triggerAction('42', 'retry')
+    * await sdk.triggerAction('42', 'sendEmail')
      * ```
      */
-    triggerAction(cardId: string, action: string, boardId?: string): Promise<void>;
+    triggerAction(cardId: string, action: string): Promise<void>;
     /**
      * Moves a card to a different status column and/or position within that column.
      *
@@ -1256,10 +1251,9 @@ export declare class KanbanSDK {
      * corresponding subdirectory and `completedAt` is updated accordingly.
      *
      * @param cardId - The ID of the card to move.
-     * @param newStatus - The target status/column ID.
-     * @param position - Optional zero-based index within the target column.
-     *   Defaults to the end of the column.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param newStatus - The target status/column ID.
+    * @param position - Optional zero-based index within the target column.
+    *   Defaults to the end of the column.
      * @returns A promise resolving to the updated {@link Card} card.
      * @throws {Error} If the card is not found.
      *
@@ -1272,37 +1266,35 @@ export declare class KanbanSDK {
      * const done = await sdk.moveCard('42', 'done')
      * ```
      */
-    moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card>;
+    moveCard(cardId: string, newStatus: string, position?: number): Promise<Card>;
     /**
      * Soft-deletes a card by moving it to the `deleted` status column.
      * The file remains on disk and can be restored.
      *
-     * @param cardId - The ID of the card to soft-delete.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to soft-delete.
      * @returns A promise that resolves when the card has been moved to deleted status.
      * @throws {Error} If the card is not found.
      *
      * @example
      * ```ts
-     * await sdk.deleteCard('42', 'bugs')
+    * await sdk.deleteCard('42')
      * ```
      */
-    deleteCard(cardId: string, boardId?: string): Promise<void>;
+    deleteCard(cardId: string): Promise<void>;
     /**
      * Permanently deletes a card's markdown file from disk.
      * This cannot be undone.
      *
-     * @param cardId - The ID of the card to permanently delete.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to permanently delete.
      * @returns A promise that resolves when the card file has been removed from disk.
      * @throws {Error} If the card is not found.
      *
      * @example
      * ```ts
-     * await sdk.permanentlyDeleteCard('42', 'bugs')
+    * await sdk.permanentlyDeleteCard('42')
      * ```
      */
-    permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void>;
+    permanentlyDeleteCard(cardId: string): Promise<void>;
     /**
      * Returns all cards in a specific status column.
      *
@@ -1451,9 +1443,8 @@ export declare class KanbanSDK {
      * markdown file) unless it already resides there. The attachment filename
      * is added to the card's `attachments` array if not already present.
      *
-     * @param cardId - The ID of the card to attach the file to.
-     * @param sourcePath - Path to the file to attach. Can be absolute or relative.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to attach the file to.
+    * @param sourcePath - Path to the file to attach. Can be absolute or relative.
      * @returns A promise resolving to the updated {@link Card} card.
      * @throws {Error} If the card is not found.
      *
@@ -1463,20 +1454,19 @@ export declare class KanbanSDK {
      * console.log(card.attachments) // ['screenshot.png']
      * ```
      */
-    addAttachment(cardId: string, sourcePath: string, boardId?: string): Promise<Card>;
+    addAttachment(cardId: string, sourcePath: string): Promise<Card>;
     /**
      * Adds a raw attachment payload to a card without requiring a source file path.
      */
-    addAttachmentData(cardId: string, filename: string, data: string | Uint8Array, boardId?: string): Promise<Card>;
+    addAttachmentData(cardId: string, filename: string, data: string | Uint8Array): Promise<Card>;
     /**
      * Removes an attachment reference from a card's metadata.
      *
      * This removes the attachment filename from the card's `attachments` array
      * but does not delete the physical file from disk.
      *
-     * @param cardId - The ID of the card to remove the attachment from.
-     * @param attachment - The attachment filename to remove (e.g., `'screenshot.png'`).
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to remove the attachment from.
+    * @param attachment - The attachment filename to remove (e.g., `'screenshot.png'`).
      * @returns A promise resolving to the updated {@link Card} card.
      * @throws {Error} If the card is not found.
      *
@@ -1485,12 +1475,11 @@ export declare class KanbanSDK {
      * const card = await sdk.removeAttachment('42', 'old-screenshot.png')
      * ```
      */
-    removeAttachment(cardId: string, attachment: string, boardId?: string): Promise<Card>;
+    removeAttachment(cardId: string, attachment: string): Promise<Card>;
     /**
      * Lists all attachment filenames for a card.
      *
-     * @param cardId - The ID of the card whose attachments to list.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card whose attachments to list.
      * @returns A promise resolving to an array of attachment filename strings.
      * @throws {Error} If the card is not found.
      *
@@ -1500,11 +1489,11 @@ export declare class KanbanSDK {
      * // ['screenshot.png', 'debug-log.txt']
      * ```
      */
-    listAttachments(cardId: string, boardId?: string): Promise<string[]>;
+    listAttachments(cardId: string): Promise<string[]>;
     /**
      * Reads raw attachment bytes for a card.
      */
-    getAttachmentData(cardId: string, filename: string, boardId?: string): Promise<{
+    getAttachmentData(cardId: string, filename: string): Promise<{
         data: Uint8Array;
         contentType?: string;
     } | null>;
@@ -1515,8 +1504,7 @@ export declare class KanbanSDK {
       * `{column_dir}/attachments/`. Other providers may return a different local
       * directory or `null` when attachments are not directly browseable on disk.
      *
-     * @param cardId - The ID of the card.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card.
      * @returns A promise resolving to the absolute directory path, or `null` if the card is not found.
      *
      * @example
@@ -1525,12 +1513,11 @@ export declare class KanbanSDK {
      * // '/workspace/.kanban/boards/default/backlog/attachments'
      * ```
      */
-    getAttachmentDir(cardId: string, boardId?: string): Promise<string | null>;
+    getAttachmentDir(cardId: string): Promise<string | null>;
     /**
      * Lists all comments on a card.
      *
-     * @param cardId - The ID of the card whose comments to list.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card whose comments to list.
      * @returns A promise resolving to an array of {@link Comment} objects.
      * @throws {Error} If the card is not found.
      *
@@ -1542,17 +1529,16 @@ export declare class KanbanSDK {
      * }
      * ```
      */
-    listComments(cardId: string, boardId?: string): Promise<Comment[]>;
+    listComments(cardId: string): Promise<Comment[]>;
     /**
      * Adds a comment to a card.
      *
      * The comment is assigned an auto-incrementing ID (e.g., `'c1'`, `'c2'`)
      * based on the existing comments. The card's `modified` timestamp is updated.
      *
-     * @param cardId - The ID of the card to comment on.
-     * @param author - The name of the comment author.
-     * @param content - The comment text content.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to comment on.
+    * @param author - The name of the comment author.
+    * @param content - The comment text content.
      * @returns A promise resolving to the updated {@link Card} card (including the new comment).
      * @throws {Error} If the card is not found.
      *
@@ -1562,14 +1548,13 @@ export declare class KanbanSDK {
      * console.log(card.comments.length) // 1
      * ```
      */
-    addComment(cardId: string, author: string, content: string, boardId?: string): Promise<Card>;
+    addComment(cardId: string, author: string, content: string): Promise<Card>;
     /**
      * Updates the content of an existing comment on a card.
      *
-     * @param cardId - The ID of the card containing the comment.
-     * @param commentId - The ID of the comment to update (e.g., `'c1'`).
-     * @param content - The new content for the comment.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card containing the comment.
+    * @param commentId - The ID of the comment to update (e.g., `'c1'`).
+    * @param content - The new content for the comment.
      * @returns A promise resolving to the updated {@link Card} card.
      * @throws {Error} If the card is not found.
      * @throws {Error} If the comment is not found on the card.
@@ -1579,13 +1564,12 @@ export declare class KanbanSDK {
      * const card = await sdk.updateComment('42', 'c1', 'Updated: this is now resolved.')
      * ```
      */
-    updateComment(cardId: string, commentId: string, content: string, boardId?: string): Promise<Card>;
+    updateComment(cardId: string, commentId: string, content: string): Promise<Card>;
     /**
      * Deletes a comment from a card.
      *
-     * @param cardId - The ID of the card containing the comment.
-     * @param commentId - The ID of the comment to delete (e.g., `'c1'`).
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card containing the comment.
+    * @param commentId - The ID of the comment to delete (e.g., `'c1'`).
      * @returns A promise resolving to the updated {@link Card} card.
      * @throws {Error} If the card is not found.
      *
@@ -1594,7 +1578,7 @@ export declare class KanbanSDK {
      * const card = await sdk.deleteComment('42', 'c2')
      * ```
      */
-    deleteComment(cardId: string, commentId: string, boardId?: string): Promise<Card>;
+    deleteComment(cardId: string, commentId: string): Promise<Card>;
     /**
      * Creates a comment on a card from a streaming text source, persisting it
      * once the stream is exhausted.
@@ -1605,10 +1589,9 @@ export declare class KanbanSDK {
      * callbacks to fan live progress out to connected WebSocket viewers without
      * requiring intermediate disk writes.
      *
-     * @param cardId - The ID of the card to comment on.
-     * @param author - Display name of the streaming author.
-     * @param stream - An `AsyncIterable<string>` that yields text chunks.
-     * @param options.boardId - Optional board ID override.
+    * @param cardId - The ID of the card to comment on.
+    * @param author - Display name of the streaming author.
+    * @param stream - An `AsyncIterable<string>` that yields text chunks.
      * @param options.onStart - Called once before iteration with the allocated
      *   comment ID, author, and ISO timestamp.
      * @param options.onChunk - Called after each chunk with the comment ID and
@@ -1629,7 +1612,6 @@ export declare class KanbanSDK {
      * ```
      */
     streamComment(cardId: string, author: string, stream: AsyncIterable<string>, options?: {
-        boardId?: string;
         onStart?: (commentId: string, author: string, created: string) => void;
         onChunk?: (commentId: string, chunk: string) => void;
     }): Promise<Card>;
@@ -1641,19 +1623,17 @@ export declare class KanbanSDK {
       * a stable workspace path, while remote providers may return a materialized
       * temporary local file path instead.
      *
-     * @param cardId - The ID of the card.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card.
      * @returns A promise resolving to the log file path, or `null` if the card is not found.
      */
-    getLogFilePath(cardId: string, boardId?: string): Promise<string | null>;
+    getLogFilePath(cardId: string): Promise<string | null>;
     /**
      * Lists all log entries for a card.
      *
      * Reads the card's `.log` file and parses each line into a {@link LogEntry}.
      * Returns an empty array if no log file exists.
      *
-     * @param cardId - The ID of the card whose logs to list.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card whose logs to list.
      * @returns A promise resolving to an array of {@link LogEntry} objects.
      * @throws {Error} If the card is not found.
      *
@@ -1665,7 +1645,7 @@ export declare class KanbanSDK {
      * }
      * ```
      */
-    listLogs(cardId: string, boardId?: string): Promise<LogEntry[]>;
+    listLogs(cardId: string): Promise<LogEntry[]>;
     /**
      * Adds a log entry to a card.
      *
@@ -1677,13 +1657,12 @@ export declare class KanbanSDK {
      * The timestamp defaults to the current time if not provided.
      * The source defaults to `'default'` if not provided.
      *
-     * @param cardId - The ID of the card to add the log to.
-     * @param text - The log message text. Supports inline markdown.
-     * @param options - Optional log entry parameters.
-     * @param options.source - Source/origin label. Defaults to `'default'`.
-     * @param options.timestamp - ISO 8601 timestamp. Defaults to current time.
-     * @param options.object - Optional structured data to attach as JSON.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card to add the log to.
+    * @param text - The log message text. Supports inline markdown.
+    * @param options - Optional log entry parameters.
+    * @param options.source - Source/origin label. Defaults to `'default'`.
+    * @param options.timestamp - ISO 8601 timestamp. Defaults to current time.
+    * @param options.object - Optional structured data to attach as JSON.
      * @returns A promise resolving to the created {@link LogEntry}.
      * @throws {Error} If the card is not found.
      *
@@ -1700,7 +1679,7 @@ export declare class KanbanSDK {
         source?: string;
         timestamp?: string;
         object?: Record<string, unknown>;
-    }, boardId?: string): Promise<LogEntry>;
+    }): Promise<LogEntry>;
     /**
      * Clears all log entries for a card by deleting the `.log` file.
      *
@@ -1708,8 +1687,7 @@ export declare class KanbanSDK {
       * When a local/materialized file exists, it is deleted best-effort as well.
       * New log entries recreate the log attachment automatically.
      *
-     * @param cardId - The ID of the card whose logs to clear.
-     * @param boardId - Optional board ID. Defaults to the workspace's default board.
+    * @param cardId - The ID of the card whose logs to clear.
      * @returns A promise that resolves when the logs have been cleared.
      * @throws {Error} If the card is not found.
      *
@@ -1718,7 +1696,7 @@ export declare class KanbanSDK {
      * await sdk.clearLogs('42')
      * ```
      */
-    clearLogs(cardId: string, boardId?: string): Promise<void>;
+    clearLogs(cardId: string): Promise<void>;
     /**
      * Returns the absolute path to the board-level log file for a given board.
      *

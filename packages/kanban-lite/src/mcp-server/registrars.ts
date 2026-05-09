@@ -8,7 +8,6 @@ import {
   createMcpErrorResult,
   createMcpJsonResult,
   resolveMcpCardId,
-  resolveOptionalBoardId,
   runWithResolvedMcpCardId,
   type McpAuthRunner,
   type McpPluginSettingsInstallModel,
@@ -60,14 +59,12 @@ export function registerCardStateMcpTools(
     'get_card_state',
     'Get the side-effect-free unread/open summary for one card. Supports partial ID matching and never mutates unread state implicitly.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
-    async ({ boardId, cardId }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
+    async ({ cardId }) => {
       return options.runWithAuth(async () => {
-        const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), resolvedBoardId)
-        return buildMcpCardStateReadModel(options.sdk, resolvedId, resolvedBoardId)
+        const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), undefined)
+        return buildMcpCardStateReadModel(options.sdk, resolvedId)
       })
     },
   )
@@ -77,14 +74,12 @@ export function registerCardStateMcpTools(
     'open_card',
     'Persist an explicit actor-scoped open mutation through the shared SDK card-state APIs. This acknowledges unread activity and records open-card state without changing active-card UI state.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
-    async ({ boardId, cardId }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
+    async ({ cardId }) => {
       return options.runWithAuth(async () => {
-        const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), resolvedBoardId)
-        const unread = await options.sdk.markCardOpened(resolvedId, resolvedBoardId)
+        const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), undefined)
+        const unread = await options.sdk.markCardOpened(resolvedId)
         return buildMcpCardStateMutationModel(options.sdk, unread)
       })
     },
@@ -95,22 +90,16 @@ export function registerCardStateMcpTools(
     'read_card',
     'Persist an explicit actor-scoped unread acknowledgement through the shared SDK card-state APIs without changing open-card state.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       readThrough: z.object({
         cursor: z.string().describe('Opaque unread activity cursor to acknowledge explicitly.'),
         updatedAt: z.string().optional().describe('Optional timestamp associated with the cursor.'),
       }).optional().describe('Optional explicit unread cursor to acknowledge instead of the latest activity.'),
     },
-    async ({ boardId, cardId, readThrough }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
+    async ({ cardId, readThrough }) => {
       return options.runWithAuth(async () => {
-        const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), resolvedBoardId)
-        const unread = await options.sdk.markCardRead(
-          resolvedId,
-          resolvedBoardId,
-          readThrough as CardStateCursor | undefined,
-        )
+        const resolvedId = await resolveMcpCardId(options.sdk, String(cardId), undefined)
+        const unread = await options.sdk.markCardRead(resolvedId, readThrough as CardStateCursor | undefined)
         return buildMcpCardStateMutationModel(options.sdk, unread)
       })
     },
@@ -245,13 +234,11 @@ export function registerChecklistMcpTools(
     'list_card_checklist_items',
     'List the checklist items for a card, including expectedRaw values for optimistic concurrency.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
-    async ({ boardId, cardId }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
-      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolvedBoardId, async (resolvedId) => {
-        const card = await options.sdk.getCard(resolvedId, resolvedBoardId)
+    async ({ cardId }) => {
+      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), undefined, async (resolvedId) => {
+        const card = await options.sdk.getCard(resolvedId)
         if (!card) throw new Error(`Card not found: ${cardId}`)
         return buildChecklistReadModel(card)
       })
@@ -263,16 +250,14 @@ export function registerChecklistMcpTools(
     'add_card_checklist_item',
     'Add a checklist item to a card and return the caller-scoped checklist payload. expectedToken is required to avoid lost concurrent appends.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       title: z.string().describe('Checklist item title.'),
       description: z.string().optional().describe('Optional checklist item description (multiline supported).'),
       expectedToken: z.string().describe('Checklist token from list_card_checklist_items required for optimistic concurrency.'),
     },
-    async ({ boardId, cardId, title, description, expectedToken }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
-      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolvedBoardId, async (resolvedId) =>
-        buildChecklistReadModel(await options.sdk.addChecklistItem(resolvedId, String(title), typeof description === 'string' ? description : '', String(expectedToken), resolvedBoardId))
+    async ({ cardId, title, description, expectedToken }) => {
+      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), undefined, async (resolvedId) =>
+        buildChecklistReadModel(await options.sdk.addChecklistItem(resolvedId, String(title), typeof description === 'string' ? description : '', String(expectedToken)))
       )
     },
   )
@@ -282,17 +267,15 @@ export function registerChecklistMcpTools(
     'edit_card_checklist_item',
     'Edit an existing checklist item. modifiedAt is recommended to avoid stale overwrites.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       index: z.number().int().nonnegative().describe('Checklist item index.'),
       title: z.string().describe('Replacement checklist item title.'),
       description: z.string().optional().describe('Replacement checklist item description (multiline supported).'),
       modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
     },
-    async ({ boardId, cardId, index, title, description, modifiedAt }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
-      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolvedBoardId, async (resolvedId) =>
-        buildChecklistReadModel(await options.sdk.editChecklistItem(resolvedId, index as number, String(title), typeof description === 'string' ? description : '', typeof modifiedAt === 'string' ? modifiedAt : undefined, resolvedBoardId))
+    async ({ cardId, index, title, description, modifiedAt }) => {
+      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), undefined, async (resolvedId) =>
+        buildChecklistReadModel(await options.sdk.editChecklistItem(resolvedId, index as number, String(title), typeof description === 'string' ? description : '', typeof modifiedAt === 'string' ? modifiedAt : undefined))
       )
     },
   )
@@ -302,15 +285,13 @@ export function registerChecklistMcpTools(
     'delete_card_checklist_item',
     'Delete an existing checklist item. modifiedAt is recommended to avoid stale deletes.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       index: z.number().int().nonnegative().describe('Checklist item index.'),
       modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
     },
-    async ({ boardId, cardId, index, modifiedAt }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
-      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolvedBoardId, async (resolvedId) =>
-        buildChecklistReadModel(await options.sdk.deleteChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined, resolvedBoardId))
+    async ({ cardId, index, modifiedAt }) => {
+      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), undefined, async (resolvedId) =>
+        buildChecklistReadModel(await options.sdk.deleteChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined))
       )
     },
   )
@@ -320,15 +301,13 @@ export function registerChecklistMcpTools(
     'check_card_checklist_item',
     'Mark a checklist item as checked. modifiedAt is recommended to avoid stale writes.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       index: z.number().int().nonnegative().describe('Checklist item index.'),
       modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
     },
-    async ({ boardId, cardId, index, modifiedAt }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
-      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolvedBoardId, async (resolvedId) =>
-        buildChecklistReadModel(await options.sdk.checkChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined, resolvedBoardId))
+    async ({ cardId, index, modifiedAt }) => {
+      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), undefined, async (resolvedId) =>
+        buildChecklistReadModel(await options.sdk.checkChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined))
       )
     },
   )
@@ -338,15 +317,13 @@ export function registerChecklistMcpTools(
     'uncheck_card_checklist_item',
     'Mark a checklist item as unchecked. modifiedAt is recommended to avoid stale writes.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       index: z.number().int().nonnegative().describe('Checklist item index.'),
       modifiedAt: z.string().optional().describe('ISO timestamp of the item currently known to the caller, used for stale-write protection.'),
     },
-    async ({ boardId, cardId, index, modifiedAt }) => {
-      const resolvedBoardId = resolveOptionalBoardId(boardId)
-      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), resolvedBoardId, async (resolvedId) =>
-        buildChecklistReadModel(await options.sdk.uncheckChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined, resolvedBoardId))
+    async ({ cardId, index, modifiedAt }) => {
+      return runWithResolvedMcpCardId(options.sdk, options.runWithAuth, String(cardId), undefined, async (resolvedId) =>
+        buildChecklistReadModel(await options.sdk.uncheckChecklistItem(resolvedId, index as number, typeof modifiedAt === 'string' ? modifiedAt : undefined))
       )
     },
   )

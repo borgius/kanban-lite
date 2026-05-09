@@ -23,7 +23,7 @@ export async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Fla
   if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'rm' && subcommand !== 'remove') {
     // If first positional looks like a card ID, treat it as "list <cardId>"
     const resolvedId = await resolveCardId(sdk, subcommand, boardId, flags)
-    const attachments = await runWithCliAuth(sdk, flags, () => sdk.listAttachments(resolvedId, boardId))
+    const attachments = await runWithCliAuth(sdk, flags, () => sdk.listAttachments(resolvedId))
     if (flags.json) {
       console.log(JSON.stringify(attachments, null, 2))
     } else if (attachments.length === 0) {
@@ -41,7 +41,7 @@ export async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Fla
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const attachments = await runWithCliAuth(sdk, flags, () => sdk.listAttachments(resolvedId, boardId))
+      const attachments = await runWithCliAuth(sdk, flags, () => sdk.listAttachments(resolvedId))
       if (flags.json) {
         console.log(JSON.stringify(attachments, null, 2))
       } else if (attachments.length === 0) {
@@ -62,7 +62,7 @@ export async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Fla
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.addAttachment(resolvedId, filePath, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.addAttachment(resolvedId, filePath))
       console.log(green(`Attached to ${updated.id}: ${path.basename(filePath)}`))
       break
     }
@@ -78,7 +78,7 @@ export async function cmdAttach(sdk: KanbanSDK, positional: string[], flags: Fla
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.removeAttachment(resolvedId, filename, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.removeAttachment(resolvedId, filename))
       console.log(green(`Removed from ${updated.id}: ${filename}`))
       break
     }
@@ -94,7 +94,7 @@ export async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Fl
   if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'edit' && subcommand !== 'remove' && subcommand !== 'rm' && subcommand !== 'stream') {
     // If first positional looks like a card ID, treat it as "list <cardId>"
     const resolvedId = await resolveCardId(sdk, subcommand, boardId, flags)
-    const comments = await runWithCliAuth(sdk, flags, () => sdk.listComments(resolvedId, boardId))
+    const comments = await runWithCliAuth(sdk, flags, () => sdk.listComments(resolvedId))
     if (flags.json) {
       console.log(JSON.stringify(comments, null, 2))
     } else if (comments.length === 0) {
@@ -118,7 +118,7 @@ export async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Fl
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const comments = await runWithCliAuth(sdk, flags, () => sdk.listComments(resolvedId, boardId))
+      const comments = await runWithCliAuth(sdk, flags, () => sdk.listComments(resolvedId))
       if (flags.json) {
         console.log(JSON.stringify(comments, null, 2))
       } else if (comments.length === 0) {
@@ -148,7 +148,7 @@ export async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Fl
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const card = await runWithCliAuth(sdk, flags, () => sdk.addComment(resolvedId, author, body, boardId))
+      const card = await runWithCliAuth(sdk, flags, () => sdk.addComment(resolvedId, author, body))
       const added = card.comments[card.comments.length - 1]
       if (flags.json) {
         console.log(JSON.stringify(added, null, 2))
@@ -173,9 +173,9 @@ export async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Fl
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      await runWithCliAuth(sdk, flags, () => sdk.updateComment(resolvedId, commentId, body, boardId))
+      await runWithCliAuth(sdk, flags, () => sdk.updateComment(resolvedId, commentId, body))
       if (flags.json) {
-        const comments = await runWithCliAuth(sdk, flags, () => sdk.listComments(resolvedId, boardId))
+        const comments = await runWithCliAuth(sdk, flags, () => sdk.listComments(resolvedId))
         const updated = comments.find(c => c.id === commentId)
         console.log(JSON.stringify(updated, null, 2))
       } else {
@@ -195,7 +195,7 @@ export async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Fl
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      await runWithCliAuth(sdk, flags, () => sdk.deleteComment(resolvedId, commentId, boardId))
+      await runWithCliAuth(sdk, flags, () => sdk.deleteComment(resolvedId, commentId))
       console.log(green(`Deleted comment ${commentId}`))
       break
     }
@@ -220,7 +220,7 @@ export async function cmdComment(sdk: KanbanSDK, positional: string[], flags: Fl
         }
       }
       if (!flags.json) process.stderr.write('Streaming comment')
-      const card = await runWithCliAuth(sdk, flags, () => sdk.streamComment(resolvedId, author, stdinStream(), { boardId }))
+      const card = await runWithCliAuth(sdk, flags, () => sdk.streamComment(resolvedId, author, stdinStream()))
       if (!flags.json) process.stderr.write('\n')
       const added = card.comments?.[card.comments.length - 1]
       if (flags.json) {
@@ -242,7 +242,7 @@ export async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags)
   if (subcommand !== 'list' && subcommand !== 'add' && subcommand !== 'clear') {
     // If first positional looks like a card ID, treat it as "list <cardId>"
     const resolvedId = await resolveCardId(sdk, subcommand, boardId, flags)
-    const logs = await runWithCliAuth(sdk, flags, () => sdk.listLogs(resolvedId, boardId))
+    const logs = await runWithCliAuth(sdk, flags, () => sdk.listLogs(resolvedId))
     if (flags.json) {
       console.log(JSON.stringify(logs, null, 2))
     } else if (logs.length === 0) {
@@ -265,7 +265,7 @@ export async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags)
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const logs = await runWithCliAuth(sdk, flags, () => sdk.listLogs(resolvedId, boardId))
+      const logs = await runWithCliAuth(sdk, flags, () => sdk.listLogs(resolvedId))
       if (flags.json) {
         console.log(JSON.stringify(logs, null, 2))
       } else if (logs.length === 0) {
@@ -299,7 +299,7 @@ export async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags)
         }
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const entry = await runWithCliAuth(sdk, flags, () => sdk.addLog(resolvedId, text, { source, object: obj }, boardId))
+      const entry = await runWithCliAuth(sdk, flags, () => sdk.addLog(resolvedId, text, { source, object: obj }))
       if (flags.json) {
         console.log(JSON.stringify(entry, null, 2))
       } else {
@@ -313,7 +313,7 @@ export async function cmdLog(sdk: KanbanSDK, positional: string[], flags: Flags)
         process.exit(1)
       }
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      await runWithCliAuth(sdk, flags, () => sdk.clearLogs(resolvedId, boardId))
+      await runWithCliAuth(sdk, flags, () => sdk.clearLogs(resolvedId))
       console.log(green(`Cleared logs for card ${resolvedId}`))
       break
     }

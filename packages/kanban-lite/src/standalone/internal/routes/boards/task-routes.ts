@@ -1,12 +1,13 @@
 import type { KanbanColumn, CreateCardPayload, Priority, Card } from '../../../../shared/types'
-import { readConfig } from '../../../../shared/config'
 import type { CardStateCursor } from '../../../../sdk/plugins'
 import { buildChecklistReadModel, coerceChecklistSeedTasks, type ChecklistSeedTaskInput } from '../../../../sdk/modules/checklist'
 import { sanitizeCard, AuthError } from '../../../../sdk/types'
-import { buildInitMessage, broadcast, loadCards } from '../../../broadcastService'
+import { buildInitMessage, broadcast, broadcastLogsUpdatedToEditingClients, loadCards } from '../../../broadcastService'
 import { getListCardsOptions, getSubmitErrorStatus, parseSubmitData } from '../../../cardHelpers'
 import {
   doAddChecklistItem,
+  doAddComment,
+  doAddLog,
   doCheckChecklistItem,
   doDeleteChecklistItem,
   doEditChecklistItem,
@@ -28,10 +29,14 @@ const REST_CARD_LIST_READ_OPTIONS = REST_CARD_READ_OPTIONS
 const REST_CARD_DETAIL_READ_OPTIONS = { ...REST_CARD_READ_OPTIONS, includeResolvedForms: true } as const
 export async function handleBoardTaskRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
-  const { sdk, workspaceRoot } = ctx
+  const { sdk } = ctx
   let params
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
-  const getRequestScopedCard = (cardId: string, boardId?: string) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getRequestScopedCard = (cardId: string, boardId?: string) => runWithRequestAuth(async () => {
+    const card = await sdk.getCard(cardId)
+    if (!card) return null
+    return boardId && card.boardId !== boardId ? null : card
+  })
   const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const parseChecklistIndex = (value: string): number => {
     const index = Number.parseInt(value, 10)
@@ -154,7 +159,6 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         body.title as string,
         typeof body.description === 'string' ? body.description : '',
         body.expectedToken as string,
-        boardId,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -183,7 +187,6 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         body.title as string,
         typeof body.description === 'string' ? body.description : '',
         typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
-        boardId,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -206,7 +209,6 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         id,
         parseChecklistIndex(index),
         typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
-        boardId,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -229,7 +231,6 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         id,
         parseChecklistIndex(index),
         typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
-        boardId,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -252,7 +253,6 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         id,
         parseChecklistIndex(index),
         typeof body.modifiedAt === 'string' ? body.modifiedAt : undefined,
-        boardId,
       ))
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -280,6 +280,63 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
     return true
   }
 
+  params = route('POST', '/api/boards/:boardId/tasks/:id/logs')
+  if (params) {
+    try {
+      const { id, boardId } = params
+      const body = await readBody(req)
+      const text = body.text as string
+      if (!text) {
+        jsonError(res, 400, 'text is required')
+        return true
+      }
+      const entry = await runWithRequestAuth(() => doAddLog(
+        ctx,
+        id,
+        text,
+        body.source as string | undefined,
+        body.object as Record<string, unknown> | undefined,
+        body.timestamp as string | undefined,
+      ))
+      if (!entry) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        await broadcastLogsUpdatedToEditingClients(ctx, id)
+        jsonOk(res, entry, 201)
+      }
+    } catch (err) {
+      jsonError(res, 400, String(err))
+    }
+    return true
+  }
+
+  params = route('POST', '/api/boards/:boardId/tasks/:id/comments')
+  if (params) {
+    try {
+      const { id, boardId } = params
+      const body = await readBody(req)
+      const author = body.author as string
+      const content = body.content as string
+      if (!author) {
+        jsonError(res, 400, 'author is required')
+        return true
+      }
+      if (!content) {
+        jsonError(res, 400, 'content is required')
+        return true
+      }
+      const comment = await runWithRequestAuth(() => doAddComment(ctx, id, author, content))
+      if (!comment) {
+        jsonError(res, 404, 'Task not found')
+      } else {
+        jsonOk(res, comment, 201)
+      }
+    } catch (err) {
+      handleKnownError(err)
+    }
+    return true
+  }
+
   params = route('POST', '/api/boards/:boardId/tasks/:id/open')
   if (params) {
     try {
@@ -289,7 +346,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, boardId))
+      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id))
       jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
@@ -308,7 +365,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
       }
       const body = await readBody(req)
       const readThrough = body.readThrough as CardStateCursor | undefined
-      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, boardId, readThrough))
+      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, readThrough))
       jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
@@ -326,7 +383,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const card = await runWithRequestAuth(() => sdk.updateCard(id, body as Partial<Card>, boardId))
+      const card = await runWithRequestAuth(() => sdk.updateCard(id, body as Partial<Card>))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
       handleKnownError(err)
@@ -343,7 +400,6 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         cardId: id,
         formId,
         data: parseSubmitData(body.data),
-        boardId,
       }))
       jsonOk(res, result)
     } catch (err) {
@@ -368,7 +424,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const card = await runWithRequestAuth(() => sdk.moveCard(id, newStatus, position, boardId))
+      const card = await runWithRequestAuth(() => sdk.moveCard(id, newStatus, position))
       jsonOk(res, sanitizeCard(card))
     } catch (err) {
       handleKnownError(err)
@@ -380,7 +436,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
   if (params) {
     try {
       const { id, action, boardId } = params
-      await runWithRequestAuth(() => sdk.triggerAction(id, action, boardId))
+      await runWithRequestAuth(() => sdk.triggerAction(id, action))
       sendNoContent(res)
     } catch (err) {
       const message = String(err)
@@ -398,7 +454,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         jsonError(res, 404, 'Task not found')
         return true
       }
-      await runWithRequestAuth(() => sdk.permanentlyDeleteCard(id, boardId))
+      await runWithRequestAuth(() => sdk.permanentlyDeleteCard(id))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, { deleted: true, permanent: true })
@@ -417,7 +473,7 @@ export async function handleBoardTaskRoutes(request: StandaloneRequestContext): 
         jsonError(res, 404, 'Task not found')
         return true
       }
-      await runWithRequestAuth(() => sdk.deleteCard(id, boardId))
+      await runWithRequestAuth(() => sdk.deleteCard(id))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
       jsonOk(res, { deleted: true })

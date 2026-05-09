@@ -25,6 +25,19 @@ export type CreateCardData = Omit<CreateCardPayload, 'tasks'> & {
   tasks?: Array<CardTask | string>
 }
 
+async function resolveCardTarget(
+  ctx: StandaloneContext,
+  cardId: string,
+): Promise<{ card: Card; boardId: string } | null> {
+  const card = await ctx.sdk.getCard(cardId)
+  if (!card) return null
+
+  return {
+    card,
+    boardId: card.boardId ?? ctx.sdk._resolveBoardId(),
+  }
+}
+
 export async function doCreateCard(ctx: StandaloneContext, data: CreateCardData): Promise<Card> {
   return doCreateCardForBoard(ctx, data)
 }
@@ -55,12 +68,12 @@ export async function doCreateCardForBoard(ctx: StandaloneContext, data: CreateC
 }
 
 export async function doMoveCard(ctx: StandaloneContext, cardId: string, newStatus: string, newOrder: number): Promise<Card | null> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
-  if (!card) return null
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return null
 
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.moveCard(cardId, newStatus, newOrder, ctx.currentBoardId)
+    const updated = await ctx.sdk.moveCard(cardId, newStatus, newOrder)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
     return updated
@@ -77,14 +90,13 @@ export async function doUpdateCardForBoard(
   ctx: StandaloneContext,
   cardId: string,
   updates: Partial<Card>,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  const card = await ctx.sdk.getCard(cardId, boardId)
-  if (!card) return null
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return null
 
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.updateCard(cardId, updates, boardId)
+    const updated = await ctx.sdk.updateCard(cardId, updates)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
@@ -98,14 +110,13 @@ async function doChecklistMutationForBoard(
   ctx: StandaloneContext,
   cardId: string,
   mutate: () => Promise<Card>,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  const card = await ctx.sdk.getCard(cardId, boardId)
-  if (!card) return null
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return null
 
   ctx.migrating = true
   try {
-    const updated = await mutate()
+    const updated = await mutate(target.boardId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
@@ -121,9 +132,8 @@ export async function doAddChecklistItem(
   title: string,
   description: string,
   expectedToken: string,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.addChecklistItem(cardId, title, description, expectedToken, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.addChecklistItem(cardId, title, description, expectedToken))
 }
 
 export async function doEditChecklistItem(
@@ -133,9 +143,8 @@ export async function doEditChecklistItem(
   title: string,
   description: string,
   modifiedAt?: string,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.editChecklistItem(cardId, index, title, description, modifiedAt, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.editChecklistItem(cardId, index, title, description, modifiedAt))
 }
 
 export async function doDeleteChecklistItem(
@@ -143,9 +152,8 @@ export async function doDeleteChecklistItem(
   cardId: string,
   index: number,
   modifiedAt?: string,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.deleteChecklistItem(cardId, index, modifiedAt, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.deleteChecklistItem(cardId, index, modifiedAt))
 }
 
 export async function doCheckChecklistItem(
@@ -153,9 +161,8 @@ export async function doCheckChecklistItem(
   cardId: string,
   index: number,
   modifiedAt?: string,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.checkChecklistItem(cardId, index, modifiedAt, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.checkChecklistItem(cardId, index, modifiedAt))
 }
 
 export async function doUncheckChecklistItem(
@@ -163,18 +170,14 @@ export async function doUncheckChecklistItem(
   cardId: string,
   index: number,
   modifiedAt?: string,
-  boardId = ctx.currentBoardId,
 ): Promise<Card | null> {
-  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.uncheckChecklistItem(cardId, index, modifiedAt, boardId), boardId)
+  return doChecklistMutationForBoard(ctx, cardId, () => ctx.sdk.uncheckChecklistItem(cardId, index, modifiedAt))
 }
 
 export async function doSubmitForm(ctx: StandaloneContext, input: SubmitFormInput): Promise<SubmitFormResult> {
   ctx.migrating = true
   try {
-    const result = await ctx.sdk.submitForm({
-      ...input,
-      boardId: input.boardId ?? ctx.currentBoardId,
-    })
+    const result = await ctx.sdk.submitForm(input)
     await reloadAndBroadcast(ctx)
     return result
   } finally {
@@ -183,11 +186,11 @@ export async function doSubmitForm(ctx: StandaloneContext, input: SubmitFormInpu
 }
 
 export async function doDeleteCard(ctx: StandaloneContext, cardId: string): Promise<boolean> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
-  if (!card) return false
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return false
 
   try {
-    await ctx.sdk.deleteCard(cardId, ctx.currentBoardId)
+    await ctx.sdk.deleteCard(cardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
     return true
@@ -199,11 +202,11 @@ export async function doDeleteCard(ctx: StandaloneContext, cardId: string): Prom
 }
 
 export async function doPermanentDeleteCard(ctx: StandaloneContext, cardId: string): Promise<boolean> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
-  if (!card) return false
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return false
 
   try {
-    await ctx.sdk.permanentlyDeleteCard(cardId, ctx.currentBoardId)
+    await ctx.sdk.permanentlyDeleteCard(cardId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
     return true
@@ -283,13 +286,13 @@ export async function doSaveSettings(ctx: StandaloneContext, newSettings: CardDi
 }
 
 export async function doAddAttachment(ctx: StandaloneContext, cardId: string, filename: string, fileData: Buffer): Promise<boolean> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
-  if (!card) return false
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return false
 
   const safeFilename = path.basename(filename) || 'upload.bin'
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.addAttachmentData(cardId, safeFilename, fileData, ctx.currentBoardId)
+    const updated = await ctx.sdk.addAttachmentData(cardId, safeFilename, fileData)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     if (!ctx.skipMutationBroadcast) await loadCards(ctx)
@@ -300,12 +303,12 @@ export async function doAddAttachment(ctx: StandaloneContext, cardId: string, fi
 }
 
 export async function doRemoveAttachment(ctx: StandaloneContext, cardId: string, attachment: string): Promise<Card | null> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
-  if (!card) return null
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return null
 
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.removeAttachment(cardId, attachment, ctx.currentBoardId)
+    const updated = await ctx.sdk.removeAttachment(cardId, attachment)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
@@ -318,7 +321,7 @@ export async function doRemoveAttachment(ctx: StandaloneContext, cardId: string,
 export async function doAddComment(ctx: StandaloneContext, cardId: string, author: string, content: string): Promise<Comment | null> {
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.addComment(cardId, author, content, ctx.currentBoardId)
+    const updated = await ctx.sdk.addComment(cardId, author, content)
     ctx.lastWrittenContent = serializeCard(updated)
     const comment = updated.comments[updated.comments.length - 1]
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
@@ -333,9 +336,12 @@ export async function doAddComment(ctx: StandaloneContext, cardId: string, autho
 }
 
 export async function doUpdateComment(ctx: StandaloneContext, cardId: string, commentId: string, content: string): Promise<Comment | null> {
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return null
+
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.updateComment(cardId, commentId, content, ctx.currentBoardId)
+    const updated = await ctx.sdk.updateComment(cardId, commentId, content)
     ctx.lastWrittenContent = serializeCard(updated)
     const comment = (updated.comments || []).find(c => c.id === commentId)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
@@ -350,14 +356,14 @@ export async function doUpdateComment(ctx: StandaloneContext, cardId: string, co
 }
 
 export async function doDeleteComment(ctx: StandaloneContext, cardId: string, commentId: string): Promise<boolean> {
-  const card = await ctx.sdk.getCard(cardId, ctx.currentBoardId)
-  if (!card) return false
-  const comment = (card.comments || []).find(c => c.id === commentId)
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return false
+  const comment = (target.card.comments || []).find(c => c.id === commentId)
   if (!comment) return false
 
   ctx.migrating = true
   try {
-    const updated = await ctx.sdk.deleteComment(cardId, commentId, ctx.currentBoardId)
+    const updated = await ctx.sdk.deleteComment(cardId, commentId)
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)
@@ -373,7 +379,7 @@ export async function doDeleteComment(ctx: StandaloneContext, cardId: string, co
 export async function doAddLog(ctx: StandaloneContext, cardId: string, text: string, source?: string, object?: Record<string, unknown>, timestamp?: string) {
   ctx.migrating = true
   try {
-    const entry = await ctx.sdk.addLog(cardId, text, { source, timestamp, object }, ctx.currentBoardId)
+    const entry = await ctx.sdk.addLog(cardId, text, { source, timestamp, object })
     await reloadAndBroadcast(ctx)
     return entry
   } catch (err) {
@@ -385,9 +391,12 @@ export async function doAddLog(ctx: StandaloneContext, cardId: string, text: str
 }
 
 export async function doClearLogs(ctx: StandaloneContext, cardId: string): Promise<boolean> {
+  const target = await resolveCardTarget(ctx, cardId)
+  if (!target) return false
+
   ctx.migrating = true
   try {
-    await ctx.sdk.clearLogs(cardId, ctx.currentBoardId)
+    await ctx.sdk.clearLogs(cardId)
     await reloadAndBroadcast(ctx)
     return true
   } catch (err) {

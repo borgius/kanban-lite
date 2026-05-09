@@ -74,12 +74,12 @@ function createSdkStub() {
       }
       return out as unknown as Map<string, { unread: import('../sdk/types').CardUnreadSummary; open: null }>
     }),
-    markCardOpened: vi.fn(async (cardId: string, boardId?: string) => ({
+    markCardOpened: vi.fn(async (cardId: string) => ({
       actorId: 'default-user',
       cardId,
-      boardId: boardId ?? 'default',
-      latestActivity: { cursor: `card:${boardId ?? 'default'}:${cardId}:1`, updatedAt: '2026-03-24T00:00:00.000Z' },
-      readThrough: { cursor: `card:${boardId ?? 'default'}:${cardId}:1`, updatedAt: '2026-03-24T00:00:00.000Z' },
+      boardId: 'default',
+      latestActivity: { cursor: `card:default:${cardId}:1`, updatedAt: '2026-03-24T00:00:00.000Z' },
+      readThrough: { cursor: `card:default:${cardId}:1`, updatedAt: '2026-03-24T00:00:00.000Z' },
       unread: false,
     })),
     setActiveCard: vi.fn(async () => makeCard()),
@@ -168,12 +168,12 @@ describe('extension card-state UI adapter', () => {
       return fn()
     }
 
-    const error = await performExplicitCardOpen(sdk, runWithAuth, 'card-open', 'default')
+    const error = await performExplicitCardOpen(sdk, runWithAuth, 'card-open')
 
     expect(error).toBeNull()
     expect(runWithAuthCalls).toHaveBeenCalledTimes(2)
-    expect(sdk.markCardOpened).toHaveBeenCalledWith('card-open', 'default')
-    expect(sdk.setActiveCard).toHaveBeenCalledWith('card-open', 'default')
+    expect(sdk.markCardOpened).toHaveBeenCalledWith('card-open')
+    expect(sdk.setActiveCard).toHaveBeenCalledWith('card-open')
   })
 
   it('still updates active-card state when markCardOpened fails for configured identities', async () => {
@@ -185,14 +185,14 @@ describe('extension card-state UI adapter', () => {
       return fn()
     }
 
-    const error = await performExplicitCardOpen(sdk, runWithAuth, 'card-open', 'default')
+    const error = await performExplicitCardOpen(sdk, runWithAuth, 'card-open')
 
     expect(error).toMatchObject({
       code: ERR_CARD_STATE_IDENTITY_UNAVAILABLE,
       availability: 'identity-unavailable',
     })
     expect(runWithAuthCalls).toHaveBeenCalledTimes(2)
-    expect(sdk.setActiveCard).toHaveBeenCalledWith('card-open', 'default')
+    expect(sdk.setActiveCard).toHaveBeenCalledWith('card-open')
   })
 
   it('does not set active-card state when an auth-scoped explicit open is hidden as not found', async () => {
@@ -205,7 +205,7 @@ describe('extension card-state UI adapter', () => {
       return fn()
     }
 
-    await expect(performExplicitCardOpen(sdk, runWithAuth, 'private-card', 'default')).rejects.toThrow(hiddenCardNotFound)
+    await expect(performExplicitCardOpen(sdk, runWithAuth, 'private-card')).rejects.toThrow(hiddenCardNotFound)
 
     expect(runWithAuthCalls).toHaveBeenCalledTimes(1)
     expect(sdk.setActiveCard).not.toHaveBeenCalled()

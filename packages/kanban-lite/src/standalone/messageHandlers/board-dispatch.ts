@@ -1,6 +1,5 @@
 import { WebSocket } from 'ws'
 import type { AuthContext } from '../../sdk/types'
-import { readConfig } from '../../shared/config'
 import type { BoardMetaFieldDef } from '../../shared/config'
 import type { StandaloneContext } from '../context'
 import {
@@ -67,7 +66,7 @@ export async function dispatchBoardMessage(
     case 'addComment': {
       const comment = await runWithScopedAuth(() => doAddComment(ctx, msg.cardId as string, msg.author as string, msg.content as string))
       if (!comment) break
-      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string, ctx.currentBoardId))
+      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string))
       if (card) {
         await broadcastCardContentToEditingClients(ctx, card)
       }
@@ -77,7 +76,7 @@ export async function dispatchBoardMessage(
     case 'updateComment': {
       const comment = await runWithScopedAuth(() => doUpdateComment(ctx, msg.cardId as string, msg.commentId as string, msg.content as string))
       if (!comment) break
-      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string, ctx.currentBoardId))
+      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string))
       if (card) {
         await broadcastCardContentToEditingClients(ctx, card)
       }
@@ -86,7 +85,7 @@ export async function dispatchBoardMessage(
 
     case 'deleteComment': {
       await runWithScopedAuth(() => doDeleteComment(ctx, msg.cardId as string, msg.commentId as string))
-      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string, ctx.currentBoardId))
+      const card = ctx.cards.find(f => f.id === msg.cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(msg.cardId as string))
       if (card) {
         await broadcastCardContentToEditingClients(ctx, card)
       }
@@ -159,9 +158,11 @@ export async function dispatchBoardMessage(
       const cardId = msg.cardId as string
       const toBoard = msg.toBoard as string
       const targetStatus = msg.targetStatus as string
+      const sourceCard = ctx.cards.find(card => card.id === cardId) ?? await runWithScopedAuth(() => ctx.sdk.getCard(cardId))
+      if (!sourceCard) break
       ctx.migrating = true
       try {
-        await runWithScopedAuth(() => ctx.sdk.transferCard(cardId, ctx.currentBoardId || readConfig(ctx.workspaceRoot).defaultBoard, toBoard, targetStatus))
+        await runWithScopedAuth(() => ctx.sdk.transferCard(cardId, toBoard, targetStatus))
         await loadCards(ctx)
         broadcast(ctx, buildInitMessage(ctx))
       } catch (err) {
@@ -295,13 +296,14 @@ export async function dispatchBoardMessage(
     case 'triggerAction': {
       const { cardId, action, callbackKey } = msg as { cardId: string; action: string; callbackKey: string }
       try {
-        await runWithScopedAuth(() => ctx.sdk.triggerAction(cardId, action, undefined))
+        await runWithScopedAuth(() => ctx.sdk.triggerAction(cardId, action))
         await loadCards(ctx)
         broadcast(ctx, buildInitMessage(ctx))
         const updatedCard = ctx.cards.find(card => card.id === cardId)
+          ?? await runWithScopedAuth(() => ctx.sdk.getCard(cardId))
         if (updatedCard) {
           await broadcastCardContentToEditingClients(ctx, updatedCard)
-          await broadcastLogsUpdatedToEditingClients(ctx, cardId)
+          await broadcastLogsUpdatedToEditingClients(ctx, cardId, undefined, updatedCard.boardId)
         }
         ws.send(JSON.stringify({ type: 'actionResult', callbackKey }))
       } catch (err) {

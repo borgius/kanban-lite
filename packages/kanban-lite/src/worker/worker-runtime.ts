@@ -77,7 +77,11 @@ export function resolveWorkerRuntimeHostHandle(
   const moduleRegistry = createWorkerModuleRegistry(options.moduleRegistry ?? env?.KANBAN_MODULES ?? {})
   const upstreamHost = options.runtimeHost ?? getRuntimeHost() ?? undefined
   const workerProviderContext = bootstrap && env
-    ? createCloudflareWorkerProviderContext(bootstrap, env as Record<string, unknown>)
+    ? createCloudflareWorkerProviderContext(
+        bootstrap,
+        env as Record<string, unknown>,
+        () => state.runtimeContext,
+      )
     : upstreamHost?.getCloudflareWorkerProviderContext?.() ?? null
 
   assertWorkerCallbackModules(bootstrap, moduleRegistry)

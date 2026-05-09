@@ -251,22 +251,22 @@ export async function cmdBoardActions(sdk: KanbanSDK, positional: string[], flag
 export async function cmdTransfer(sdk: KanbanSDK, positional: string[], flags: Flags): Promise<void> {
   const cardId = positional[0]
   if (!cardId) {
-    console.error(red('Usage: kl transfer <card-id> --from <board> --to <board> [--status <status>]'))
+    console.error(red('Usage: kl transfer <card-id> --to <board> [--status <status>]'))
     process.exit(1)
   }
 
   const fromBoard = typeof flags.from === 'string' ? flags.from : undefined
   const toBoard = typeof flags.to === 'string' ? flags.to : undefined
 
-  if (!fromBoard || !toBoard) {
-    console.error(red('Both --from and --to are required'))
+  if (!toBoard) {
+    console.error(red('--to is required'))
     process.exit(1)
   }
 
   const targetStatus = typeof flags.status === 'string' ? flags.status : undefined
   const resolvedId = await resolveCardId(sdk, cardId, fromBoard, flags)
-  const card = await runWithCliAuth(sdk, flags, () => sdk.transferCard(resolvedId, fromBoard, toBoard, targetStatus))
-  console.log(green(`Transferred ${card.id} from ${fromBoard} → ${toBoard} (${colorStatus(card.status)})`))
+  const card = await runWithCliAuth(sdk, flags, () => sdk.transferCard(resolvedId, toBoard, targetStatus))
+  console.log(green(`Transferred ${card.id} to ${toBoard} (${colorStatus(card.status)})`))
 }
 
 // --- Attachment Commands ---

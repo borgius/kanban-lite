@@ -213,12 +213,12 @@ export async function cmdAction(sdk: KanbanSDK, positional: string[], flags: Fla
       const cardId = positional[1]
       const action = positional[2]
       if (!cardId || !action) {
-        console.error(red('Usage: kl action trigger <cardId> <action> [--board <boardId>]'))
+        console.error(red('Usage: kl action trigger <cardId> <action>'))
         process.exit(1)
       }
       const boardId = getBoardId(flags)
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      await runWithCliAuth(sdk, flags, () => sdk.triggerAction(resolvedId, action, boardId))
+      await runWithCliAuth(sdk, flags, () => sdk.triggerAction(resolvedId, action))
       console.log(green(`Action "${action}" triggered on card ${resolvedId}`))
       break
     }

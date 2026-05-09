@@ -827,6 +827,66 @@ describe('kl-plugin-cloudflare', () => {
     }
   })
 
+  it('schedules committed callback enqueue work with waitUntil when available', async () => {
+    const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kl-plugin-cloudflare-callback-waituntil-'))
+    tempPaths.push(workspaceRoot)
+    await writeCloudflareCallbackConfig(workspaceRoot, [
+      {
+        id: 'alpha-created',
+        name: 'alpha-created',
+        type: 'module',
+        events: ['task.created'],
+        enabled: true,
+        module: './callbacks/runtime.cjs',
+        handler: 'alpha',
+      },
+    ])
+
+    const database = new FakeD1Database()
+    const bucket = new FakeR2Bucket()
+    const queue = new FakeQueue()
+    const waitUntilCalls: Promise<unknown>[] = []
+    const worker = createWorkerContext(database, bucket, queue, (promise) => {
+      waitUntilCalls.push(promise)
+    })
+    const listener = createCallbackListenerPlugin({ workspaceRoot, worker })
+    const bus = new EventBus()
+
+    try {
+      listener.register(bus)
+
+      bus.emit('task.created', {
+        type: 'task.created',
+        data: {
+          event: 'task.created',
+          data: { id: 'card-callback-waituntil' },
+          meta: {
+            callback: {
+              eventId: 'cb_evt_cloudflare_waituntil',
+              idempotencyScope: 'event-handler',
+            },
+          },
+          timestamp: '2026-04-07T12:00:00.000Z',
+        },
+        timestamp: '2026-04-07T12:00:00.000Z',
+      })
+
+      expect(waitUntilCalls).toHaveLength(1)
+      await Promise.all(waitUntilCalls)
+
+      expect(database.callbackEventRecords.size).toBe(1)
+      expect(queue.messages).toEqual([
+        {
+          version: 1,
+          kind: 'durable-callback-event',
+          eventId: 'cb_evt_cloudflare_waituntil',
+        },
+      ])
+    } finally {
+      listener.unregister()
+    }
+  })
+
   it('fails closed when enabled inline or process handlers are configured for the cloudflare runtime', async () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'kl-plugin-cloudflare-callback-legacy-'))
     tempPaths.push(workspaceRoot)
@@ -1216,6 +1276,7 @@ function createWorkerContext(
   database: unknown,
   attachments: FakeR2Bucket,
   queue: FakeQueue = new FakeQueue(),
+  waitUntil?: (promise: Promise<unknown>) => void,
 ): CloudflareWorkerProviderContext {
   const bootstrap = {
     version: 1,
@@ -1282,6 +1343,7 @@ function createWorkerContext(
     requireQueue<T = unknown>(_handleName: string): T {
       return this.requireBinding<T>('callbacks')
     },
+    waitUntil,
   }
 }
 

@@ -340,7 +340,7 @@ describe('standalone shim reconnect behavior', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       messages: [
         { type: 'switchBoard', boardId: 'ops' },
-        { type: 'openCard', cardId: 'incident-42' },
+        { type: 'openCard', cardId: 'incident-42', boardId: 'ops' },
         { type: 'ready' },
       ],
     })
@@ -409,7 +409,7 @@ describe('standalone shim reconnect behavior', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       messages: [
         { type: 'switchBoard', boardId: 'ops' },
-        { type: 'openCard', cardId: 'incident-42' },
+        { type: 'openCard', cardId: 'incident-42', boardId: 'ops' },
         { type: 'ready' },
       ],
     })

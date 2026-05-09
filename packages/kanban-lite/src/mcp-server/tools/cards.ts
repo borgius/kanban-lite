@@ -93,18 +93,17 @@ export function registerCardMcpTools(
     'get_card',
     'Get full details of a specific kanban card by ID. Supports partial ID matching.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
-    async ({ boardId, cardId }) => {
+    async ({ cardId }) => {
       try {
-        const card = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (resolvedId) => {
-          const resolvedCard = await sdk.getCard(resolvedId, boardId)
+        const card = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, async (resolvedId) => {
+          const resolvedCard = await sdk.getCard(resolvedId)
           if (!resolvedCard) throw new Error(`Card not found: ${cardId}`)
           return resolvedCard
         })
 
-        const { fields: titleFields, template: titleTemplate } = getBoardTitleFieldsForMcp(sdk, card.boardId ?? boardId)
+        const { fields: titleFields, template: titleTemplate } = getBoardTitleFieldsForMcp(sdk, card.boardId)
         return {
           content: [{
             type: 'text' as const,
@@ -192,7 +191,6 @@ export function registerCardMcpTools(
     'update_card',
     'Update fields of an existing kanban card. Only specified fields are changed. Supports replacing attached forms and persisted per-form data.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       status: z.string().optional().describe('New status'),
       priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('New priority'),
@@ -205,7 +203,7 @@ export function registerCardMcpTools(
       forms: z.array(cardFormAttachmentSchema).optional().describe('Forms attached to this card (replaces existing attachments when provided).'),
       formData: cardFormDataMapSchema.optional().describe('Per-form persisted data keyed by resolved form id (replaces existing formData when provided).'),
     },
-    async ({ boardId, cardId, status, priority, assignee, dueDate, labels, content, metadata, actions, forms, formData }) => {
+    async ({ cardId, status, priority, assignee, dueDate, labels, content, metadata, actions, forms, formData }) => {
       const updates: Record<string, unknown> = {}
       if (status) updates.status = status
       if (priority) updates.priority = priority
@@ -219,8 +217,8 @@ export function registerCardMcpTools(
       if (formData !== undefined) updates.formData = formData
 
       try {
-        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
-          sdk.updateCard(resolvedId, updates, boardId)
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, (resolvedId) =>
+          sdk.updateCard(resolvedId, updates)
         )
         return {
           content: [{
@@ -238,16 +236,14 @@ export function registerCardMcpTools(
     'submit_card_form',
     'Submit a named/resolved form for a card using the SDK-owned validation and persistence contract. Returns the canonical persisted payload and form/card context.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       formId: z.string().describe('Resolved form identifier to submit (for named workspace forms this is usually the form name).'),
       data: z.record(z.string(), z.unknown()).describe('Submitted field values merged over the resolved form base payload before SDK validation.'),
     },
-    async ({ boardId, cardId, formId, data }) => {
+    async ({ cardId, formId, data }) => {
       try {
-        const result = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
+        const result = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, (resolvedId) =>
           sdk.submitForm({
-            boardId,
             cardId: resolvedId,
             formId,
             data,
@@ -270,14 +266,13 @@ export function registerCardMcpTools(
     'move_card',
     'Move a kanban card to a different status column.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
       status: z.string().describe('Target status column'),
     },
-    async ({ boardId, cardId, status }) => {
+    async ({ cardId, status }) => {
       try {
-        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, (resolvedId) =>
-          sdk.moveCard(resolvedId, status, undefined, boardId)
+        const updated = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, (resolvedId) =>
+          sdk.moveCard(resolvedId, status)
         )
         return {
           content: [{
@@ -295,13 +290,12 @@ export function registerCardMcpTools(
     'delete_card',
     'Soft-delete a kanban card (moves to deleted status). Use permanent_delete_card to remove from disk.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
-    async ({ boardId, cardId }) => {
+    async ({ cardId }) => {
       try {
-        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (nextResolvedId) => {
-          await sdk.deleteCard(nextResolvedId, boardId)
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, async (nextResolvedId) => {
+          await sdk.deleteCard(nextResolvedId)
           return nextResolvedId
         })
         return {
@@ -320,13 +314,12 @@ export function registerCardMcpTools(
     'permanent_delete_card',
     'Permanently delete a kanban card from disk. This cannot be undone.',
     {
-      boardId: z.string().optional().describe('Board ID (uses default board if omitted)'),
       cardId: z.string().describe('Card ID (or partial ID)'),
     },
-    async ({ boardId, cardId }) => {
+    async ({ cardId }) => {
       try {
-        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, boardId, async (nextResolvedId) => {
-          await sdk.permanentlyDeleteCard(nextResolvedId, boardId)
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, async (nextResolvedId) => {
+          await sdk.permanentlyDeleteCard(nextResolvedId)
           return nextResolvedId
         })
         return {
@@ -347,13 +340,15 @@ export function registerCardMcpTools(
     {
       card_id: z.string().describe('Card ID (partial match supported)'),
       action: z.string().describe('Action name to trigger'),
-      board_id: z.string().optional().describe('Board ID (omit for default board)'),
     },
-    async ({ card_id, action, board_id }) => {
+    async ({ card_id, action }) => {
       try {
-        await runWithMcpAuth(() => sdk.triggerAction(card_id, action, board_id))
+        const resolvedId = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, card_id, undefined, async (nextResolvedId) => {
+          await sdk.triggerAction(nextResolvedId, action)
+          return nextResolvedId
+        })
         return {
-          content: [{ type: 'text' as const, text: `Action "${action}" triggered successfully on card ${card_id}` }],
+          content: [{ type: 'text' as const, text: `Action "${action}" triggered successfully on card ${resolvedId}` }],
         }
       } catch (err) {
         return {

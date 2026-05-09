@@ -236,7 +236,7 @@ describe('Multi-board SDK operations', () => {
     })
   })
 
-  describe('moveCard with boardId', () => {
+  describe('moveCard by cardId', () => {
     it('should move a card within a board', async () => {
       const card = await sdk.createCard({
         content: '# Move Me',
@@ -244,7 +244,7 @@ describe('Multi-board SDK operations', () => {
         boardId: 'default'
       })
 
-      const moved = await sdk.moveCard(card.id, 'in-progress', undefined, 'default')
+      const moved = await sdk.moveCard(card.id, 'in-progress')
 
       expect(moved.status).toBe('in-progress')
       expect(moved.filePath).toContain(path.join('boards', 'default', 'in-progress'))
@@ -264,7 +264,7 @@ describe('Multi-board SDK operations', () => {
       const oldPath = card.filePath
       expect(oldPath).toContain(path.join('boards', 'default'))
 
-      const transferred = await sdk.transferCard(card.id, 'default', 'sprint')
+      const transferred = await sdk.transferCard(card.id, 'sprint')
 
       expect(transferred.boardId).toBe('sprint')
       expect(transferred.filePath).toContain(path.join('boards', 'sprint'))
@@ -281,7 +281,7 @@ describe('Multi-board SDK operations', () => {
         boardId: 'default'
       })
 
-      const transferred = await sdk.transferCard(card.id, 'default', 'sprint')
+      const transferred = await sdk.transferCard(card.id, 'sprint')
 
       // Sprint board defaultStatus is 'backlog' (inherited from default columns)
       expect(transferred.status).toBe('backlog')
@@ -296,7 +296,7 @@ describe('Multi-board SDK operations', () => {
         boardId: 'default'
       })
 
-      const transferred = await sdk.transferCard(card.id, 'default', 'sprint', 'in-progress')
+      const transferred = await sdk.transferCard(card.id, 'sprint', 'in-progress')
 
       expect(transferred.status).toBe('in-progress')
       expect(transferred.filePath).toContain(path.join('boards', 'sprint', 'in-progress'))
@@ -314,13 +314,13 @@ describe('Multi-board SDK operations', () => {
       // Create a source file and attach it to the card
       const srcFile = path.join(workspaceDir, 'file.txt')
       fs.writeFileSync(srcFile, 'hello')
-      await sdk.addAttachment(card.id, srcFile, 'default')
+      await sdk.addAttachment(card.id, srcFile)
 
       // Verify it landed in the source board's attachment directory
       const srcAttachDir = path.join(kanbanDir, 'boards', 'default', 'backlog', 'attachments')
       expect(fs.existsSync(path.join(srcAttachDir, 'file.txt'))).toBe(true)
 
-      const transferred = await sdk.transferCard(card.id, 'default', 'sprint')
+      const transferred = await sdk.transferCard(card.id, 'sprint')
 
       // Attachment should exist in destination board dir
       const dstAttachDir = path.join(kanbanDir, 'boards', 'sprint', 'backlog', 'attachments')
@@ -330,12 +330,13 @@ describe('Multi-board SDK operations', () => {
       expect(transferred.attachments).toContain('file.txt')
     })
 
-    it('should throw for non-existent source board', async () => {
-      await expect(sdk.transferCard('1', 'nonexistent', 'default')).rejects.toThrow('Board not found')
+    it('should throw for a missing card', async () => {
+      await expect(sdk.transferCard('1', 'default')).rejects.toThrow('Card not found')
     })
 
     it('should throw for non-existent target board', async () => {
-      await expect(sdk.transferCard('1', 'default', 'nonexistent')).rejects.toThrow('Board not found')
+      const card = await sdk.createCard({ content: '# Missing Target Board', boardId: 'default' })
+      await expect(sdk.transferCard(card.id, 'nonexistent')).rejects.toThrow('Board not found')
     })
   })
 
@@ -358,6 +359,34 @@ describe('Multi-board SDK operations', () => {
       // They should be in different directories
       expect(defaultCard.filePath).toContain(path.join('boards', 'default'))
       expect(sprintCard.filePath).toContain(path.join('boards', 'sprint'))
+    })
+
+    it('resolves card-scoped reads and mutations across boards when boardId is omitted', async () => {
+      await sdk.createBoard('sprint', 'Sprint')
+
+      const sprintCard = await sdk.createCard({
+        content: '# Sprint Card',
+        boardId: 'sprint',
+      })
+
+      await expect(sdk.getCard(sprintCard.id)).resolves.toMatchObject({
+        id: sprintCard.id,
+        boardId: 'sprint',
+      })
+
+      const commented = await sdk.addComment(sprintCard.id, 'alice', 'Cross-board comment')
+      expect(commented.boardId).toBe('sprint')
+      expect(commented.comments.at(-1)?.content).toBe('Cross-board comment')
+
+      const moved = await sdk.moveCard(sprintCard.id, 'done')
+      expect(moved.boardId).toBe('sprint')
+      expect(moved.status).toBe('done')
+
+      await expect(sdk.getCard(sprintCard.id)).resolves.toMatchObject({
+        id: sprintCard.id,
+        boardId: 'sprint',
+        status: 'done',
+      })
     })
   })
 
@@ -416,7 +445,7 @@ describe('Multi-board SDK operations', () => {
       })
       expect(card.completedAt).toBeNull()
 
-      const moved = await sdk.moveCard(card.id, 'done', undefined, 'default')
+      const moved = await sdk.moveCard(card.id, 'done')
       expect(moved.completedAt).not.toBeNull()
     })
 
@@ -428,7 +457,7 @@ describe('Multi-board SDK operations', () => {
       })
       expect(card.completedAt).not.toBeNull()
 
-      const moved = await sdk.moveCard(card.id, 'backlog', undefined, 'default')
+      const moved = await sdk.moveCard(card.id, 'backlog')
       expect(moved.completedAt).toBeNull()
     })
 
@@ -448,13 +477,13 @@ describe('Multi-board SDK operations', () => {
       })
       expect(card.completedAt).toBeNull()
 
-      const moved = await sdk.moveCard(card.id, 'closed', undefined, 'custom')
+      const moved = await sdk.moveCard(card.id, 'closed')
       expect(moved.completedAt).not.toBeNull()
     })
   })
 
   describe('board isolation', () => {
-    it('should not find cards across boards with getCard', async () => {
+    it('keeps board-scoped listings isolated even though getCard resolves globally', async () => {
       await sdk.createBoard('sprint', 'Sprint')
 
       const card = await sdk.createCard({
@@ -462,14 +491,12 @@ describe('Multi-board SDK operations', () => {
         boardId: 'default'
       })
 
-      // Should find in default board
-      const found = await sdk.getCard(card.id, 'default')
+      const found = await sdk.getCard(card.id)
       expect(found).not.toBeNull()
       expect(found?.id).toBe(card.id)
 
-      // Should not find in sprint board
-      const notFound = await sdk.getCard(card.id, 'sprint')
-      expect(notFound).toBeNull()
+      const sprintCards = await sdk.listCards(undefined, 'sprint')
+      expect(sprintCards.find(candidate => candidate.id === card.id)).toBeUndefined()
     })
 
     it('should keep cards in separate board directories on disk', async () => {

@@ -43,6 +43,7 @@ const webhookProviderPackages = new Map([
 ])
 const callbackProviderPackages = new Map([
   ['callbacks', 'kl-plugin-callback'],
+  ['cloudflare', 'kl-plugin-cloudflare'],
 ])
 // First-party plugins that are bundled by default for Cloudflare Workers.
 // Capability-specific packages such as kl-plugin-cloudflare and kl-plugin-webhook are
@@ -573,14 +574,13 @@ export async function createGeneratedWorker(tempDir, options) {
   })
 
   const embeddedBootstrap = await buildCloudflareWorkerBootstrap(createBootstrapInput(options))
-  const workerExports = [
-    `  fetch: createCloudflareWorkerFetchHandler({\n    kanbanDir: ${JSON.stringify(options.kanbanDir)},\n    bootstrap: embeddedBootstrap,\n    moduleRegistry,\n  })`,
-  ]
-
-  if (hasCallbackQueueConsumer) {
-    workerExports.push(
-      `  queue: createCloudflareWorkerQueueHandler({\n    kanbanDir: ${JSON.stringify(options.kanbanDir)},\n    bootstrap: embeddedBootstrap,\n    moduleRegistry,\n    sdkModule: sdkRuntimeModule,\n  })`,
-    )
+  const workerFetchSource = `createCloudflareWorkerFetchHandler({\n  kanbanDir: ${JSON.stringify(options.kanbanDir)},\n  bootstrap: embeddedBootstrap,\n  moduleRegistry,\n})`
+  const workerQueueSource = hasCallbackQueueConsumer
+    ? `createCloudflareWorkerQueueHandler({\n  kanbanDir: ${JSON.stringify(options.kanbanDir)},\n  bootstrap: embeddedBootstrap,\n  moduleRegistry,\n  sdkModule: sdkRuntimeModule,\n})`
+    : null
+  const namedExports = ['workerFetch as fetch']
+  if (workerQueueSource) {
+    namedExports.push('workerQueue as queue')
   }
 
   const generatedEntry = `${importLines.join('\n')}
@@ -591,9 +591,14 @@ const moduleRegistry = {
 ${registryEntries.join(',\n')}
 }
 
+const workerFetch = ${workerFetchSource}
+${workerQueueSource ? `const workerQueue = ${workerQueueSource}\n` : ''}
+
 export default {
-${workerExports.join(',\n')}
+  fetch: workerFetch${workerQueueSource ? ',\n  queue: workerQueue' : ''}
 }
+
+export { ${namedExports.join(', ')} }
 `
 
   const entryPath = path.join(tempDir, 'worker-entry.mjs')

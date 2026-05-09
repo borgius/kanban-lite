@@ -1,5 +1,5 @@
-import path from 'node:path'
-import { createRequire } from 'node:module'
+// @ts-ignore TS7016: local runtime shim is a plain .mjs file with adjacent declaration support for editors.
+import { assertCallableCallbackModuleExport as sdkAssertCallableCallbackModuleExport, buildCallbackExecutionPlan as sdkBuildCallbackExecutionPlan, buildCallbackHandlerRevisionInput as sdkBuildCallbackHandlerRevisionInput, createCloudflareCallbackQueueMessageEnvelope as sdkCreateCloudflareCallbackQueueMessageEnvelope, createDurableCallbackDispatchMetadata as sdkCreateDurableCallbackDispatchMetadata, createDurableCallbackHandlerClaims as sdkCreateDurableCallbackHandlerClaims, createDurableCallbackHandlerRevision as sdkCreateDurableCallbackHandlerRevision, getDurableCallbackDispatchMetadata as sdkGetDurableCallbackDispatchMetadata, normalizeCallbackHandlers as sdkNormalizeCallbackHandlers, readConfig as sdkReadConfig, resolveCallbackModuleTarget as sdkResolveCallbackModuleTarget, resolveCallbackRuntimeModule as sdkResolveCallbackRuntimeModule } from './sdk-runtime.mjs'
 import type {
   AttachmentStoragePlugin,
   AfterEventPayload,
@@ -23,55 +23,21 @@ import type {
   StorageEngine,
 } from 'kanban-lite/sdk'
 
-
-
 export type KanbanSdkRuntimeModule = typeof import('kanban-lite/sdk')
-export const runtimeRequire = createRequire(path.resolve(process.cwd(), 'package.json'))
-let cachedSdkRuntime: KanbanSdkRuntimeModule | null = null
-
-function hasKanbanSdkRuntimeModule(value: unknown): value is KanbanSdkRuntimeModule {
-  return Boolean(value)
-    && typeof value === 'object'
-    && typeof (value as KanbanSdkRuntimeModule).assertCallableCallbackModuleExport === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).buildCallbackExecutionPlan === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).buildCallbackHandlerRevisionInput === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).createCloudflareCallbackQueueMessageEnvelope === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).createDurableCallbackDispatchMetadata === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).createDurableCallbackHandlerClaims === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).createDurableCallbackHandlerRevision === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).getDurableCallbackDispatchMetadata === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).normalizeCallbackHandlers === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).readConfig === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).resolveCallbackModuleTarget === 'function'
-    && typeof (value as KanbanSdkRuntimeModule).resolveCallbackRuntimeModule === 'function'
-}
-
-function tryLoadKanbanSdkRuntimeModule(request: string): KanbanSdkRuntimeModule | null {
-  try {
-    const loaded = runtimeRequire(request) as unknown
-    return hasKanbanSdkRuntimeModule(loaded) ? loaded : null
-  } catch {
-    return null
-  }
-}
-
-export const sdkRuntime = tryLoadKanbanSdkRuntimeModule('kanban-lite/sdk')
-  ?? null
-
-function getSdkRuntime(): KanbanSdkRuntimeModule {
-  cachedSdkRuntime ??= sdkRuntime
-    ?? tryLoadKanbanSdkRuntimeModule(
-      path.resolve(process.cwd(), 'packages', 'kanban-lite', 'dist', 'sdk', 'index.cjs'),
-    )
-
-  if (!cachedSdkRuntime) {
-    throw new Error(
-      'kl-plugin-cloudflare: unable to load kanban-lite SDK runtime helpers. Install kanban-lite or build the workspace SDK before loading this provider.',
-    )
-  }
-
-  return cachedSdkRuntime
-}
+export const sdkRuntime: KanbanSdkRuntimeModule = {
+  assertCallableCallbackModuleExport: sdkAssertCallableCallbackModuleExport,
+  buildCallbackExecutionPlan: sdkBuildCallbackExecutionPlan,
+  buildCallbackHandlerRevisionInput: sdkBuildCallbackHandlerRevisionInput,
+  createCloudflareCallbackQueueMessageEnvelope: sdkCreateCloudflareCallbackQueueMessageEnvelope,
+  createDurableCallbackDispatchMetadata: sdkCreateDurableCallbackDispatchMetadata,
+  createDurableCallbackHandlerClaims: sdkCreateDurableCallbackHandlerClaims,
+  createDurableCallbackHandlerRevision: sdkCreateDurableCallbackHandlerRevision,
+  getDurableCallbackDispatchMetadata: sdkGetDurableCallbackDispatchMetadata,
+  normalizeCallbackHandlers: sdkNormalizeCallbackHandlers,
+  readConfig: sdkReadConfig,
+  resolveCallbackModuleTarget: sdkResolveCallbackModuleTarget,
+  resolveCallbackRuntimeModule: sdkResolveCallbackRuntimeModule,
+} as KanbanSdkRuntimeModule
 
 type AssertCallableCallbackModuleExport = KanbanSdkRuntimeModule['assertCallableCallbackModuleExport']
 type BuildCallbackExecutionPlan = KanbanSdkRuntimeModule['buildCallbackExecutionPlan']
@@ -86,53 +52,29 @@ type ReadConfig = KanbanSdkRuntimeModule['readConfig']
 type ResolveCallbackModuleTarget = KanbanSdkRuntimeModule['resolveCallbackModuleTarget']
 type ResolveCallbackRuntimeModule = KanbanSdkRuntimeModule['resolveCallbackRuntimeModule']
 
-export const assertCallableCallbackModuleExport: AssertCallableCallbackModuleExport = ((...args) =>
-  getSdkRuntime().assertCallableCallbackModuleExport(...args)
-) as AssertCallableCallbackModuleExport
+export const assertCallableCallbackModuleExport: AssertCallableCallbackModuleExport = sdkRuntime.assertCallableCallbackModuleExport
 
-export const buildCallbackExecutionPlan: BuildCallbackExecutionPlan = ((...args) =>
-  getSdkRuntime().buildCallbackExecutionPlan(...args)
-) as BuildCallbackExecutionPlan
+export const buildCallbackExecutionPlan: BuildCallbackExecutionPlan = sdkRuntime.buildCallbackExecutionPlan
 
-export const buildCallbackHandlerRevisionInput: BuildCallbackHandlerRevisionInput = ((...args) =>
-  getSdkRuntime().buildCallbackHandlerRevisionInput(...args)
-) as BuildCallbackHandlerRevisionInput
+export const buildCallbackHandlerRevisionInput: BuildCallbackHandlerRevisionInput = sdkRuntime.buildCallbackHandlerRevisionInput
 
-export const createCloudflareCallbackQueueMessageEnvelope: CreateCloudflareCallbackQueueMessageEnvelope = ((...args) =>
-  getSdkRuntime().createCloudflareCallbackQueueMessageEnvelope(...args)
-) as CreateCloudflareCallbackQueueMessageEnvelope
+export const createCloudflareCallbackQueueMessageEnvelope: CreateCloudflareCallbackQueueMessageEnvelope = sdkRuntime.createCloudflareCallbackQueueMessageEnvelope
 
-export const createDurableCallbackDispatchMetadata: CreateDurableCallbackDispatchMetadata = ((...args) =>
-  getSdkRuntime().createDurableCallbackDispatchMetadata(...args)
-) as CreateDurableCallbackDispatchMetadata
+export const createDurableCallbackDispatchMetadata: CreateDurableCallbackDispatchMetadata = sdkRuntime.createDurableCallbackDispatchMetadata
 
-export const createDurableCallbackHandlerClaims: CreateDurableCallbackHandlerClaims = ((...args) =>
-  getSdkRuntime().createDurableCallbackHandlerClaims(...args)
-) as CreateDurableCallbackHandlerClaims
+export const createDurableCallbackHandlerClaims: CreateDurableCallbackHandlerClaims = sdkRuntime.createDurableCallbackHandlerClaims
 
-export const createDurableCallbackHandlerRevision: CreateDurableCallbackHandlerRevision = ((...args) =>
-  getSdkRuntime().createDurableCallbackHandlerRevision(...args)
-) as CreateDurableCallbackHandlerRevision
+export const createDurableCallbackHandlerRevision: CreateDurableCallbackHandlerRevision = sdkRuntime.createDurableCallbackHandlerRevision
 
-export const getDurableCallbackDispatchMetadata: GetDurableCallbackDispatchMetadata = ((...args) =>
-  getSdkRuntime().getDurableCallbackDispatchMetadata(...args)
-) as GetDurableCallbackDispatchMetadata
+export const getDurableCallbackDispatchMetadata: GetDurableCallbackDispatchMetadata = sdkRuntime.getDurableCallbackDispatchMetadata
 
-export const normalizeCallbackHandlers: NormalizeCallbackHandlers = ((...args) =>
-  getSdkRuntime().normalizeCallbackHandlers(...args)
-) as NormalizeCallbackHandlers
+export const normalizeCallbackHandlers: NormalizeCallbackHandlers = sdkRuntime.normalizeCallbackHandlers
 
-export const readConfig: ReadConfig = ((...args) =>
-  getSdkRuntime().readConfig(...args)
-) as ReadConfig
+export const readConfig: ReadConfig = sdkRuntime.readConfig
 
-export const resolveCallbackModuleTarget: ResolveCallbackModuleTarget = ((...args) =>
-  getSdkRuntime().resolveCallbackModuleTarget(...args)
-) as ResolveCallbackModuleTarget
+export const resolveCallbackModuleTarget: ResolveCallbackModuleTarget = sdkRuntime.resolveCallbackModuleTarget
 
-export const resolveCallbackRuntimeModule: ResolveCallbackRuntimeModule = ((...args) =>
-  getSdkRuntime().resolveCallbackRuntimeModule(...args)
-) as ResolveCallbackRuntimeModule
+export const resolveCallbackRuntimeModule: ResolveCallbackRuntimeModule = sdkRuntime.resolveCallbackRuntimeModule
 
 export const PROVIDER_ID = 'cloudflare'
 export const DEFAULT_BOARD_ID = 'default'

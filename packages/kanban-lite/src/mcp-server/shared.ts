@@ -99,8 +99,8 @@ export function createMcpErrorResult(err: unknown): McpToolResult {
 }
 
 export async function resolveMcpCardId(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<string> {
-  const card = await sdk.getCard(cardId, boardId)
-  if (card) return card.id
+  const card = await sdk.getCard(cardId)
+  if (card && (!boardId || card.boardId === boardId)) return card.id
 
   const all = await sdk.listCards(undefined, boardId)
   const matches = all.filter(item => item.id.includes(cardId))
@@ -122,9 +122,9 @@ export async function runWithResolvedMcpCardId<T>(
   })
 }
 
-export async function buildMcpCardStateReadModel(sdk: KanbanSDK, cardId: string, boardId?: string): Promise<McpCardStateReadModel> {
-  const unread = await sdk.getUnreadSummary(cardId, boardId)
-  const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
+export async function buildMcpCardStateReadModel(sdk: KanbanSDK, cardId: string, _boardId?: string): Promise<McpCardStateReadModel> {
+  const unread = await sdk.getUnreadSummary(cardId)
+  const open = await sdk.getCardState(unread.cardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
   return {
     cardId: unread.cardId,
     boardId: unread.boardId,
@@ -133,7 +133,7 @@ export async function buildMcpCardStateReadModel(sdk: KanbanSDK, cardId: string,
 }
 
 export async function buildMcpCardStateMutationModel(sdk: KanbanSDK, unread: CardUnreadSummary): Promise<McpCardStateMutationModel> {
-  const open = await sdk.getCardState(unread.cardId, unread.boardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
+  const open = await sdk.getCardState(unread.cardId, CARD_STATE_OPEN_DOMAIN) as CardStateRecord<CardOpenStateValue> | null
   return {
     unread,
     cardState: {

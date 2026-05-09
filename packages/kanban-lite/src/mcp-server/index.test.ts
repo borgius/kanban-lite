@@ -1238,9 +1238,9 @@ describe('MCP card-state parity tools', () => {
     ])
     expect(tools.map((tool) => tool.name)).toEqual(registered)
     expect(Object.keys(tools.find((tool) => tool.name === 'get_card_state_status')?.schema ?? {})).toEqual([])
-    expect(Object.keys(tools.find((tool) => tool.name === 'get_card_state')?.schema ?? {})).toEqual(['boardId', 'cardId'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'open_card')?.schema ?? {})).toEqual(['boardId', 'cardId'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'read_card')?.schema ?? {})).toEqual(['boardId', 'cardId', 'readThrough'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'get_card_state')?.schema ?? {})).toEqual(['cardId'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'open_card')?.schema ?? {})).toEqual(['cardId'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'read_card')?.schema ?? {})).toEqual(['cardId', 'readThrough'])
   })
 
   it('returns status plus side-effect-free read and explicit mutation envelopes aligned with CLI/API parity', async () => {
@@ -1386,10 +1386,10 @@ describe('MCP checklist tools', () => {
       'uncheck_card_checklist_item',
     ])
     expect(tools.map((tool) => tool.name)).toEqual(registered)
-    expect(Object.keys(tools.find((tool) => tool.name === 'list_card_checklist_items')?.schema ?? {})).toEqual(['boardId', 'cardId'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'add_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'title', 'description', 'expectedToken'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'edit_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'title', 'description', 'modifiedAt'])
-    expect(Object.keys(tools.find((tool) => tool.name === 'check_card_checklist_item')?.schema ?? {})).toEqual(['boardId', 'cardId', 'index', 'modifiedAt'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'list_card_checklist_items')?.schema ?? {})).toEqual(['cardId'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'add_card_checklist_item')?.schema ?? {})).toEqual(['cardId', 'title', 'description', 'expectedToken'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'edit_card_checklist_item')?.schema ?? {})).toEqual(['cardId', 'index', 'title', 'description', 'modifiedAt'])
+    expect(Object.keys(tools.find((tool) => tool.name === 'check_card_checklist_item')?.schema ?? {})).toEqual(['cardId', 'index', 'modifiedAt'])
   })
 
   it('returns checklist items plus optimistic-concurrency values through the MCP checklist tools', async () => {

@@ -1178,4 +1178,178 @@ describe('App live card refresh', () => {
       }),
     })
   })
+
+  it('ignores init payloads from another board when the open card shares the same id', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    storeState.currentBoard = 'email-ops'
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'cardContent',
+      cardId: '338',
+      content: '# Review: Jacob Gibson',
+      frontmatter: {
+        version: 1,
+        id: '338',
+        boardId: 'email-ops',
+        status: 'needs-review',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-01T00:00:00.000Z',
+        completedAt: null,
+        labels: ['thread-review'],
+        attachments: [],
+        order: 'a0',
+      },
+      comments: [],
+      logs: [],
+    })
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'init',
+      currentBoard: 'processes',
+      cards: [{
+        version: 1,
+        id: '338',
+        boardId: 'processes',
+        status: 'done',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-02T00:00:00.000Z',
+        completedAt: null,
+        labels: ['stage:done'],
+        attachments: [],
+        comments: [],
+        order: 'a0',
+        content: '# historical-email-airtable',
+        filePath: '/tmp/process-338.md',
+      }],
+      columns: [{ id: 'done', name: 'Done', color: '#22c55e' }],
+      settings: { ...DEFAULT_CARD_SETTINGS },
+    })
+
+    renderApp()
+
+    expect(storeState.currentBoard).toBe('email-ops')
+    expect(hookRuntime.values[8]).toMatchObject({
+      content: '# Review: Jacob Gibson',
+      frontmatter: expect.objectContaining({
+        boardId: 'email-ops',
+        status: 'needs-review',
+      }),
+    })
+  })
+
+  it('ignores cardsUpdated rows from another board when the open card shares the same id', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    storeState.currentBoard = 'email-ops'
+    hookRuntime.values[8] = {
+      id: '338',
+      content: '# Review: Jacob Gibson',
+      frontmatter: {
+        version: 1,
+        id: '338',
+        boardId: 'email-ops',
+        status: 'needs-review',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-01T00:00:00.000Z',
+        completedAt: null,
+        labels: ['thread-review'],
+        attachments: [],
+        order: 'a0',
+      },
+      comments: [],
+      logs: [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'test', text: 'keep me' }],
+      contentVersion: 2,
+    }
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'cardsUpdated',
+      cards: [{
+        version: 1,
+        id: '338',
+        boardId: 'processes',
+        status: 'done',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-03T00:00:00.000Z',
+        completedAt: null,
+        labels: ['stage:done'],
+        attachments: [],
+        comments: [{ id: 'c2', author: 'api', created: '2024-01-03T00:00:00.000Z', content: 'Wrong board update' }],
+        order: 'a0',
+        content: '# historical-email-airtable',
+        filePath: '/tmp/process-338.md',
+      }],
+    })
+
+    renderApp()
+
+    expect(hookRuntime.values[8]).toMatchObject({
+      content: '# Review: Jacob Gibson',
+      logs: [{ timestamp: '2024-01-01T00:00:00.000Z', source: 'test', text: 'keep me' }],
+      frontmatter: expect.objectContaining({
+        boardId: 'email-ops',
+        status: 'needs-review',
+      }),
+    })
+  })
+
+  it('posts boardId with drawer-triggered actions for duplicate card ids across boards', () => {
+    storeState.columns = [{ id: 'todo', name: 'Todo', color: '#000000' }]
+    storeState.currentBoard = 'email-ops'
+
+    renderApp()
+
+    dispatchMessage({
+      type: 'cardContent',
+      cardId: '338',
+      content: '# Review: Jacob Gibson',
+      frontmatter: {
+        version: 1,
+        id: '338',
+        boardId: 'email-ops',
+        status: 'needs-review',
+        priority: 'medium',
+        assignee: null,
+        dueDate: null,
+        created: '2024-01-01T00:00:00.000Z',
+        modified: '2024-01-01T00:00:00.000Z',
+        completedAt: null,
+        labels: ['thread-review'],
+        attachments: [],
+        order: 'a0',
+        actions: { rematch: 'Rematch thread' },
+      },
+      comments: [],
+      logs: [],
+    })
+
+    renderApp()
+    renderApp()
+
+    postMessageSpy.mockClear()
+    ;(cardEditorPropsRef.current?.onTriggerAction as ((action: string) => void) | undefined)?.('rematch')
+
+    expect(postMessageSpy).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'triggerAction',
+      cardId: '338',
+      action: 'rematch',
+      boardId: 'email-ops',
+    }))
+  })
 })

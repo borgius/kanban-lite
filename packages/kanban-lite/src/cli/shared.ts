@@ -168,8 +168,8 @@ export async function resolveCardId(
   boardId: string | undefined,
   flags: Flags,
 ): Promise<string> {
-  const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(cardId, boardId))
-  if (card) return cardId
+  const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(cardId))
+  if (card && (!boardId || card.boardId === boardId)) return card.id
 
   const all = await runWithCliAuth(sdk, flags, () => sdk.listCards(undefined, boardId))
   const matches = all.filter(c => c.id.includes(cardId))

@@ -1,4 +1,3 @@
-import * as path from 'path'
 import type { Card, CardSortOption, ResolvedFormDescriptor, TaskPermissionsReadModel } from '../shared/types'
 import type { CreateCardInput, SubmitFormInput, SubmitFormResult } from './types'
 import { sanitizeCard } from './types'
@@ -13,18 +12,22 @@ export { KanbanSDKBoards }
 export class KanbanSDKCards extends KanbanSDKBoards {
   // --- Transfer ---
 
-  async transferCard(cardId: string, fromBoardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.transferCard>>('card.transfer', {
+  async transferCard(cardId: string, toBoardId: string, targetStatus?: string): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Boards.transferCard> & { fromBoardId?: string }>('card.transfer', {
       cardId,
-      fromBoardId,
       toBoardId,
       targetStatus,
-    }, undefined, fromBoardId)
-    const snapshot = await this.getCard(mergedInput.cardId, mergedInput.fromBoardId)
+      fromBoardId: target.boardId,
+    }, undefined, target.boardId)
+    const snapshot = await this.getCard(mergedInput.cardId)
+    if (!snapshot) throw new Error(`Card not found: ${mergedInput.cardId}`)
+
+    const fromBoardId = snapshot.boardId ?? target.boardId
     const card = await Boards.transferCard(this._ctx, mergedInput)
     this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId, {
       previousStatus: snapshot?.status,
-      fromBoard: mergedInput.fromBoardId,
+      fromBoard: fromBoardId,
       toBoard: mergedInput.toBoardId,
       transfer: true,
     })
@@ -35,10 +38,19 @@ export class KanbanSDKCards extends KanbanSDKBoards {
 
   /** @internal */
   protected async _getScopedMutationCard(card: Card): Promise<Card> {
-    const visibleCard = await this.getCard(card.id, card.boardId)
+    const visibleCard = await this.getCard(card.id)
     if (visibleCard) return visibleCard
     if (this._currentAuthContext) throw new Error(`Card not found: ${card.id}`)
     return card
+  }
+
+  /** @internal */
+  protected async _resolveCardMutationTarget(cardId: string): Promise<{ card: Card | null; boardId: string }> {
+    const card = await this._getCardRaw(cardId)
+    return {
+      card,
+      boardId: card?.boardId ?? this._resolveBoardId(),
+    }
   }
 
   // --- Card queries ---
@@ -69,26 +81,26 @@ export class KanbanSDKCards extends KanbanSDKBoards {
     return Cards.listCardsRaw(this._ctx, { columns, boardId })
   }
 
-  async getCard(cardId: string, boardId?: string): Promise<Card | null> {
-    return Cards.getCard(this._ctx, { cardId, boardId })
+  async getCard(cardId: string): Promise<Card | null> {
+    return Cards.getCard(this._ctx, { cardId })
   }
 
   /** @internal */
-  async _getCardRaw(cardId: string, boardId?: string): Promise<Card | null> {
-    return Cards.getCardRaw(this._ctx, { cardId, boardId })
+  async _getCardRaw(cardId: string): Promise<Card | null> {
+    return Cards.getCardRaw(this._ctx, { cardId })
   }
 
   async getTaskPermissions(card: Omit<Card, 'filePath'>): Promise<TaskPermissionsReadModel>
-  async getTaskPermissions(cardId: string, boardId?: string): Promise<TaskPermissionsReadModel | null>
-  async getTaskPermissions(cardOrId: string | Omit<Card, 'filePath'>, boardId?: string): Promise<TaskPermissionsReadModel | null> {
-    const card = typeof cardOrId === 'string' ? await this.getCard(cardOrId, boardId) : cardOrId
+  async getTaskPermissions(cardId: string): Promise<TaskPermissionsReadModel | null>
+  async getTaskPermissions(cardOrId: string | Omit<Card, 'filePath'>): Promise<TaskPermissionsReadModel | null> {
+    const card = typeof cardOrId === 'string' ? await this.getCard(cardOrId) : cardOrId
     return card ? Cards.buildTaskPermissionsReadModel(this._ctx, card) : null
   }
 
   async getResolvedTaskForms(card: Omit<Card, 'filePath'>): Promise<ResolvedFormDescriptor[]>
-  async getResolvedTaskForms(cardId: string, boardId?: string): Promise<ResolvedFormDescriptor[] | null>
-  async getResolvedTaskForms(cardOrId: string | Omit<Card, 'filePath'>, boardId?: string): Promise<ResolvedFormDescriptor[] | null> {
-    const card = typeof cardOrId === 'string' ? await this.getCard(cardOrId, boardId) : cardOrId
+  async getResolvedTaskForms(cardId: string): Promise<ResolvedFormDescriptor[] | null>
+  async getResolvedTaskForms(cardOrId: string | Omit<Card, 'filePath'>): Promise<ResolvedFormDescriptor[] | null> {
+    const card = typeof cardOrId === 'string' ? await this.getCard(cardOrId) : cardOrId
     return card ? Cards.resolveCardForms(this._ctx, card) : null
   }
 
@@ -99,8 +111,8 @@ export class KanbanSDKCards extends KanbanSDKBoards {
   }
 
   /** @internal */
-  async setActiveCard(cardId: string, boardId?: string): Promise<Card> {
-    return Cards.setActiveCard(this._ctx, { cardId, boardId })
+  async setActiveCard(cardId: string): Promise<Card> {
+    return Cards.setActiveCard(this._ctx, { cardId })
   }
 
   /** @internal */
@@ -120,8 +132,9 @@ export class KanbanSDKCards extends KanbanSDKBoards {
     return this._getScopedMutationCard(card)
   }
 
-  async updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.updateCard>>('card.update', { cardId, updates, boardId }, undefined, boardId)
+  async updateCard(cardId: string, updates: Partial<Card>): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.updateCard>>('card.update', { cardId, updates }, undefined, target.boardId)
     const card = await Cards.updateCard(this._ctx, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return this._getScopedMutationCard(card)
@@ -129,64 +142,69 @@ export class KanbanSDKCards extends KanbanSDKBoards {
 
   // --- Checklist ---
 
-  async addChecklistItem(cardId: string, title: string, description: string, expectedToken: string, boardId?: string): Promise<Card> {
+  async addChecklistItem(cardId: string, title: string, description: string, expectedToken: string): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
     const createdBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.addChecklistItem>>(
       'card.checklist.add',
-      { cardId, title, description, expectedToken, boardId, createdBy },
+      { cardId, title, description, expectedToken, createdBy },
       undefined,
-      boardId,
+      target.boardId,
     )
     const card = await Cards.addChecklistItem(this._ctx, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return this._getScopedMutationCard(card)
   }
 
-  async editChecklistItem(cardId: string, index: number, title: string, description: string, modifiedAt?: string, boardId?: string): Promise<Card> {
+  async editChecklistItem(cardId: string, index: number, title: string, description: string, modifiedAt?: string): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
     const modifiedBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.editChecklistItem>>(
       'card.checklist.edit',
-      { cardId, index, title, description, modifiedAt, boardId, modifiedBy },
+      { cardId, index, title, description, modifiedAt, modifiedBy },
       undefined,
-      boardId,
+      target.boardId,
     )
     const card = await Cards.editChecklistItem(this._ctx, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return this._getScopedMutationCard(card)
   }
 
-  async deleteChecklistItem(cardId: string, index: number, modifiedAt?: string, boardId?: string): Promise<Card> {
+  async deleteChecklistItem(cardId: string, index: number, modifiedAt?: string): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteChecklistItem>>(
       'card.checklist.delete',
-      { cardId, index, modifiedAt, boardId },
+      { cardId, index, modifiedAt },
       undefined,
-      boardId,
+      target.boardId,
     )
     const card = await Cards.deleteChecklistItem(this._ctx, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return this._getScopedMutationCard(card)
   }
 
-  async checkChecklistItem(cardId: string, index: number, modifiedAt?: string, boardId?: string): Promise<Card> {
+  async checkChecklistItem(cardId: string, index: number, modifiedAt?: string): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
     const modifiedBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.checkChecklistItem>>(
       'card.checklist.check',
-      { cardId, index, modifiedAt, boardId, modifiedBy },
+      { cardId, index, modifiedAt, modifiedBy },
       undefined,
-      boardId,
+      target.boardId,
     )
     const card = await Cards.checkChecklistItem(this._ctx, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
     return this._getScopedMutationCard(card)
   }
 
-  async uncheckChecklistItem(cardId: string, index: number, modifiedAt?: string, boardId?: string): Promise<Card> {
+  async uncheckChecklistItem(cardId: string, index: number, modifiedAt?: string): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
     const modifiedBy = await this._resolveActorForMutation()
     const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.uncheckChecklistItem>>(
       'card.checklist.uncheck',
-      { cardId, index, modifiedAt, boardId, modifiedBy },
+      { cardId, index, modifiedAt, modifiedBy },
       undefined,
-      boardId,
+      target.boardId,
     )
     const card = await Cards.uncheckChecklistItem(this._ctx, mergedInput)
     this._runAfterEvent('task.updated', sanitizeCard(card), undefined, card.boardId)
@@ -196,37 +214,42 @@ export class KanbanSDKCards extends KanbanSDKBoards {
   // --- Forms & actions ---
 
   async submitForm(input: SubmitFormInput): Promise<SubmitFormResult> {
-    const mergedInput = await this._runBeforeEvent<SubmitFormInput & Record<string, unknown>>('form.submit', { ...input } as SubmitFormInput & Record<string, unknown>, undefined, input.boardId)
+    const target = await this._resolveCardMutationTarget(input.cardId)
+    const mergedInput = await this._runBeforeEvent<SubmitFormInput & Record<string, unknown>>('form.submit', { ...input } as SubmitFormInput & Record<string, unknown>, undefined, target.boardId)
     const result = await Cards.submitForm(this._ctx, mergedInput)
     this._runAfterEvent('form.submitted', result, undefined, result.boardId)
     return result
   }
 
-  async triggerAction(cardId: string, action: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.triggerAction>>('card.action.trigger', { cardId, action, boardId }, undefined, boardId)
+  async triggerAction(cardId: string, action: string): Promise<void> {
+    const target = await this._resolveCardMutationTarget(cardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.triggerAction>>('card.action.trigger', { cardId, action }, undefined, target.boardId)
     const payload = await Cards.triggerAction(this._ctx, mergedInput)
     this._runAfterEvent('card.action.triggered', payload, undefined, payload.board)
   }
 
   // --- Card lifecycle ---
 
-  async moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.moveCard>>('card.move', { cardId, newStatus, position, boardId }, undefined, boardId)
+  async moveCard(cardId: string, newStatus: string, position?: number): Promise<Card> {
+    const target = await this._resolveCardMutationTarget(cardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.moveCard>>('card.move', { cardId, newStatus, position }, undefined, target.boardId)
     const card = await Cards.moveCard(this._ctx, mergedInput)
     this._runAfterEvent('task.moved', sanitizeCard(card), undefined, card.boardId)
     return this._getScopedMutationCard(card)
   }
 
-  async deleteCard(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard>>('card.delete', { cardId, boardId }, undefined, boardId)
+  async deleteCard(cardId: string): Promise<void> {
+    const target = await this._resolveCardMutationTarget(cardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.deleteCard>>('card.delete', { cardId }, undefined, target.boardId)
     await Cards.deleteCard(this._ctx, mergedInput)
-    const deleted = await this.getCard(mergedInput.cardId, mergedInput.boardId)
+    const deleted = await this.getCard(mergedInput.cardId)
     if (deleted) this._runAfterEvent('task.deleted', sanitizeCard(deleted), undefined, deleted.boardId)
   }
 
-  async permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void> {
-    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.permanentlyDeleteCard>>('card.delete', { cardId, boardId }, undefined, boardId)
-    const snapshot = await this.getCard(mergedInput.cardId, mergedInput.boardId)
+  async permanentlyDeleteCard(cardId: string): Promise<void> {
+    const target = await this._resolveCardMutationTarget(cardId)
+    const mergedInput = await this._runBeforeEvent<MethodInput<typeof Cards.permanentlyDeleteCard>>('card.delete', { cardId }, undefined, target.boardId)
+    const snapshot = await this.getCard(mergedInput.cardId)
     await Cards.permanentlyDeleteCard(this._ctx, mergedInput)
     if (snapshot) this._runAfterEvent('task.deleted', sanitizeCard(snapshot), undefined, snapshot.boardId)
   }

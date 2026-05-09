@@ -291,10 +291,16 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
     bootstrap: null,
     moduleRegistry: {},
     runtimeEnv: undefined,
+    runtimeContext: undefined,
   }
 
-  const fetch = async (request: Request, env?: CloudflareWorkerRuntimeEnv): Promise<Response> => {
+  const fetch = async (
+    request: Request,
+    env?: CloudflareWorkerRuntimeEnv,
+    context?: CloudflareWorkerExecutionContext,
+  ): Promise<Response> => {
     state.runtimeEnv = env
+    state.runtimeContext = context
     setupWorkerCronContext(env)
     const webSocketUpgradeResponse = await maybeHandleWebSocketUpgrade(request, options, state, env)
     if (webSocketUpgradeResponse) {
@@ -370,9 +376,10 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
   const queue = async (
     batch: CloudflareWorkerQueueBatch<unknown>,
     env?: CloudflareWorkerRuntimeEnv,
-    _context?: CloudflareWorkerExecutionContext,
+    context?: CloudflareWorkerExecutionContext,
   ): Promise<void> => {
     state.runtimeEnv = env
+    state.runtimeContext = context
     const { kanbanDir, workspaceRoot } = getWorkerPaths(options, env)
     const workerRuntimeHost = resolveWorkerRuntimeHostHandle(options, env, workspaceRoot, state)
 
@@ -435,9 +442,10 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
   const scheduled = async (
     event: CloudflareWorkerScheduledEvent,
     env?: CloudflareWorkerRuntimeEnv,
-    _context?: CloudflareWorkerExecutionContext,
+    context?: CloudflareWorkerExecutionContext,
   ): Promise<void> => {
     state.runtimeEnv = env
+    state.runtimeContext = context
     const { kanbanDir, workspaceRoot } = getWorkerPaths(options, env)
     const workerRuntimeHost = resolveWorkerRuntimeHostHandle(options, env, workspaceRoot, state)
 
@@ -485,7 +493,11 @@ const { fetch: workerFetch, queue: workerQueue, scheduled: workerScheduled } = c
  * Wraps the inner fetch handler with Cloudflare Access JWT validation.
  * No-op when CF_ACCESS_TEAM_DOMAIN or CF_ACCESS_AUD_KANBAN are absent (local dev).
  */
-async function fetchWithCfAccess(request: Request, env?: CloudflareWorkerRuntimeEnv): Promise<Response> {
+async function fetchWithCfAccess(
+  request: Request,
+  env?: CloudflareWorkerRuntimeEnv,
+  context?: CloudflareWorkerExecutionContext,
+): Promise<Response> {
   const teamDomain = env?.CF_ACCESS_TEAM_DOMAIN as string | undefined
   const audience = env?.CF_ACCESS_AUD_KANBAN as string | undefined
   if (teamDomain && audience) {
@@ -497,7 +509,7 @@ async function fetchWithCfAccess(request: Request, env?: CloudflareWorkerRuntime
       })
     }
   }
-  return workerFetch(request, env)
+  return workerFetch(request, env, context)
 }
 
 export { workerQueue as queue }

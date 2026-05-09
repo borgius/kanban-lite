@@ -7,8 +7,6 @@ export interface SubmitFormInput {
   formId: string
   /** Submitted field values merged over the resolved base payload before validation. */
   data: Record<string, unknown>
-  /** Optional board ID. Defaults to the workspace default board. */
-  boardId?: string
 }
 
 export interface SubmitFormResult {

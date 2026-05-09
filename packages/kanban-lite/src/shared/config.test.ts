@@ -72,4 +72,37 @@ describe('config defaults', () => {
       rmSync(workspaceRoot, { recursive: true, force: true })
     }
   })
+
+  it('preserves non-default boards when their columns omit color values', () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'kanban-lite-config-'))
+
+    try {
+      const config = structuredClone(DEFAULT_CONFIG)
+      config.boards.processes = {
+        name: 'Processes',
+        columns: [
+          { id: 'queued', name: 'Queued' },
+          { id: 'running', name: 'Running' },
+          { id: 'done', name: 'Done' },
+        ] as typeof config.boards.default.columns,
+        nextCardId: 7,
+        defaultStatus: 'queued',
+        defaultPriority: 'medium',
+      }
+
+      writeFileSync(join(workspaceRoot, '.kanban.json'), JSON.stringify(config, null, 2), 'utf-8')
+
+      const loaded = readConfig(workspaceRoot)
+
+      expect(loaded.boards.processes).toBeDefined()
+      expect(loaded.boards.processes.columns).toEqual([
+        { id: 'queued', name: 'Queued', color: DEFAULT_COLUMNS[0]?.color },
+        { id: 'running', name: 'Running', color: DEFAULT_COLUMNS[1]?.color },
+        { id: 'done', name: 'Done', color: DEFAULT_COLUMNS[2]?.color },
+      ])
+      expect(loaded.boards.processes.nextCardId).toBe(7)
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
+  })
 })

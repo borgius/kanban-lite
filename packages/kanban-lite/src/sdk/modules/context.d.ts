@@ -41,16 +41,16 @@ export interface SDKContext {
     materializeAttachment(card: Card, attachment: string): Promise<string | null>;
     copyAttachment(sourcePath: string, card: Card): Promise<void>;
     listCards(columns?: string[], boardId?: string, metaFilter?: Record<string, string>, sort?: CardSortOption, searchQuery?: string, fuzzy?: boolean): Promise<Card[]>;
-    getCard(cardId: string, boardId?: string): Promise<Card | null>;
+    getCard(cardId: string): Promise<Card | null>;
     getActiveCard(boardId?: string): Promise<Card | null>;
-    setActiveCard(cardId: string, boardId?: string): Promise<Card>;
+    setActiveCard(cardId: string): Promise<Card>;
     clearActiveCard(boardId?: string): Promise<void>;
-    updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card>;
+    updateCard(cardId: string, updates: Partial<Card>): Promise<Card>;
     addLog(cardId: string, text: string, options?: {
         source?: string;
         timestamp?: string;
         object?: Record<string, unknown>;
-    }, boardId?: string): Promise<LogEntry>;
-    moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card>;
-    permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void>;
+    }): Promise<LogEntry>;
+    moveCard(cardId: string, newStatus: string, position?: number): Promise<Card>;
+    permanentlyDeleteCard(cardId: string): Promise<void>;
 }

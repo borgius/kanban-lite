@@ -60,6 +60,7 @@ export interface CloudflareWorkerProviderContext {
   requireD1<T = unknown>(handleName: string): T
   requireR2<T = unknown>(handleName: string): T
   requireQueue<T = unknown>(handleName: string): T
+  waitUntil?(promise: Promise<unknown>): void
 }
 
 /** Request-path budgets enforced for Worker config freshness checks. */
@@ -307,6 +308,7 @@ export function resolveCloudflareWorkerBootstrapInput(
 export function createCloudflareWorkerProviderContext(
   bootstrap: CloudflareWorkerBootstrap,
   runtimeBindings: Record<string, unknown>,
+  getExecutionContext?: (() => { waitUntil(promise: Promise<unknown>): void } | null | undefined) | { waitUntil(promise: Promise<unknown>): void } | null,
 ): CloudflareWorkerProviderContext {
   const normalizedBootstrap = resolveCloudflareWorkerBootstrap(bootstrap)
   const configStorage = cloneConfigStorageTopology(normalizedBootstrap.topology.configStorage)
@@ -345,6 +347,13 @@ export function createCloudflareWorkerProviderContext(
     ) as T
   }
 
+  const resolveExecutionContext = (): { waitUntil(promise: Promise<unknown>): void } | null | undefined => {
+    if (typeof getExecutionContext === 'function') {
+      return getExecutionContext()
+    }
+    return getExecutionContext ?? undefined
+  }
+
   return {
     bootstrap: normalizedBootstrap,
     config: cloneConfig(normalizedBootstrap.config),
@@ -367,6 +376,9 @@ export function createCloudflareWorkerProviderContext(
     },
     requireQueue<T = unknown>(handleName: string): T {
       return requireBinding<T>(handleName)
+    },
+    waitUntil(promise: Promise<unknown>): void {
+      resolveExecutionContext()?.waitUntil(promise)
     },
   }
 }

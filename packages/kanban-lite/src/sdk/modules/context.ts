@@ -51,20 +51,19 @@ export interface SDKContext {
   ): Promise<Card[]>
   /** @internal Raw card listing that bypasses caller-scoped checklist projection and visibility filtering. */
   _listCardsRaw(columns?: string[], boardId?: string): Promise<Card[]>
-  getCard(cardId: string, boardId?: string): Promise<Card | null>
+  getCard(cardId: string): Promise<Card | null>
   /** @internal Raw card lookup that bypasses caller-scoped checklist projection and visibility filtering. */
-  _getCardRaw(cardId: string, boardId?: string): Promise<Card | null>
+  _getCardRaw(cardId: string): Promise<Card | null>
   canPerformAction(action: string, context?: AuthContext): Promise<boolean>
   getActiveCard(boardId?: string): Promise<Card | null>
-  setActiveCard(cardId: string, boardId?: string): Promise<Card>
+  setActiveCard(cardId: string): Promise<Card>
   clearActiveCard(boardId?: string): Promise<void>
-  updateCard(cardId: string, updates: Partial<Card>, boardId?: string): Promise<Card>
+  updateCard(cardId: string, updates: Partial<Card>): Promise<Card>
   addLog(
     cardId: string,
     text: string,
     options?: { source?: string; timestamp?: string; object?: Record<string, unknown> },
-    boardId?: string
   ): Promise<LogEntry>
-  moveCard(cardId: string, newStatus: string, position?: number, boardId?: string): Promise<Card>
-  permanentlyDeleteCard(cardId: string, boardId?: string): Promise<void>
+  moveCard(cardId: string, newStatus: string, position?: number): Promise<Card>
+  permanentlyDeleteCard(cardId: string): Promise<void>
 }

@@ -3,27 +3,24 @@ import type { SDKContext } from './context';
 /**
  * Lists all comments on a card.
  */
-export declare function listComments(ctx: SDKContext, { cardId, boardId }: {
+export declare function listComments(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<Comment[]>;
 /**
  * Adds a comment to a card.
  */
-export declare function addComment(ctx: SDKContext, { cardId, author, content, boardId }: {
+export declare function addComment(ctx: SDKContext, { cardId, author, content }: {
     cardId: string;
     author: string;
     content: string;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Updates the content of an existing comment on a card.
  */
-export declare function updateComment(ctx: SDKContext, { cardId, commentId, content, boardId }: {
+export declare function updateComment(ctx: SDKContext, { cardId, commentId, content }: {
     cardId: string;
     commentId: string;
     content: string;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Creates a comment on a card from a streaming text source.
@@ -37,7 +34,6 @@ export declare function updateComment(ctx: SDKContext, { cardId, commentId, cont
  * @param options.cardId - ID of the card to comment on.
  * @param options.author - Display name of the author.
  * @param options.stream - Async iterable that yields text chunks.
- * @param options.boardId - Optional board ID override.
  * @param options.onStart - Called once before iteration with the allocated
  *   comment ID and author so the caller can broadcast a stream-start event.
  * @param options.onChunk - Called for each chunk with the comment ID and the
@@ -50,10 +46,9 @@ export declare function updateComment(ctx: SDKContext, { cardId, commentId, cont
  *   onChunk: (commentId, chunk) => broadcastCommentChunk(ctx, cardId, commentId, chunk),
  * })
  */
-export declare function streamComment(ctx: SDKContext, { cardId, author, boardId, stream, onStart, onChunk, }: {
+export declare function streamComment(ctx: SDKContext, { cardId, author, stream, onStart, onChunk, }: {
     cardId: string;
     author: string;
-    boardId?: string;
     stream: AsyncIterable<string>;
     onStart?: (commentId: string, author: string, created: string) => void;
     onChunk?: (commentId: string, chunk: string) => void;
@@ -61,8 +56,7 @@ export declare function streamComment(ctx: SDKContext, { cardId, author, boardId
 /**
  * Deletes a comment from a card.
  */
-export declare function deleteComment(ctx: SDKContext, { cardId, commentId, boardId }: {
+export declare function deleteComment(ctx: SDKContext, { cardId, commentId }: {
     cardId: string;
     commentId: string;
-    boardId?: string;
 }): Promise<Card>;

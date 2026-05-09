@@ -89,7 +89,7 @@ export async function cleanupColumn(ctx: SDKContext, { columnId, boardId }: { co
   const cards = await ctx._listCardsRaw(undefined, boardId)
   const cardsToMove = cards.filter(c => c.status === columnId)
   for (const card of cardsToMove) {
-    await ctx.moveCard(card.id, DELETED_STATUS_ID, 0, boardId)
+    await ctx.moveCard(card.id, DELETED_STATUS_ID, 0)
   }
   return cardsToMove.length
 }
@@ -101,7 +101,7 @@ export async function purgeDeletedCards(ctx: SDKContext, { boardId }: { boardId?
   const cards = await ctx._listCardsRaw(undefined, boardId)
   const deleted = cards.filter(c => c.status === DELETED_STATUS_ID)
   for (const card of deleted) {
-    await ctx.permanentlyDeleteCard(card.id, boardId)
+    await ctx.permanentlyDeleteCard(card.id)
   }
   return deleted.length
 }

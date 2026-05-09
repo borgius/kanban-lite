@@ -165,7 +165,7 @@ describe('KanbanSDK card.state public APIs', () => {
     const opened = await sdk.markCardOpened(card.id)
     expect(opened.unread).toBe(false)
 
-    await expect(sdk.getCardState(card.id, undefined, 'open')).resolves.toMatchObject({
+    await expect(sdk.getCardState(card.id, 'open')).resolves.toMatchObject({
       actorId: 'default-user',
       boardId: 'default',
       cardId: card.id,
@@ -197,7 +197,7 @@ describe('KanbanSDK card.state public APIs', () => {
       unread: false,
     })
 
-    await expect(sdk.getCardState(card.id, undefined, 'open')).resolves.toMatchObject({
+    await expect(sdk.getCardState(card.id, 'open')).resolves.toMatchObject({
       actorId: defaultActorId,
       domain: 'open',
     })

@@ -759,7 +759,7 @@ describe('CLI form-aware card commands', () => {
     expect(sdk.updateCard).toHaveBeenCalledWith('card-edit', {
       forms: [{ schema: { type: 'object', title: 'Checklist' } }],
       formData: { checklist: { approved: true } },
-    }, undefined)
+    })
     expect(logSpy.mock.calls[0][0]).toContain('Updated: card-edit')
   })
 
@@ -793,7 +793,6 @@ describe('CLI form-aware card commands', () => {
       cardId: 'card-submit',
       formId: 'bug-report',
       data: { severity: 'high' },
-      boardId: undefined,
     })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       form: { id: 'bug-report' },
@@ -839,7 +838,6 @@ describe('CLI form-aware card commands', () => {
       cardId: 'card-submit',
       formId: 'bug-report',
       data: { severity: 'critical' },
-      boardId: undefined,
     })
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       data: { severity: 'critical' },
@@ -898,7 +896,7 @@ describe('CLI checklist commands', () => {
 
     await cmdChecklist(sdk as KanbanSDK, ['list', 'card-checklist'], { json: true })
 
-    expect(sdk.getCard).toHaveBeenCalledWith('card-checklist', undefined)
+    expect(sdk.getCard).toHaveBeenCalledWith('card-checklist')
     const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
     expect(payload).toMatchObject({
       cardId: 'card-checklist',
@@ -956,7 +954,7 @@ describe('CLI checklist commands', () => {
       json: true,
     })
 
-    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', '', 'cl1:stale-proof', undefined)
+    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review **docs**', '', 'cl1:stale-proof')
     const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
     expect(payload).toMatchObject({
       summary: { total: 2, completed: 0, incomplete: 2 },
@@ -1009,7 +1007,7 @@ describe('CLI checklist commands', () => {
       json: true,
     })
 
-    expect(sdk.editChecklistItem).toHaveBeenCalledWith('card-checklist', 0, 'Updated copy', '', '2026-03-18T00:00:00.000Z', undefined)
+    expect(sdk.editChecklistItem).toHaveBeenCalledWith('card-checklist', 0, 'Updated copy', '', '2026-03-18T00:00:00.000Z')
     const payload = JSON.parse(logSpy.mock.calls[0][0] as string)
     expect(payload).toMatchObject({
       cardId: 'card-checklist',

@@ -138,6 +138,7 @@ function URLSync() {
   // ── 1. URL → Store: one-time initialisation on mount ──────────────────────
   const urlInitialized = useRef(false)
   const pendingCardIdRef = useRef<string | null>(params.cardId ?? null)
+  const pendingBoardIdRef = useRef<string | null>(params.boardId ?? null)
 
   useEffect(() => {
     if (urlInitialized.current) return
@@ -218,8 +219,13 @@ function URLSync() {
     if (columnsLoadedRef.current || columns.length === 0) return
     columnsLoadedRef.current = true
     if (pendingCardIdRef.current) {
-      vscode.postMessage({ type: 'openCard', cardId: pendingCardIdRef.current })
+      vscode.postMessage({
+        type: 'openCard',
+        cardId: pendingCardIdRef.current,
+        ...(pendingBoardIdRef.current ? { boardId: pendingBoardIdRef.current } : {}),
+      })
       pendingCardIdRef.current = null
+      pendingBoardIdRef.current = null
     }
   }, [columns])
 

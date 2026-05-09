@@ -46,7 +46,7 @@ export async function handleTaskCrudRoutes(request: StandaloneRequestContext): P
   const { ctx, route, req, res, url } = request
   const { sdk } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
-  const getRequestScopedCard = (cardId: string, boardId = ctx.currentBoardId) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getRequestScopedCard = (cardId: string) => runWithRequestAuth(() => sdk.getCard(cardId))
   const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const parseChecklistIndex = (value: string): number => {
     const index = Number.parseInt(value, 10)
@@ -288,7 +288,7 @@ export async function handleTaskCrudRoutes(request: StandaloneRequestContext): P
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id, card.boardId))
+      const unread = await runWithRequestAuth(() => sdk.markCardOpened(card.id))
       jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
@@ -306,7 +306,7 @@ export async function handleTaskCrudRoutes(request: StandaloneRequestContext): P
       }
       const body = await readBody(req)
       const readThrough = body.readThrough as CardStateCursor | undefined
-      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, card.boardId, readThrough))
+      const unread = await runWithRequestAuth(() => sdk.markCardRead(card.id, readThrough))
       jsonOk(res, await buildCardStateMutationModel(ctx, unread, runWithRequestAuth))
     } catch (err) {
       handleKnownError(err)
@@ -383,10 +383,10 @@ export async function handleTaskCrudRoutes(request: StandaloneRequestContext): P
   if (params) {
     try {
       const { id, action } = params
-      await runWithRequestAuth(() => sdk.triggerAction(id, action, undefined))
+      await runWithRequestAuth(() => sdk.triggerAction(id, action))
       await loadCards(ctx)
       broadcast(ctx, buildInitMessage(ctx))
-      const updatedCard = ctx.cards.find(card => card.id === id)
+      const updatedCard = ctx.cards.find(card => card.id === id) ?? await runWithRequestAuth(() => sdk.getCard(id))
       if (updatedCard) {
         await broadcastCardContentToEditingClients(ctx, updatedCard)
       }

@@ -31,12 +31,12 @@ export class KanbanSDKCardState extends KanbanSDKStatus {
   }
 
   /** @internal */
-  private async _resolveCardStateTarget(cardId: string, boardId?: string): Promise<{ cardId: string; boardId: string }> {
-    const card = await (this as unknown as { getCard(id: string, boardId?: string): Promise<Card | null> }).getCard(cardId, boardId)
+  private async _resolveCardStateTarget(cardId: string): Promise<{ cardId: string; boardId: string }> {
+    const card = await (this as unknown as { getCard(id: string): Promise<Card | null> }).getCard(cardId)
     if (!card) throw new Error(`Card not found: ${cardId}`)
     return {
       cardId: card.id,
-      boardId: card.boardId || this._resolveBoardId(boardId),
+      boardId: card.boardId || this._resolveBoardId(),
     }
   }
 
@@ -73,8 +73,8 @@ export class KanbanSDKCardState extends KanbanSDKStatus {
   }
 
   /** @internal */
-  private async _getLatestUnreadActivityCursor(cardId: string, boardId: string): Promise<CardStateCursor | null> {
-    const logs = await (this as unknown as { listLogs(cardId: string, boardId: string): Promise<import('../shared/types').LogEntry[]> }).listLogs(cardId, boardId)
+  private async _getLatestUnreadActivityCursor(cardId: string): Promise<CardStateCursor | null> {
+    const logs = await (this as unknown as { listLogs(cardId: string): Promise<import('../shared/types').LogEntry[]> }).listLogs(cardId)
     for (let index = logs.length - 1; index >= 0; index -= 1) {
       const cursor = getUnreadActivityCursor(logs[index], index)
       if (cursor) return cursor
@@ -101,10 +101,10 @@ export class KanbanSDKCardState extends KanbanSDKStatus {
 
   // --- Card-state public API ---
 
-  async getCardState(cardId: string, boardId?: string, domain: string = CARD_STATE_UNREAD_DOMAIN): Promise<CardStateRecord | null> {
+  async getCardState(cardId: string, domain: string = CARD_STATE_UNREAD_DOMAIN): Promise<CardStateRecord | null> {
     const capabilities = this._requireCardStateCapabilities()
     const actorId = await this._resolveCardStateActorId()
-    const target = await this._resolveCardStateTarget(cardId, boardId)
+    const target = await this._resolveCardStateTarget(cardId)
     return capabilities.cardState.getCardState({
       actorId,
       boardId: target.boardId,
@@ -206,11 +206,11 @@ export class KanbanSDKCardState extends KanbanSDKStatus {
     return results
   }
 
-  async getUnreadSummary(cardId: string, boardId?: string): Promise<CardUnreadSummary> {
+  async getUnreadSummary(cardId: string): Promise<CardUnreadSummary> {
     const capabilities = this._requireCardStateCapabilities()
     const actorId = await this._resolveCardStateActorId()
-    const target = await this._resolveCardStateTarget(cardId, boardId)
-    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId, target.boardId)
+    const target = await this._resolveCardStateTarget(cardId)
+    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId)
     const readThrough = await capabilities.cardState.getUnreadCursor({
       actorId,
       boardId: target.boardId,
@@ -219,11 +219,11 @@ export class KanbanSDKCardState extends KanbanSDKStatus {
     return this._createUnreadSummary(actorId, target, latestActivity, readThrough)
   }
 
-  async markCardOpened(cardId: string, boardId?: string): Promise<CardUnreadSummary> {
+  async markCardOpened(cardId: string): Promise<CardUnreadSummary> {
     const capabilities = this._requireCardStateCapabilities()
     const actorId = await this._resolveCardStateActorId()
-    const target = await this._resolveCardStateTarget(cardId, boardId)
-    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId, target.boardId)
+    const target = await this._resolveCardStateTarget(cardId)
+    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId)
     const openedAt = new Date().toISOString()
 
     let readThrough: CardStateCursor | null = null
@@ -254,11 +254,11 @@ export class KanbanSDKCardState extends KanbanSDKStatus {
     return this._createUnreadSummary(actorId, target, latestActivity, readThrough)
   }
 
-  async markCardRead(cardId: string, boardId?: string, readThrough?: CardStateCursor): Promise<CardUnreadSummary> {
+  async markCardRead(cardId: string, readThrough?: CardStateCursor): Promise<CardUnreadSummary> {
     const capabilities = this._requireCardStateCapabilities()
     const actorId = await this._resolveCardStateActorId()
-    const target = await this._resolveCardStateTarget(cardId, boardId)
-    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId, target.boardId)
+    const target = await this._resolveCardStateTarget(cardId)
+    const latestActivity = await this._getLatestUnreadActivityCursor(target.cardId)
     const cursor = readThrough ?? latestActivity
 
     if (!cursor) {

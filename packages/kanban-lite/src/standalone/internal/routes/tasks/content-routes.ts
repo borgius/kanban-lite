@@ -25,7 +25,7 @@ export async function handleTaskContentRoutes(request: StandaloneRequestContext)
   const { sdk } = ctx
   let params
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
-  const getRequestScopedCard = (cardId: string, boardId = ctx.currentBoardId) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getRequestScopedCard = (cardId: string) => runWithRequestAuth(() => sdk.getCard(cardId))
   const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const handleKnownError = (err: unknown): void => {
     if (err instanceof AuthError) {
@@ -60,7 +60,7 @@ export async function handleTaskContentRoutes(request: StandaloneRequestContext)
           const added = await doAddAttachment(ctx, taskParams.id, file.name, buffer)
           if (!added) return null
         }
-        return sdk.getCard(taskParams.id, ctx.currentBoardId)
+        return sdk.getCard(taskParams.id)
       })
       if (!card) {
         jsonError(res, 404, 'Task not found')
@@ -87,7 +87,7 @@ export async function handleTaskContentRoutes(request: StandaloneRequestContext)
         jsonError(res, 404, 'Task not found')
         return true
       }
-      const attachment = await sdk.getAttachmentData(taskParams.id, taskParams.filename, ctx.currentBoardId)
+      const attachment = await sdk.getAttachmentData(taskParams.id, taskParams.filename)
       if (!attachment) {
         jsonError(res, 404, 'Attachment not found')
         return true
@@ -129,7 +129,12 @@ export async function handleTaskContentRoutes(request: StandaloneRequestContext)
   if (params) {
     const taskParams = params
     try {
-      jsonOk(res, await runWithRequestAuth(() => sdk.listComments(taskParams.id, ctx.currentBoardId)))
+      const card = await getRequestScopedCard(taskParams.id)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      jsonOk(res, await runWithRequestAuth(() => sdk.listComments(taskParams.id)))
     } catch (err) {
       handleKnownError(err)
     }
@@ -186,7 +191,6 @@ export async function handleTaskContentRoutes(request: StandaloneRequestContext)
       }
       const card = await runWithRequestAuth(() =>
         ctx.sdk.streamComment(id, author, requestTextStream(), {
-          boardId: url.searchParams.get('boardId') ?? undefined,
           onStart: (cid, commentAuthor, created) => {
             commentId = cid
             broadcastCommentStreamStart(ctx, id, cid, commentAuthor, created)
@@ -261,7 +265,12 @@ export async function handleTaskContentRoutes(request: StandaloneRequestContext)
   if (params) {
     try {
       const { id } = params
-      jsonOk(res, await runWithRequestAuth(() => sdk.listLogs(id, ctx.currentBoardId)))
+      const card = await getRequestScopedCard(id)
+      if (!card) {
+        jsonError(res, 404, 'Task not found')
+        return true
+      }
+      jsonOk(res, await runWithRequestAuth(() => sdk.listLogs(id)))
     } catch (err) {
       handleKnownError(err)
     }

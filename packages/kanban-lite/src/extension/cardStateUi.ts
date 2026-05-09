@@ -129,12 +129,11 @@ export async function performExplicitCardOpen(
   sdk: CardStateAwareSDK,
   runWithAuth: CardStateAuthRunner,
   cardId: string,
-  boardId?: string,
 ): Promise<CardStateErrorTransport | null> {
   let mappedError: CardStateErrorTransport | null = null
 
   try {
-    await runWithAuth(() => sdk.markCardOpened(cardId, boardId))
+    await runWithAuth(() => sdk.markCardOpened(cardId))
   } catch (error) {
     mappedError = toCardStateError(error)
     if (!mappedError) {
@@ -142,7 +141,7 @@ export async function performExplicitCardOpen(
     }
   }
 
-  await runWithAuth(() => sdk.setActiveCard(cardId, boardId))
+  await runWithAuth(() => sdk.setActiveCard(cardId))
 
   return mappedError
 }

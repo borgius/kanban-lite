@@ -113,7 +113,7 @@ describe('auth enforcement: deny-all policy causes AuthError on every mutating m
     ['deleteComment', s => s.deleteComment('kl-1', 'c1')],
     ['removeColumn', s => s.removeColumn('backlog')],
     ['submitForm', s => s.submitForm({ cardId: 'kl-1', formId: 'triage', data: {} })],
-    ['transferCard', s => s.transferCard('kl-1', 'default', 'bugs', 'todo')],
+    ['transferCard', s => s.transferCard('kl-1', 'bugs', 'todo')],
     ['triggerAction', s => s.triggerAction('kl-1', 'retry')],
     ['triggerBoardAction', s => s.triggerBoardAction('default', 'deploy')],
     ['addLog', s => s.addLog('kl-1', 'Build started')],
@@ -322,7 +322,7 @@ describe('auth enforcement: action names dispatched to policy plugin', () => {
     ['comment.delete',    s => s.deleteComment('kl-1', 'c1')],
     ['column.delete',     s => s.removeColumn('backlog')],
     ['form.submit',       s => s.submitForm({ cardId: 'kl-1', formId: 'triage', data: {} })],
-    ['card.transfer',     s => s.transferCard('kl-1', 'default', 'bugs', 'todo')],
+    ['card.transfer',     s => s.transferCard('kl-1', 'bugs', 'todo')],
     ['card.action.trigger', s => s.triggerAction('kl-1', 'retry')],
     ['board.action.trigger', s => s.triggerBoardAction('default', 'deploy')],
     ['log.add',           s => s.addLog('kl-1', 'Build started')],
@@ -612,7 +612,7 @@ describe('auth enforcement: SDK enriches auth context with target hints', () => 
   })
 
   it('passes board/card/comment hints for updateComment', async () => {
-    await expect(sdk.runWithAuth({ transport: 'cli' }, async () => sdk.updateComment('card-1', 'c1', 'Updated', 'default'))).rejects.toBeInstanceOf(AuthError)
+    await expect(sdk.runWithAuth({ transport: 'cli' }, async () => sdk.updateComment('card-1', 'c1', 'Updated'))).rejects.toBeInstanceOf(AuthError)
 
     expect(captured).toContainEqual({
       action: 'comment.update',
@@ -626,7 +626,7 @@ describe('auth enforcement: SDK enriches auth context with target hints', () => 
   })
 
   it('passes transfer target hints for transferCard', async () => {
-    await expect(sdk.runWithAuth({ transport: 'mcp' }, async () => sdk.transferCard('card-2', 'default', 'bugs', 'todo'))).rejects.toBeInstanceOf(AuthError)
+    await expect(sdk.runWithAuth({ transport: 'mcp' }, async () => sdk.transferCard('card-2', 'bugs', 'todo'))).rejects.toBeInstanceOf(AuthError)
 
     expect(captured).toContainEqual({
       action: 'card.transfer',

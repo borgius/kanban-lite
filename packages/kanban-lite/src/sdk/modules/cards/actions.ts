@@ -20,16 +20,15 @@ import { getMutableCard, updateCard, getCard, listCards, listCardsRaw } from './
 
 export async function triggerAction(
   ctx: SDKContext,
-  { cardId, action, boardId }: { cardId: string; action: string; boardId?: string }
+  { cardId, action }: { cardId: string; action: string }
 ): Promise<{ action: string; board: string; list: string; card: Omit<Card, 'filePath'> }> {
-  const card = await getCard(ctx, { cardId, boardId })
+  const card = await getCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId()
 
   await appendActivityLog(ctx, {
     cardId,
-    boardId: resolvedBoardId,
     eventType: 'card.action.triggered',
     text: `Action triggered: \`${action}\``,
     metadata: {
@@ -49,10 +48,10 @@ export async function triggerAction(
  * Validates and persists a card form submission, then emits `form.submit`.
  */
 export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promise<SubmitFormResult> {
-  const card = await getMutableCard(ctx, { cardId: input.cardId, boardId: input.boardId })
+  const card = await getMutableCard(ctx, { cardId: input.cardId })
   if (!card) throw new Error(`Card not found: ${input.cardId}`)
 
-  const resolvedBoardId = card.boardId || ctx._resolveBoardId(input.boardId)
+  const resolvedBoardId = card.boardId || ctx._resolveBoardId()
   const form = resolveCardForms(ctx, card).find(candidate => candidate.id === input.formId)
   if (!form) {
     throw new Error(`Form not found on card ${card.id}: ${input.formId}`)
@@ -78,7 +77,6 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
   await ctx._storage.writeCard(nextCard)
   await appendActivityLog(ctx, {
     cardId: nextCard.id,
-    boardId: resolvedBoardId,
     eventType: 'form.submitted',
     text: `Form submitted: \`${form.name}\``,
     metadata: {
@@ -88,7 +86,7 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
     },
   }).catch(() => {})
 
-  const persistedCard = await ctx.getCard(nextCard.id, resolvedBoardId) ?? nextCard
+  const persistedCard = await ctx.getCard(nextCard.id) ?? nextCard
 
   const event: FormSubmitEvent = {
     boardId: resolvedBoardId,
@@ -105,16 +103,16 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
  */
 export async function moveCard(
   ctx: SDKContext,
-  { cardId, newStatus, position, boardId }: { cardId: string; newStatus: string; position?: number; boardId?: string }
+  { cardId, newStatus, position }: { cardId: string; newStatus: string; position?: number }
 ): Promise<Card> {
-  const visibleCard = await getCard(ctx, { cardId, boardId })
+  const visibleCard = await getCard(ctx, { cardId })
   if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
 
-  const cards = await listCardsRaw(ctx, { boardId })
+  const resolvedBoardId = visibleCard.boardId || ctx._resolveBoardId()
+  const cards = await listCardsRaw(ctx, { boardId: resolvedBoardId })
   const card = cards.find(c => c.id === cardId)
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
-  const resolvedBoardId = card.boardId || ctx._resolveBoardId(boardId)
   const boardDir = ctx._boardDir(resolvedBoardId)
   const oldStatus = card.status
   card.status = newStatus
@@ -147,7 +145,6 @@ export async function moveCard(
   if (oldStatus !== newStatus) {
     await appendActivityLog(ctx, {
       cardId: nextCard.id,
-      boardId: resolvedBoardId,
       eventType: 'card.status.changed',
       text: `Status changed: \`${oldStatus}\` → \`${newStatus}\``,
       metadata: {
@@ -162,18 +159,18 @@ export async function moveCard(
 /**
  * Soft-deletes a card by moving it to the `deleted` status column.
  */
-export async function deleteCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+export async function deleteCard(ctx: SDKContext, { cardId }: { cardId: string }): Promise<void> {
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
   if (card.status === DELETED_STATUS_ID) return
-  await updateCard(ctx, { cardId, updates: { status: DELETED_STATUS_ID }, boardId })
+  await updateCard(ctx, { cardId, updates: { status: DELETED_STATUS_ID } })
 }
 
 /**
  * Permanently deletes a card's file from disk.
  */
-export async function permanentlyDeleteCard(ctx: SDKContext, { cardId, boardId }: { cardId: string; boardId?: string }): Promise<void> {
-  const card = await getMutableCard(ctx, { cardId, boardId })
+export async function permanentlyDeleteCard(ctx: SDKContext, { cardId }: { cardId: string }): Promise<void> {
+  const card = await getMutableCard(ctx, { cardId })
   if (!card) throw new Error(`Card not found: ${cardId}`)
   await ctx._storage.deleteCard(card)
 }

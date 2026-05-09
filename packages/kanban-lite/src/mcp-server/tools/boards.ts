@@ -74,13 +74,14 @@ export function registerBoardMcpTools(
   })
 
   server.tool('transfer_card', 'Transfer a card from one board to another.', {
-    cardId: z.string().describe('Card ID'),
-    fromBoard: z.string().describe('Source board ID'),
+    cardId: z.string().describe('Card ID (or partial ID)'),
     toBoard: z.string().describe('Target board ID'),
     targetStatus: z.string().optional().describe('Status in the target board (defaults to board default)'),
-  }, async ({ cardId, fromBoard, toBoard, targetStatus }) => {
+  }, async ({ cardId, toBoard, targetStatus }) => {
     try {
-      const card = await runWithMcpAuth(() => sdk.transferCard(cardId, fromBoard, toBoard, targetStatus))
+      const card = await runWithResolvedMcpCardId(sdk, runWithMcpAuth, cardId, undefined, (resolvedId) =>
+        sdk.transferCard(resolvedId, toBoard, targetStatus)
+      )
       return { content: [{ type: 'text' as const, text: JSON.stringify(card, null, 2) }] }
     } catch (err) {
       return { content: [{ type: 'text' as const, text: String(err) }], isError: true }

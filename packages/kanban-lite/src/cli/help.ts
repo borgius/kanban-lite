@@ -78,7 +78,7 @@ ${bold('Board Commands:')}
   boards show <id>            Show board details
   boards remove <id>          Remove a board
   boards default [id]         Get or set the default board
-  transfer <id>               Transfer a card (--from, --to, --status)
+  transfer <id>               Transfer a card (--to, --status)
 
 ${bold('Attachment Commands:')}
   attach <id>                 List attachments on a card
@@ -195,7 +195,7 @@ ${bold('Checklist Options:')}
   --modified-at <iso>        Current checklist item modifiedAt value for stale-write protection
 
 ${bold('Transfer Options:')}
-  --from <board>              Source board (required)
+  --from <board>              Source board hint for card resolution (optional)
   --to <board>                Destination board (required)
   --status <status>           Target status in destination board
 

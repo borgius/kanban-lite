@@ -10,16 +10,14 @@ export interface PersistedActivityBoundary {
 /**
  * Returns the absolute path to the log file for a card.
  */
-export declare function getLogFilePath(ctx: SDKContext, { cardId, boardId }: {
+export declare function getLogFilePath(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<string | null>;
 /**
  * Lists all log entries for a card.
  */
-export declare function listLogs(ctx: SDKContext, { cardId, boardId }: {
+export declare function listLogs(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<LogEntry[]>;
 /**
  * Lists all log entries for a pre-loaded card without an extra getCard round-trip.
@@ -31,7 +29,7 @@ export declare function listLogsForCard(ctx: SDKContext, card: Card): Promise<Lo
 /**
  * Adds a log entry to a card.
  */
-export declare function addLog(ctx: SDKContext, { cardId, text, options, boardId }: {
+export declare function addLog(ctx: SDKContext, { cardId, text, options }: {
     cardId: string;
     text: string;
     options?: {
@@ -39,27 +37,24 @@ export declare function addLog(ctx: SDKContext, { cardId, text, options, boardId
         timestamp?: string;
         object?: Record<string, unknown>;
     };
-    boardId?: string;
 }): Promise<LogEntry>;
 /**
  * Appends a readable persisted activity entry that participates in the shared
  * unread-driving log surface.
  */
-export declare function appendActivityLog(ctx: SDKContext, { cardId, text, eventType, metadata, boardId, source, timestamp, }: {
+export declare function appendActivityLog(ctx: SDKContext, { cardId, text, eventType, metadata, source, timestamp, }: {
     cardId: string;
     text: string;
     eventType: string;
     metadata?: Record<string, unknown>;
-    boardId?: string;
     source?: string;
     timestamp?: string;
 }): Promise<PersistedActivityBoundary>;
 /**
  * Clears all log entries for a card by deleting the `.log` file.
  */
-export declare function clearLogs(ctx: SDKContext, { cardId, boardId }: {
+export declare function clearLogs(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<void>;
 /**
  * Returns the absolute path to the board-level log file for a given board.

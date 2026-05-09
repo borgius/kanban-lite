@@ -159,10 +159,10 @@ async function resolveVisibleCard(
   ctx: StandaloneContext,
   cardId: string,
   authContext?: AuthContext,
-  boardId?: string,
+  _boardId?: string,
 ): Promise<Card | null> {
   return getAuthRunner(ctx, authContext)(() =>
-    ctx.sdk.getCard(cardId, boardId ?? ctx.currentBoardId),
+    ctx.sdk.getCard(cardId),
   )
 }
 
@@ -170,11 +170,11 @@ async function resolveVisibleCardLogs(
   ctx: StandaloneContext,
   cardId: string,
   authContext?: AuthContext,
-  boardId?: string,
+  _boardId?: string,
 ): Promise<LogEntry[]> {
   try {
     return await getAuthRunner(ctx, authContext)(() =>
-      ctx.sdk.listLogs(cardId, boardId ?? ctx.currentBoardId),
+      ctx.sdk.listLogs(cardId),
     )
   } catch {
     return []
@@ -324,7 +324,7 @@ export async function sendCardContent(
 ): Promise<boolean> {
   const scopedAuth = authContext ?? ctx.clientAuthContexts.get(ws)
   const cardId = typeof card === 'string' ? card : card.id
-  const boardId = typeof card === 'string' ? ctx.currentBoardId : card.boardId ?? ctx.currentBoardId
+  const boardId = typeof card === 'string' ? undefined : card.boardId
   // When the caller already verified the card via sdk.getCard (which applies
   // auth-visibility filtering), skip the redundant resolveVisibleCard call
   // that would trigger another full-board scanCards.
@@ -356,22 +356,23 @@ export async function sendLogsUpdated(
   cardId: string,
   authContext?: AuthContext,
   logs?: LogEntry[],
+  boardId?: string,
 ): Promise<boolean> {
   const scopedAuth = authContext ?? ctx.clientAuthContexts.get(ws)
-  const visibleCard = await resolveVisibleCard(ctx, cardId, scopedAuth)
+  const visibleCard = await resolveVisibleCard(ctx, cardId, scopedAuth, boardId)
   if (!visibleCard) return false
 
   const resolvedLogs = logs ?? await resolveVisibleCardLogs(ctx, cardId, scopedAuth, visibleCard.boardId)
-  ws.send(JSON.stringify({ type: 'logsUpdated', cardId: visibleCard.id, logs: resolvedLogs }))
+  ws.send(JSON.stringify({ type: 'logsUpdated', cardId: visibleCard.id, boardId: visibleCard.boardId, logs: resolvedLogs }))
   return true
 }
 
-export async function broadcastLogsUpdatedToEditingClients(ctx: StandaloneContext, cardId: string, logs?: LogEntry[]): Promise<void> {
+export async function broadcastLogsUpdatedToEditingClients(ctx: StandaloneContext, cardId: string, logs?: LogEntry[], boardId?: string): Promise<void> {
   const clients = getClientsEditingCard(ctx, cardId)
   if (clients.length === 0) return
 
   for (const client of clients) {
-    await sendLogsUpdated(ctx, client, cardId, ctx.clientAuthContexts.get(client), logs)
+    await sendLogsUpdated(ctx, client, cardId, ctx.clientAuthContexts.get(client), logs, boardId)
   }
 }
 

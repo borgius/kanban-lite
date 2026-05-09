@@ -10,7 +10,7 @@ export async function handleSystemStorageRoutes(request: StandaloneRequestContex
   const { ctx, route, req, res, url, pathname } = request
   const { sdk, workspaceRoot } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
-  const getRequestScopedCard = (cardId: string, boardId = ctx.currentBoardId) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getRequestScopedCard = (cardId: string) => runWithRequestAuth(() => sdk.getCard(cardId))
 
   let params = route('GET', '/api/workspace')
   if (params) {
@@ -106,7 +106,7 @@ export async function handleSystemStorageRoutes(request: StandaloneRequestContex
           const added = await doAddAttachment(ctx, cardId, file.name, Buffer.from(file.data, 'base64'))
           if (!added) return null
         }
-        return sdk.getCard(cardId, ctx.currentBoardId)
+        return sdk.getCard(cardId)
       })
       if (!card) {
         jsonError(res, 404, 'Card not found')
@@ -145,7 +145,7 @@ export async function handleSystemStorageRoutes(request: StandaloneRequestContex
         res.end('Card not found')
         return true
       }
-      const attachment = await sdk.getAttachmentData(cardId, filename, ctx.currentBoardId)
+      const attachment = await sdk.getAttachmentData(cardId, filename)
       if (!attachment) {
         res.writeHead(404, { 'Content-Type': 'text/plain' })
         res.end('Attachment not found')

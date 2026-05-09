@@ -49,6 +49,7 @@ export interface WorkerEntrypointState {
   bootstrap: CloudflareWorkerBootstrap | null
   moduleRegistry: WorkerModuleRegistry
   runtimeEnv?: CloudflareWorkerRuntimeEnv
+  runtimeContext?: CloudflareWorkerExecutionContext
 }
 
 
@@ -97,7 +98,7 @@ export interface CloudflareWorkerExecutionContext {
 }
 
 export interface CloudflareWorkerScheduledEvent {
-  /** The cron expression string that triggered this invocation (e.g. "*/5 * * * *"). */
+  /** The cron expression string that triggered this invocation (for example, `0 * * * *`). */
   readonly cron: string
   /** Unix timestamp (ms) of the scheduled trigger time. */
   readonly scheduledTime: number

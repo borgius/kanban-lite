@@ -16,9 +16,8 @@ export declare function listCards(ctx: SDKContext, { columns, boardId, metaFilte
 /**
  * Retrieves a single card by its ID. Supports partial ID matching.
  */
-export declare function getCard(ctx: SDKContext, { cardId, boardId }: {
+export declare function getCard(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<Card | null>;
 /**
  * Retrieves the card currently marked as active/open in this workspace.
@@ -29,9 +28,8 @@ export declare function getActiveCard(ctx: SDKContext, { boardId }?: {
 /**
  * Marks a card as the active/open card for this workspace.
  */
-export declare function setActiveCard(ctx: SDKContext, { cardId, boardId }: {
+export declare function setActiveCard(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Clears the tracked active/open card for this workspace.
@@ -46,10 +44,9 @@ export declare function createCard(ctx: SDKContext, data: CreateCardInput): Prom
 /**
  * Updates an existing card's properties.
  */
-export declare function updateCard(ctx: SDKContext, { cardId, updates, boardId }: {
+export declare function updateCard(ctx: SDKContext, { cardId, updates }: {
     cardId: string;
     updates: Partial<Card>;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Triggers a named action for a card.
@@ -58,10 +55,9 @@ export declare function updateCard(ctx: SDKContext, { cardId, updates, boardId }
  * action payload. Webhook delivery is handled by the webhook plugin via the
  * `card.action.triggered` after-event emitted by {@link KanbanSDK.triggerAction}.
  */
-export declare function triggerAction(ctx: SDKContext, { cardId, action, boardId }: {
+export declare function triggerAction(ctx: SDKContext, { cardId, action }: {
     cardId: string;
     action: string;
-    boardId?: string;
 }): Promise<{
     action: string;
     board: string;
@@ -75,25 +71,22 @@ export declare function submitForm(ctx: SDKContext, input: SubmitFormInput): Pro
 /**
  * Moves a card to a different status column and/or position within that column.
  */
-export declare function moveCard(ctx: SDKContext, { cardId, newStatus, position, boardId }: {
+export declare function moveCard(ctx: SDKContext, { cardId, newStatus, position }: {
     cardId: string;
     newStatus: string;
     position?: number;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Soft-deletes a card by moving it to the `deleted` status column.
  */
-export declare function deleteCard(ctx: SDKContext, { cardId, boardId }: {
+export declare function deleteCard(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<void>;
 /**
  * Permanently deletes a card's file from disk.
  */
-export declare function permanentlyDeleteCard(ctx: SDKContext, { cardId, boardId }: {
+export declare function permanentlyDeleteCard(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<void>;
 /**
  * Returns all cards in a specific status column.

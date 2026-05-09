@@ -110,19 +110,12 @@ export async function dispatchCardMessage(
 
     case 'openCard': {
       const cardId = msg.cardId as string
-      // Accept an optional boardId from the message so the HTTP sync shim
-      // can embed the board context directly without a separate switchBoard
-      // replay (which would trigger a full loadCards + broadcast(init)).
-      const requestBoardId = typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId
-      // Ensure ctx.currentBoardId is set so downstream helpers
-      // (sendCardStates, sendCardContent) resolve the correct board even
-      // when no separate switchBoard message was processed.
-      if (requestBoardId && !ctx.currentBoardId) {
-        ctx.currentBoardId = requestBoardId
-      }
-      const card = await runWithScopedAuth(() => ctx.sdk.getCard(cardId, requestBoardId))
+      const card = await runWithScopedAuth(() => ctx.sdk.getCard(cardId))
       if (!card) break
-      const boardId = card.boardId ?? requestBoardId
+      const boardId = card.boardId
+      if (boardId && !ctx.currentBoardId) {
+        ctx.currentBoardId = boardId
+      }
 
       // Clean up any temp file from a previously-opened card
       if (ctx.tempFileCardId && ctx.tempFileCardId !== cardId) {
@@ -132,11 +125,11 @@ export async function dispatchCardMessage(
       // markCardOpened (card_state write) and setActiveCard (active card
       // state write) are independent operations — run them in parallel to
       // reduce sequential D1 round-trips.
-      const markOpened = runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId, boardId))
+      const markOpened = runWithScopedAuth(() => ctx.sdk.markCardOpened(cardId))
         .catch((err) => {
           if (!(err instanceof CardStateError)) throw err
         })
-      const setActive = runWithScopedAuth(() => ctx.sdk.setActiveCard(cardId, boardId))
+      const setActive = runWithScopedAuth(() => ctx.sdk.setActiveCard(cardId))
       await Promise.all([markOpened, setActive])
       ctx.currentEditingCardId = cardId
       setClientEditingCard(ctx, ws, cardId)
@@ -178,7 +171,6 @@ export async function dispatchCardMessage(
         msg.title as string,
         typeof msg.description === 'string' ? msg.description : '',
         msg.expectedToken as string,
-        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
         await broadcastCardContentToEditingClients(ctx, updatedCard)
@@ -194,7 +186,6 @@ export async function dispatchCardMessage(
         msg.title as string,
         typeof msg.description === 'string' ? msg.description : '',
         typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
-        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
         await broadcastCardContentToEditingClients(ctx, updatedCard)
@@ -208,7 +199,6 @@ export async function dispatchCardMessage(
         msg.cardId as string,
         parseChecklistIndex(msg.index),
         typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
-        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
         await broadcastCardContentToEditingClients(ctx, updatedCard)
@@ -222,7 +212,6 @@ export async function dispatchCardMessage(
         msg.cardId as string,
         parseChecklistIndex(msg.index),
         typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
-        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
         await broadcastCardContentToEditingClients(ctx, updatedCard)
@@ -236,7 +225,6 @@ export async function dispatchCardMessage(
         msg.cardId as string,
         parseChecklistIndex(msg.index),
         typeof msg.modifiedAt === 'string' ? msg.modifiedAt : undefined,
-        typeof msg.boardId === 'string' ? msg.boardId : ctx.currentBoardId,
       ))
       if (updatedCard) {
         await broadcastCardContentToEditingClients(ctx, updatedCard)
@@ -245,13 +233,12 @@ export async function dispatchCardMessage(
     }
 
     case 'submitForm': {
-      const { cardId, formId, callbackKey, boardId } = msg as unknown as SubmitFormMessage
+      const { cardId, formId, callbackKey } = msg as unknown as SubmitFormMessage
       try {
         const result = await runWithScopedAuth(() => doSubmitForm(ctx, {
           cardId,
           formId,
           data: parseSubmitData((msg as unknown as SubmitFormMessage).data),
-          boardId,
         }))
         const updatedCard = ctx.cards.find(candidate => candidate.id === cardId)
         if (updatedCard) {
@@ -268,9 +255,9 @@ export async function dispatchCardMessage(
       {
         const closingCardId = ctx.clientEditingCardIds.get(ws) ?? null
         if (closingCardId) {
-          const closingCard = await runWithScopedAuth(() => ctx.sdk.getCard(closingCardId, ctx.currentBoardId))
+          const closingCard = await runWithScopedAuth(() => ctx.sdk.getCard(closingCardId))
           if (closingCard) {
-            await runWithScopedAuth(() => ctx.sdk.clearActiveCard(closingCard.boardId ?? ctx.currentBoardId))
+            await runWithScopedAuth(() => ctx.sdk.clearActiveCard(closingCard.boardId ?? undefined))
           }
         }
       }

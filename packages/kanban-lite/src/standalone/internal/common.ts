@@ -89,7 +89,7 @@ export function applyCommonCardFilters(cards: Card[], searchParams: URLSearchPar
 export async function buildCardStateReadModel(
   ctx: StandaloneContext,
   cardId: string,
-  boardId?: string,
+  _boardId?: string,
   unreadSummary?: CardUnreadSummary,
   runWithAuth?: StandaloneCardStateAuthRunner,
   options?: BuildCardReadModelOptions,
@@ -98,8 +98,8 @@ export async function buildCardStateReadModel(
   const status = toCardStateStatus(ctx)
 
   try {
-    const unread = unreadSummary ?? await run(() => ctx.sdk.getUnreadSummary(cardId, boardId))
-    const open = await run(() => ctx.sdk.getCardState(cardId, boardId, CARD_STATE_OPEN_DOMAIN) as Promise<CardStateRecord<CardOpenStateValue> | null>)
+    const unread = unreadSummary ?? await run(() => ctx.sdk.getUnreadSummary(cardId))
+    const open = await run(() => ctx.sdk.getCardState(unread.cardId, CARD_STATE_OPEN_DOMAIN) as Promise<CardStateRecord<CardOpenStateValue> | null>)
     return { unread, open, status }
   } catch (error) {
     const mappedError = getCardStateErrorLike(error)

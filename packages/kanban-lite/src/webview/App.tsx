@@ -84,6 +84,17 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i])
 }
 
+function getExplicitRouteBoardId(pathname: string): string | null {
+  const segments = pathname.split('/').filter(Boolean)
+  if (segments.length < 3) return null
+
+  const [boardId, cardId, tabId] = segments
+  if (!boardId || !cardId || !tabId) return null
+  if (boardId === 'settings' || boardId === 'workspace') return null
+
+  return boardId
+}
+
 function buildCardFrontmatter(card: Card): CardFrontmatter {
   return {
     version: card.version,
@@ -175,6 +186,7 @@ function App(): React.JSX.Element {
     canUpdateMetadata?: boolean
   } | null>(null)
   const editingCardIdRef = useRef<string | null>(null)
+  const editingCardBoardIdRef = useRef<string | null>(null)
   const [cardLoadingId, setCardLoadingId] = useState<string | null>(null)
   const cardLoadingIdRef = useRef<string | null>(null)
 
@@ -189,8 +201,9 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const activeCardId = editingCard?.id ?? null
     editingCardIdRef.current = activeCardId
+    editingCardBoardIdRef.current = editingCard?.frontmatter?.boardId ?? null
     setActiveCardId(activeCardId)
-  }, [editingCard?.id, setActiveCardId])
+  }, [editingCard?.frontmatter?.boardId, editingCard?.id, setActiveCardId])
 
   // Undo delete stack
   const [pendingDeletes, setPendingDeletes] = useState<{ id: string; card: Card; originalStatus: string }[]>([])
@@ -217,7 +230,11 @@ function App(): React.JSX.Element {
     setEditingCard(prev => {
       if (!prev) return prev
 
-      const nextCard = nextCards.find(card => card.id === prev.id)
+      const currentBoardId = prev.frontmatter.boardId ?? null
+      const nextCard = nextCards.find(card => (
+        card.id === prev.id
+        && (currentBoardId == null || card.boardId === currentBoardId)
+      ))
       if (!nextCard) return prev
 
       const nextFrontmatter = buildCardFrontmatter(nextCard)
@@ -447,6 +464,16 @@ function App(): React.JSX.Element {
       switch (message.type) {
         case 'init':
           {
+            const explicitRouteBoardId = getExplicitRouteBoardId(globalThis.location?.pathname ?? '')
+            const lockedBoardId = editingCardBoardIdRef.current ?? explicitRouteBoardId
+            if (
+              lockedBoardId
+              && typeof message.currentBoard === 'string'
+              && message.currentBoard !== lockedBoardId
+            ) {
+              break
+            }
+
             const nextCards = message.cards ?? []
           {
             const nextColumns = message.columns ?? []
@@ -539,6 +566,16 @@ function App(): React.JSX.Element {
           if (cardSettings.markdownEditorMode) break
           // Discard stale responses when the user has already opened a different card
           if (cardLoadingIdRef.current !== null && message.cardId !== cardLoadingIdRef.current) break
+          const incomingBoardId = message.frontmatter.boardId ?? null
+          if (
+            cardLoadingIdRef.current === null
+            && editingCardIdRef.current === message.cardId
+            && editingCardBoardIdRef.current
+            && incomingBoardId
+            && editingCardBoardIdRef.current !== incomingBoardId
+          ) {
+            break
+          }
           setActiveCardId(message.cardId)
           contentVersionRef.current += 1
           setEditingCard(prev => ({
@@ -584,7 +621,18 @@ function App(): React.JSX.Element {
           break
         }
         case 'logsUpdated': {
-          setEditingCard(prev => prev && prev.id === message.cardId ? { ...prev, logs: message.logs } : prev)
+          setEditingCard(prev => {
+            if (!prev || prev.id !== message.cardId) return prev
+            if (
+              prev.frontmatter.boardId
+              && message.boardId
+              && prev.frontmatter.boardId !== message.boardId
+            ) {
+              return prev
+            }
+
+            return { ...prev, logs: message.logs }
+          })
           break
         }
         case 'boardLogsUpdated': {
@@ -1062,14 +1110,15 @@ function App(): React.JSX.Element {
       type: 'triggerAction',
       cardId: editingCard.id,
       action,
+      boardId: editingCard.frontmatter.boardId ?? currentBoard,
       callbackKey
     })
-  }, [editingCard])
+  }, [currentBoard, editingCard])
 
   const handleTriggerActionForCard = useCallback((cardId: string, action: string): void => {
     const callbackKey = `action-${Date.now()}`
-    vscode.postMessage({ type: 'triggerAction', cardId, action, callbackKey })
-  }, [])
+    vscode.postMessage({ type: 'triggerAction', cardId, action, boardId: currentBoard, callbackKey })
+  }, [currentBoard])
 
   const handleTriggerBoardAction = useCallback((boardId: string, actionKey: string): void => {
     const callbackKey = `board-action-${Date.now()}`

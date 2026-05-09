@@ -1010,10 +1010,7 @@ describe('Standalone Server Integration', () => {
         }),
         expect.any(Function)
       )
-      expect(deleteSpy).toHaveBeenCalledWith(
-        'auth-delete',
-        'default',
-      )
+      expect(deleteSpy).toHaveBeenCalledWith('auth-delete')
       runWithAuthSpy.mockRestore()
     })
 
@@ -1040,11 +1037,7 @@ describe('Standalone Server Integration', () => {
         }),
         expect.any(Function)
       )
-      expect(triggerSpy).toHaveBeenCalledWith(
-        'card-123',
-        'approve',
-        undefined,
-      )
+      expect(triggerSpy).toHaveBeenCalledWith('card-123', 'approve')
       runWithAuthSpy.mockRestore()
     })
 
@@ -5263,7 +5256,7 @@ describe('Standalone Server Integration', () => {
 
       const localSdk = new KanbanSDK(tempDir)
       await localSdk.init()
-      await localSdk.addLog(cardId, 'Board-scoped unread activity', undefined, 'qa-state')
+      await localSdk.addLog(cardId, 'Board-scoped unread activity')
       localSdk.close()
 
       const getBeforeRes = await httpGet(`http://localhost:${port}/api/boards/qa-state/tasks/${cardId}`)

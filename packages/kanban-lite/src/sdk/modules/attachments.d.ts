@@ -3,42 +3,37 @@ import type { SDKContext } from './context';
 /**
  * Adds a file attachment to a card.
  */
-export declare function addAttachment(ctx: SDKContext, { cardId, sourcePath, boardId }: {
+export declare function addAttachment(ctx: SDKContext, { cardId, sourcePath }: {
     cardId: string;
     sourcePath: string;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Adds raw attachment data to a card.
  */
-export declare function addAttachmentData(ctx: SDKContext, { cardId, filename, data, boardId }: {
+export declare function addAttachmentData(ctx: SDKContext, { cardId, filename, data }: {
     cardId: string;
     filename: string;
     data: string | Uint8Array;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Removes an attachment reference from a card's metadata.
  */
-export declare function removeAttachment(ctx: SDKContext, { cardId, attachment, boardId }: {
+export declare function removeAttachment(ctx: SDKContext, { cardId, attachment }: {
     cardId: string;
     attachment: string;
-    boardId?: string;
 }): Promise<Card>;
 /**
  * Lists all attachment filenames for a card.
  */
-export declare function listAttachments(ctx: SDKContext, { cardId, boardId }: {
+export declare function listAttachments(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<string[]>;
 /**
  * Reads raw attachment data for a card.
  */
-export declare function getAttachmentData(ctx: SDKContext, { cardId, filename, boardId }: {
+export declare function getAttachmentData(ctx: SDKContext, { cardId, filename }: {
     cardId: string;
     filename: string;
-    boardId?: string;
 }): Promise<{
     data: Uint8Array;
     contentType?: string;
@@ -46,7 +41,6 @@ export declare function getAttachmentData(ctx: SDKContext, { cardId, filename, b
 /**
  * Returns the absolute path to the attachment directory for a card.
  */
-export declare function getAttachmentDir(ctx: SDKContext, { cardId, boardId }: {
+export declare function getAttachmentDir(ctx: SDKContext, { cardId }: {
     cardId: string;
-    boardId?: string;
 }): Promise<string | null>;

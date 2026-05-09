@@ -168,7 +168,7 @@ export async function cmdShow(sdk: KanbanSDK, positional: string[], flags: Flags
   const boardId = getBoardId(flags)
   const { fields: boardTitleFields, template: boardTitleTemplate } = getBoardTitleFieldsForCli(sdk, boardId)
   const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-  const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(resolvedId, boardId))
+  const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(resolvedId))
   if (!card) {
     console.error(red(`Card not found: ${cardId}`))
     process.exit(1)
@@ -275,7 +275,7 @@ export async function cmdMove(sdk: KanbanSDK, positional: string[], flags: Flags
   const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
 
   const position = typeof flags.position === 'string' ? parseInt(flags.position, 10) : undefined
-  const updated = await runWithCliAuth(sdk, flags, () => sdk.moveCard(resolvedId, newStatus, position, boardId))
+  const updated = await runWithCliAuth(sdk, flags, () => sdk.moveCard(resolvedId, newStatus, position))
   console.log(green(`Moved ${updated.id} → ${colorStatus(newStatus)}`))
 }
 
@@ -333,7 +333,7 @@ export async function cmdEdit(sdk: KanbanSDK, positional: string[], flags: Flags
     process.exit(1)
   }
 
-  const updated = await runWithCliAuth(sdk, flags, () => sdk.updateCard(resolvedId, updates, boardId))
+  const updated = await runWithCliAuth(sdk, flags, () => sdk.updateCard(resolvedId, updates))
   console.log(green(`Updated: ${updated.id}`))
 }
 
@@ -361,7 +361,6 @@ export async function cmdForm(sdk: KanbanSDK, positional: string[], flags: Flags
         cardId: resolvedId,
         formId,
         data,
-        boardId,
       }))
 
       if (flags.json) {
@@ -415,7 +414,7 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(resolvedId, boardId))
+      const card = await runWithCliAuth(sdk, flags, () => sdk.getCard(resolvedId))
       if (!card) {
         console.error(red(`Card not found: ${cardId}`))
         process.exit(1)
@@ -436,7 +435,7 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.addChecklistItem(resolvedId, title, description, expectedToken, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.addChecklistItem(resolvedId, title, description, expectedToken))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -453,7 +452,7 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.editChecklistItem(resolvedId, index, title, description, modifiedAt, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.editChecklistItem(resolvedId, index, title, description, modifiedAt))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -470,7 +469,7 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.deleteChecklistItem(resolvedId, index, modifiedAt, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.deleteChecklistItem(resolvedId, index, modifiedAt))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -485,7 +484,7 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.checkChecklistItem(resolvedId, index, modifiedAt, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.checkChecklistItem(resolvedId, index, modifiedAt))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -500,7 +499,7 @@ export async function cmdChecklist(sdk: KanbanSDK, positional: string[], flags: 
       }
 
       const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
-      const updated = await runWithCliAuth(sdk, flags, () => sdk.uncheckChecklistItem(resolvedId, index, modifiedAt, boardId))
+      const updated = await runWithCliAuth(sdk, flags, () => sdk.uncheckChecklistItem(resolvedId, index, modifiedAt))
       printOrEmitChecklist(buildChecklistReadModel(updated), flags)
       break
     }
@@ -524,7 +523,7 @@ export async function cmdDelete(sdk: KanbanSDK, positional: string[], flags: Fla
   // Support partial ID match
   const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
 
-  await runWithCliAuth(sdk, flags, () => sdk.deleteCard(resolvedId, boardId))
+  await runWithCliAuth(sdk, flags, () => sdk.deleteCard(resolvedId))
   console.log(green(`Soft-deleted: ${resolvedId} (moved to deleted)`))
 }
 
@@ -538,7 +537,7 @@ export async function cmdPermanentDelete(sdk: KanbanSDK, positional: string[], f
   const boardId = getBoardId(flags)
   const resolvedId = await resolveCardId(sdk, cardId, boardId, flags)
 
-  await runWithCliAuth(sdk, flags, () => sdk.permanentlyDeleteCard(resolvedId, boardId))
+  await runWithCliAuth(sdk, flags, () => sdk.permanentlyDeleteCard(resolvedId))
   console.log(green(`Permanently deleted: ${resolvedId}`))
 }
 

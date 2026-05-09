@@ -1,5 +1,4 @@
 import type { KanbanColumn, CreateCardPayload, Priority, Card } from '../../../../shared/types'
-import { readConfig } from '../../../../shared/config'
 import type { CardStateCursor } from '../../../../sdk/plugins'
 import { buildChecklistReadModel, coerceChecklistSeedTasks, type ChecklistSeedTaskInput } from '../../../../sdk/modules/checklist'
 import { sanitizeCard, AuthError } from '../../../../sdk/types'
@@ -28,9 +27,13 @@ const REST_CARD_LIST_READ_OPTIONS = REST_CARD_READ_OPTIONS
 const REST_CARD_DETAIL_READ_OPTIONS = { ...REST_CARD_READ_OPTIONS, includeResolvedForms: true } as const
 export async function handleBoardCrudRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url } = request
-  const { sdk, workspaceRoot } = ctx
+  const { sdk } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
-  const getRequestScopedCard = (cardId: string, boardId?: string) => runWithRequestAuth(() => sdk.getCard(cardId, boardId))
+  const getRequestScopedCard = (cardId: string, boardId?: string) => runWithRequestAuth(async () => {
+    const card = await sdk.getCard(cardId)
+    if (!card) return null
+    return boardId && card.boardId !== boardId ? null : card
+  })
   const getErrorMessage = (err: unknown): string => err instanceof Error ? err.message : String(err)
   const parseChecklistIndex = (value: string): number => {
     const index = Number.parseInt(value, 10)
@@ -267,17 +270,14 @@ export async function handleBoardCrudRoutes(request: StandaloneRequestContext): 
   if (params) {
     try {
       const body = await readBody(req)
-      const config = readConfig(workspaceRoot)
       const { id, boardId } = params
-      const fromBoard = ctx.currentBoardId || config.defaultBoard
-      const sourceCard = await getRequestScopedCard(id, fromBoard)
+      const sourceCard = await getRequestScopedCard(id)
       if (!sourceCard) {
         jsonError(res, 404, 'Task not found')
         return true
       }
       const card = await runWithRequestAuth(() => sdk.transferCard(
         id,
-        fromBoard,
         boardId,
         body.targetStatus as string | undefined,
       ))

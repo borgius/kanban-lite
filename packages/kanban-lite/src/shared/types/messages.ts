@@ -27,7 +27,6 @@ export interface SubmitFormMessage {
   formId: string
   data: Record<string, unknown>
   callbackKey: string
-  boardId?: string
 }
 
 /**
@@ -40,7 +39,6 @@ export interface UploadVoiceCommentAttachmentMessage {
   dataBase64: string
   contentType?: string
   callbackKey: string
-  boardId?: string
 }
 
 /**
@@ -51,7 +49,6 @@ export interface ResolveVoiceCommentPlaybackMessage {
   cardId: string
   attachment: string
   callbackKey: string
-  boardId?: string
 }
 
 export interface AddChecklistItemMessage {
@@ -60,7 +57,6 @@ export interface AddChecklistItemMessage {
   title: string
   description: string
   expectedToken: string
-  boardId?: string
 }
 
 export interface EditChecklistItemMessage {
@@ -70,7 +66,6 @@ export interface EditChecklistItemMessage {
   title: string
   description: string
   modifiedAt?: string
-  boardId?: string
 }
 
 export interface DeleteChecklistItemMessage {
@@ -78,7 +73,6 @@ export interface DeleteChecklistItemMessage {
   cardId: string
   index: number
   modifiedAt?: string
-  boardId?: string
 }
 
 export interface CheckChecklistItemMessage {
@@ -86,7 +80,6 @@ export interface CheckChecklistItemMessage {
   cardId: string
   index: number
   modifiedAt?: string
-  boardId?: string
 }
 
 export interface UncheckChecklistItemMessage {
@@ -94,7 +87,6 @@ export interface UncheckChecklistItemMessage {
   cardId: string
   index: number
   modifiedAt?: string
-  boardId?: string
 }
 
 /**
@@ -145,7 +137,7 @@ export type ExtensionMessage =
   | { type: 'actionResult'; callbackKey: string; error?: string }
   | { type: 'boardActionResult'; callbackKey: string; error?: string }
   | { type: 'submitFormResult'; callbackKey: string; result?: SubmitFormTransportResult; error?: string }
-  | { type: 'logsUpdated'; cardId: string; logs: LogEntry[] }
+  | { type: 'logsUpdated'; cardId: string; boardId?: string; logs: LogEntry[] }
   | { type: 'boardLogsUpdated'; boardId: string; logs: LogEntry[] }
   | { type: 'commentStreamStart'; cardId: string; commentId: string; author: string; created: string }
   | { type: 'commentChunk'; cardId: string; commentId: string; chunk: string }

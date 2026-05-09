@@ -1066,10 +1066,13 @@ module.exports = { CallbackListenerPlugin }
         await sdk.runWithAuth({ token: 'reader-token' }, async () => {
           const expectProjectedMutation = async (card: Card, expectedBoardId?: string) => {
             const visible = expectPresent(
-              await sdk.getCard(card.id, expectedBoardId),
+              await sdk.getCard(card.id),
               `expected visible card ${card.id}`,
             )
 
+            if (expectedBoardId) {
+              expect(visible.boardId).toBe(expectedBoardId)
+            }
             expect(card).toEqual(visible)
             expect(card.tasks).toBeUndefined()
             expect(card.labels).toEqual(expect.not.arrayContaining(['tasks', 'in-progress']))
@@ -1116,7 +1119,7 @@ module.exports = { CallbackListenerPlugin }
           const deletedComment = await sdk.deleteComment(seeded.id, streamedCommentId)
           await expectProjectedMutation(deletedComment)
 
-          const transferred = await sdk.transferCard(seeded.id, 'default', 'bugs', 'backlog')
+          const transferred = await sdk.transferCard(seeded.id, 'bugs', 'backlog')
           await expectProjectedMutation(transferred, 'bugs')
         })
       } finally {
@@ -1680,7 +1683,7 @@ module.exports = { CallbackListenerPlugin }
 
         await sdk.runWithAuth({ token: 'reader-token' }, async () => {
           const hiddenCardNotFound = 'Card not found: private-card'
-          const transferNotFound = 'Card not found: private-card in board default'
+          const transferNotFound = hiddenCardNotFound
           const cases: Array<{ name: string; run: () => Promise<void> }> = [
             {
               name: 'setActiveCard',
@@ -1831,7 +1834,7 @@ module.exports = { CallbackListenerPlugin }
             {
               name: 'transferCard',
               run: async () => {
-                await expect(sdk.transferCard('private-card', 'default', 'ops', 'backlog')).rejects.toThrow(transferNotFound)
+                await expect(sdk.transferCard('private-card', 'ops', 'backlog')).rejects.toThrow(transferNotFound)
               },
             },
           ]

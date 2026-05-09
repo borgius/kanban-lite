@@ -782,8 +782,8 @@ describe('KanbanPanel auth-scoped card flows', () => {
     await panel._sendCardContent('card-live')
 
     expect(panel._runWithAuth).toHaveBeenCalledTimes(2)
-    expect(sdk.getCard).toHaveBeenCalledWith('card-live', undefined)
-    expect(sdk.listLogs).toHaveBeenCalledWith('card-live', undefined)
+    expect(sdk.getCard).toHaveBeenCalledWith('card-live')
+    expect(sdk.listLogs).toHaveBeenCalledWith('card-live')
     expect(harness.postMessage).toHaveBeenCalledWith(expect.objectContaining({
       type: 'cardContent',
       cardId: 'card-live',
@@ -837,7 +837,7 @@ describe('KanbanPanel auth-scoped card flows', () => {
     await harness.dispatch({ type: 'addChecklistItem', cardId: 'card-checklist', title: 'Review docs', description: '', expectedToken: '' } as Extract<WebviewMessage, { type: 'addChecklistItem' }>)
 
     expect(panel._runWithAuth).toHaveBeenCalledTimes(2)
-    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review docs', '', '', undefined)
+    expect(sdk.addChecklistItem).toHaveBeenCalledWith('card-checklist', 'Review docs', '', '')
     expect(harness.postMessage).toHaveBeenCalledWith(expect.objectContaining({
       type: 'cardContent',
       cardId: 'card-checklist',
@@ -885,7 +885,7 @@ describe('KanbanPanel auth-scoped card flows', () => {
       actions: undefined,
       forms: undefined,
       formData: undefined,
-    }, undefined)
+    })
   })
 
   it('does not emit card content when an explicit open resolves to not found', async () => {
@@ -921,7 +921,7 @@ describe('KanbanPanel auth-scoped card flows', () => {
       await harness.dispatch(testCase.message)
 
       expect(panel._runWithAuth).toHaveBeenCalledTimes(1)
-      expect(sdk.getCard).toHaveBeenCalledWith('private-card', undefined)
+      expect(sdk.getCard).toHaveBeenCalledWith('private-card')
       expect(openTextDocument).not.toHaveBeenCalled()
       expect(showSaveDialog).not.toHaveBeenCalled()
       expect(writeFile).not.toHaveBeenCalled()
@@ -941,8 +941,8 @@ describe('KanbanPanel auth-scoped card flows', () => {
     await harness.dispatch({ type: 'openAttachment', cardId: 'card-1', attachment: 'notes.md' })
 
     expect(panel._runWithAuth).toHaveBeenCalledTimes(2)
-    expect(sdk.getCard).toHaveBeenCalledWith('card-1', undefined)
-    expect(sdk.getAttachmentDir).toHaveBeenCalledWith('card-1', undefined)
+    expect(sdk.getCard).toHaveBeenCalledWith('card-1')
+    expect(sdk.getAttachmentDir).toHaveBeenCalledWith('card-1')
     expect(vscode.workspace.openTextDocument).toHaveBeenCalledWith(vscode.Uri.file('/tmp/attachments/notes.md'))
     expect(vscode.window.showTextDocument).toHaveBeenCalledTimes(1)
   })

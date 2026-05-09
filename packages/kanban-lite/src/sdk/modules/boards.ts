@@ -196,18 +196,20 @@ export async function triggerBoardAction(ctx: SDKContext, { boardId, actionKey }
  */
 export async function transferCard(
   ctx: SDKContext,
-  { cardId, fromBoardId, toBoardId, targetStatus }: { cardId: string; fromBoardId: string; toBoardId: string; targetStatus?: string }
+  { cardId, toBoardId, targetStatus }: { cardId: string; toBoardId: string; targetStatus?: string }
 ): Promise<Card> {
   const toBoardDir = ctx._boardDir(toBoardId)
 
   const config = readConfig(ctx.workspaceRoot)
-  if (!config.boards[fromBoardId]) throw new Error(`Board not found: ${fromBoardId}`)
   if (!config.boards[toBoardId]) throw new Error(`Board not found: ${toBoardId}`)
 
-  const visibleCard = await ctx.getCard(cardId, fromBoardId)
-  if (!visibleCard) throw new Error(`Card not found: ${cardId} in board ${fromBoardId}`)
-  const card = await ctx._getCardRaw(cardId, fromBoardId)
-  if (!card) throw new Error(`Card not found: ${cardId} in board ${fromBoardId}`)
+  const visibleCard = await ctx.getCard(cardId)
+  if (!visibleCard) throw new Error(`Card not found: ${cardId}`)
+  const resolvedFromBoardId = visibleCard.boardId || ctx._resolveBoardId()
+  if (!config.boards[resolvedFromBoardId]) throw new Error(`Board not found: ${resolvedFromBoardId}`)
+
+  const card = await ctx._getCardRaw(cardId)
+  if (!card) throw new Error(`Card not found: ${cardId}`)
   const previousStatus = card.status
 
   const toBoard = config.boards[toBoardId]
@@ -253,6 +255,6 @@ export async function transferCard(
     }
   }
 
-  await ctx.addLog(card.id, `Status changed: \`${previousStatus}\` → \`${newStatus}\``, { source: 'system' }, toBoardId).catch(() => {})
+  await ctx.addLog(card.id, `Status changed: \`${previousStatus}\` → \`${newStatus}\``, { source: 'system' }).catch(() => {})
   return card
 }

@@ -180,6 +180,7 @@ interface CardFormTabProps {
 export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: CardFormTabProps) {
   const initialDataSignature = useMemo(() => JSON.stringify(form.initialData), [form.initialData])
   const [data, setData] = useState<Record<string, unknown>>(() => cloneRecord(form.initialData))
+  const dataRef = useRef<Record<string, unknown>>(cloneRecord(form.initialData))
   const [errors, setErrors] = useState<FormValidationError[]>(() => validateFormData(form.schema, cloneRecord(form.initialData)))
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -189,6 +190,7 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
 
   useEffect(() => {
     const nextData = cloneRecord(form.initialData)
+    dataRef.current = nextData
     setData(nextData)
     setErrors(validateFormData(form.schema, nextData))
     setSubmitError(null)
@@ -207,7 +209,8 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
   }, [])
 
   const handleSubmit = async () => {
-    const currentErrors = validateFormData(form.schema, data)
+    const currentData = cloneRecord(dataRef.current)
+    const currentErrors = validateFormData(form.schema, currentData)
     setErrors(currentErrors)
     setSubmitError(null)
     setSuccessMessage(null)
@@ -249,16 +252,17 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
           type: 'submitForm',
           cardId,
           formId: form.id,
-          data,
+          data: currentData,
           callbackKey,
           ...(boardId ? { boardId } : {}),
         })
       })
 
-      const persistedData = isRecord(result.card.formData?.[form.id])
-        ? result.card.formData?.[form.id]
-        : result.data
-      const normalizedData = cloneRecord(persistedData)
+      const normalizedData = {
+        ...cloneRecord(isRecord(result.card.formData?.[form.id]) ? result.card.formData?.[form.id] : undefined),
+        ...cloneRecord(isRecord(result.data) ? result.data : undefined),
+      }
+      dataRef.current = normalizedData
       lastSuccessfulSubmissionRef.current = {
         formId: form.id,
         dataSignature: JSON.stringify(normalizedData),
@@ -337,7 +341,8 @@ export function CardFormTab({ cardId, boardId, form, className, onSubmitted }: C
             ajv={formAjv}
             validationMode="ValidateAndShow"
             onChange={({ data: nextData, errors: nextErrors }) => {
-              const normalizedData = isRecord(nextData) ? nextData : {}
+              const normalizedData = cloneRecord(isRecord(nextData) ? nextData : undefined)
+              dataRef.current = normalizedData
               lastSuccessfulSubmissionRef.current = null
               setData(normalizedData)
               setErrors((nextErrors ?? []) as FormValidationError[])

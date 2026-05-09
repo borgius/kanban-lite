@@ -67,6 +67,19 @@ Required: Yes
 | `201` | Board created. |
 | `400` | Validation error (missing id or name). |
 
+### GET `/api/boards/overview`
+
+**Get boards overview**
+
+Returns aggregated card counts and notification summaries for all boards. Notification counts are `null` when the `card.state` plugin is not configured.
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Array of board overview summaries. |
+| `500` | Internal error. |
+
 ### GET `/api/boards/{boardId}`
 
 **Get board**
@@ -243,6 +256,44 @@ Fires the configured webhook for the named board action.
 |--------|-------------|
 | `204` | Triggered. |
 | `404` | Not found. |
+
+### GET `/api/boards/{boardId}/export`
+
+**Export board settings**
+
+Exports the board configuration plus board-relevant workspace fragments (labels, forms, hook-related plugin config) as a versioned JSON archive. Card content, comments, attachments, and logs are not included.
+
+#### Parameters
+
+| Name | In | Type | Required | Description |
+|------|----|------|----------|-------------|
+| `boardId` | path | string | Yes | Board identifier |
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `200` | Board settings archive (BoardSettingsExportV1). |
+| `404` | Board not found. |
+
+### POST `/api/boards/import`
+
+**Import board settings**
+
+Imports a board-settings archive produced by the export endpoint. By default, importing a board whose ID already exists returns a 400 error. Pass `overwrite: true` in the request body to replace the existing board config. Workspace fragments (labels, forms, plugin config) are merged without touching unrelated global settings.
+
+#### Request Body
+
+Required: Yes
+
+Schema: object
+
+#### Responses
+
+| Status | Description |
+|--------|-------------|
+| `201` | Imported board summary. |
+| `400` | Validation error or duplicate board ID. |
 
 ### GET `/api/boards/{boardId}/columns`
 
@@ -1719,7 +1770,7 @@ Plugin discovery, selection, options, and guarded installation
 
 **List plugin providers**
 
-Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; redaction supplements authorization rather than replacing it.
+Returns the capability-grouped plugin inventory with selected-provider state and shared redaction metadata. `config.storage` rows include configured-versus-effective resolution details, including explicit failure or degraded/read-only state when the SDK reports one. Secret values are never included in this list payload. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; redaction supplements authorization rather than replacing it.
 
 #### Responses
 
@@ -1734,13 +1785,13 @@ Returns the capability-grouped plugin inventory with selected-provider state and
 
 **Read plugin settings**
 
-Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.
+Returns the redacted plugin-settings read model for one provider. `config.storage` reads include configured-versus-effective resolution details so clients can distinguish explicit configured state from the current effective provider and any surfaced failure/degraded mode. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.
 
 #### Parameters
 
 | Name | In | Type | Required | Description |
 |------|----|------|----------|-------------|
-| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity` or `card.storage`). |
+| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity`, `card.storage`, or `config.storage`). |
 | `providerId` | path | string | Yes | Plugin provider identifier within the selected capability. |
 
 #### Responses
@@ -1757,13 +1808,13 @@ Returns the redacted plugin-settings read model for one provider. Persisted secr
 
 **Select plugin provider**
 
-Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation.
+Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation. For `config.storage`, Worker topology-changing updates are rejected as explicit runtime-mutation errors instead of silently swapping the effective provider.
 
 #### Parameters
 
 | Name | In | Type | Required | Description |
 |------|----|------|----------|-------------|
-| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity` or `card.storage`). |
+| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity`, `card.storage`, or `config.storage`). |
 | `providerId` | path | string | Yes | Plugin provider identifier within the selected capability. |
 
 #### Responses
@@ -1771,6 +1822,7 @@ Persists the selected provider for one capability. Existing authorization wrappe
 | Status | Description |
 |--------|-------------|
 | `200` | Updated redacted provider read model after selection. |
+| `400` | Rejected runtime mutation or invalid request payload. |
 | `403` | Forbidden. |
 | `404` | Provider not found for the requested capability. |
 | `500` | Unable to persist the selected provider. |
@@ -1779,13 +1831,13 @@ Persists the selected provider for one capability. Existing authorization wrappe
 
 **Update plugin options**
 
-Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets.
+Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets. `config.storage` responses continue to surface configured-versus-effective resolution and any explicit failure/degraded state reported by the SDK.
 
 #### Parameters
 
 | Name | In | Type | Required | Description |
 |------|----|------|----------|-------------|
-| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity` or `card.storage`). |
+| `capability` | path | string | Yes | Plugin capability namespace (for example `auth.identity`, `card.storage`, or `config.storage`). |
 | `providerId` | path | string | Yes | Plugin provider identifier within the selected capability. |
 
 #### Request Body
@@ -1801,7 +1853,7 @@ Required: Yes
 | Status | Description |
 |--------|-------------|
 | `200` | Updated redacted provider read model after persisting options. |
-| `400` | Invalid options payload. |
+| `400` | Invalid options payload or rejected runtime mutation. |
 | `403` | Forbidden. |
 | `404` | Provider not found for the requested capability. |
 | `500` | Unable to persist plugin options. |
@@ -1940,7 +1992,7 @@ Returns the active `card.state` provider status for the standalone runtime, incl
 
 **Get workspace info**
 
-Returns workspace-level connection metadata plus resolved storage, auth, webhook, and `card.state` provider information, including filesystem watcher support.
+Returns workspace-level connection metadata plus resolved storage, auth, webhook, and `card.state` provider information, including filesystem watcher support and the configured-versus-effective `config.storage` resolution state.
 
 #### Responses
 
@@ -1964,7 +2016,7 @@ Returns auth provider metadata plus safe request-scoped token diagnostics for th
 
 **Get storage status**
 
-Returns the active card, attachment, webhook, and `card.state` provider IDs plus host-facing file/watch metadata.
+Returns the active storage providers plus host-facing file/watch metadata and the configured-versus-effective `config.storage` resolution, including explicit failure or degraded/read-only state when present.
 
 #### Responses
 

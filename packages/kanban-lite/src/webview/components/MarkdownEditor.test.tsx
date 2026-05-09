@@ -126,3 +126,28 @@ describe('MarkdownEditor meta tab', () => {
     expect(markup).not.toContain('>Meta<')
   })
 })
+
+describe('MarkdownEditor preview links', () => {
+  it('renders markdown links with new-tab attributes in preview mode', () => {
+    const previousActiveTab = storeState.activeCardTab
+    storeState.activeCardTab = 'preview'
+
+    try {
+      const markup = renderToStaticMarkup(
+        <MarkdownEditor
+          value={'[Open thread workspace](https://tsf.incidentmind.com/pipeline/threads/19de47dde07da870)'}
+          onChange={() => {}}
+          mode="edit"
+          cardId="card-1"
+          frontmatter={createFrontmatter()}
+        />,
+      )
+
+      expect(markup).toContain('href="https://tsf.incidentmind.com/pipeline/threads/19de47dde07da870"')
+      expect(markup).toContain('target="_blank"')
+      expect(markup).toContain('rel="noopener noreferrer"')
+    } finally {
+      storeState.activeCardTab = previousActiveTab
+    }
+  })
+})

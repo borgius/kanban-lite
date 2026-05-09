@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { markdown } from '@codemirror/lang-markdown'
-import { marked } from 'marked'
 import { Heading, Bold, Italic, Quote, Code, Link, List, ListOrdered, ListChecks, MessageCircle, ScrollText } from 'lucide-react'
 import type { Comment, LogEntry, CardFrontmatter, SubmitFormTransportResult } from '../../shared/types'
 import { buildChecklistReadModel, type ChecklistReadModel } from '../../sdk/modules/checklist'
@@ -9,7 +8,7 @@ import { CommentsSection } from './CommentsSection'
 import { LogsSection } from './LogsSection'
 import { CodeMirrorEditor, type CodeMirrorEditorHandle } from './CodeMirrorEditor'
 import { MetadataEditorTab } from './MetadataEditorTab'
-import { wrapEditorSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
+import { parseCardMarkdown, wrapEditorSelection, ToolbarButton, type FormatAction } from '../lib/markdownTools'
 import { useStore, type CardTab, createFormCardTabId } from '../store'
 import { CardFormTab, resolveCardFormDescriptors } from './CardFormTab'
 
@@ -329,7 +328,7 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
 
   const previewHtml = useMemo(() => {
     if (!value.trim()) return ''
-    return marked.parse(value, { async: false, gfm: true, breaks: true }) as string
+    return parseCardMarkdown(value)
   }, [value])
 
   // Auto-focus textarea when switching to write tab

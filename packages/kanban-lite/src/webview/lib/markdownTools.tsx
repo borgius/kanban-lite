@@ -163,17 +163,26 @@ export function ToolbarButton({ icon, title, onClick, separator }: ToolbarButton
   )
 }
 
-export const commentMarked = new Marked({
-  gfm: true,
-  breaks: true,
-  renderer: {
-    link({ href, title, tokens }) {
-      const text = this.parser.parseInline(tokens)
-      const titleAttr = title ? ` title="${title}"` : ''
-      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`
-    }
-  }
-})
+function createExternalLinkMarked(): Marked {
+  return new Marked({
+    gfm: true,
+    breaks: true,
+    renderer: {
+      link({ href, title, tokens }) {
+        const text = this.parser.parseInline(tokens)
+        const titleAttr = title ? ` title="${title}"` : ''
+        return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`
+      },
+    },
+  })
+}
+
+export const commentMarked = createExternalLinkMarked()
+const cardMarked = createExternalLinkMarked()
+
+export function parseCardMarkdown(content: string): string {
+  return cardMarked.parse(content, { async: false }) as string
+}
 
 export function parseCommentMarkdown(content: string): string {
   const processed = content.replace(

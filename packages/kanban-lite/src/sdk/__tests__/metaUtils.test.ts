@@ -6,6 +6,7 @@ import {
   matchesCardSearch,
   matchesExactTextSearch,
   matchesFuzzyTextSearch,
+  matchesMetaAnyFilter,
   matchesMetaFilter,
   parseSearchQuery,
 } from '../metaUtils'
@@ -67,6 +68,30 @@ describe('getNestedValue', () => {
   it('returns boolean values', () => {
     expect(getNestedValue({ flag: false }, 'flag')).toBe(false)
   })
+
+  it('traverses an array of objects collecting matching keys', () => {
+    const contacts = [
+      { external: { name: 'Soumya', email: 'smittapally@vsoftconsulting.com' } },
+      { internal: { name: 'Jason', email: 'jnorman@dewintergroup.com' } },
+    ]
+    // contacts[0].external.email
+    expect(getNestedValue({ contacts }, 'contacts.external.email')).toBe('smittapally@vsoftconsulting.com')
+    // contacts[1].internal.email
+    expect(getNestedValue({ contacts }, 'contacts.internal.email')).toBe('jnorman@dewintergroup.com')
+  })
+
+  it('returns an array when multiple elements match a key', () => {
+    const contacts = [
+      { type: 'external', email: 'a@a.com' },
+      { type: 'internal', email: 'b@b.com' },
+    ]
+    expect(getNestedValue({ contacts }, 'contacts.email')).toEqual(['a@a.com', 'b@b.com'])
+  })
+
+  it('returns undefined when no array element has the key', () => {
+    const contacts = [{ external: { name: 'X' } }]
+    expect(getNestedValue({ contacts }, 'contacts.missing')).toBeUndefined()
+  })
 })
 
 describe('matchesMetaFilter', () => {
@@ -121,12 +146,68 @@ describe('matchesMetaFilter', () => {
   it('supports fuzzy matching for field-scoped metadata values when opted in', () => {
     expect(matchesMetaFilter({ team: 'backend' }, { team: 'backnd' }, true)).toBe(true)
   })
+
+  it('matches through an array of objects — any element satisfies the filter', () => {
+    const metadata = {
+      contacts: [
+        { external: { name: 'Soumya Mittapally', email: 'smittapally@vsoftconsulting.com' } },
+        { internal: { name: 'Jason Norman', email: 'jnorman@dewintergroup.com' } },
+      ],
+    }
+    expect(matchesMetaFilter(metadata, { 'contacts.external.email': 'smittapally' })).toBe(true)
+    expect(matchesMetaFilter(metadata, { 'contacts.internal.email': 'jnorman' })).toBe(true)
+    expect(matchesMetaFilter(metadata, { 'contacts.external.email': 'nobody@example.com' })).toBe(false)
+  })
+})
+
+describe('matchesMetaAnyFilter', () => {
+  const metadata = {
+    company: 'Curriculum Associates',
+    salary: '75/hr',
+    contacts: [
+      { external: { name: 'Soumya Mittapally', email: 'smittapally@vsoftconsulting.com' } },
+      { internal: { name: 'Jason Norman', email: 'jnorman@dewintergroup.com' } },
+    ],
+  }
+
+  it('returns true when needle is empty', () => {
+    expect(matchesMetaAnyFilter(metadata, [])).toBe(true)
+  })
+
+  it('returns false when metadata is undefined', () => {
+    expect(matchesMetaAnyFilter(undefined, ['smittapally'])).toBe(false)
+  })
+
+  it('matches a top-level scalar value', () => {
+    expect(matchesMetaAnyFilter(metadata, ['Curriculum'])).toBe(true)
+    expect(matchesMetaAnyFilter(metadata, ['75/hr'])).toBe(true)
+  })
+
+  it('matches a deeply nested value inside an array of objects', () => {
+    expect(matchesMetaAnyFilter(metadata, ['smittapally@vsoftconsulting.com'])).toBe(true)
+    expect(matchesMetaAnyFilter(metadata, ['jnorman@dewintergroup.com'])).toBe(true)
+  })
+
+  it('matches a partial substring (case-insensitive)', () => {
+    expect(matchesMetaAnyFilter(metadata, ['smittapally'])).toBe(true)
+    expect(matchesMetaAnyFilter(metadata, ['SMITTAPALLY'])).toBe(true)
+  })
+
+  it('returns false when needle does not match any value', () => {
+    expect(matchesMetaAnyFilter(metadata, ['nobody@example.com'])).toBe(false)
+  })
+
+  it('requires ALL needles to match (AND logic)', () => {
+    expect(matchesMetaAnyFilter(metadata, ['smittapally', 'jnorman'])).toBe(true)
+    expect(matchesMetaAnyFilter(metadata, ['smittapally', 'nobody'])).toBe(false)
+  })
 })
 
 describe('parseSearchQuery', () => {
   it('extracts meta.field tokens and leaves the remaining plain text intact', () => {
     expect(parseSearchQuery('meta.team: backend fix login bug')).toEqual({
       metaFilter: { team: 'backend' },
+      metaAnyFilter: [],
       plainText: 'fix login bug',
     })
   })
@@ -137,6 +218,7 @@ describe('parseSearchQuery', () => {
         team: 'backend',
         'links.jira': 'PROJ-123',
       },
+      metaAnyFilter: [],
       plainText: 'release',
     })
   })
@@ -147,7 +229,40 @@ describe('parseSearchQuery', () => {
         team: 'backend platform',
         owner: 'alice',
       },
+      metaAnyFilter: [],
       plainText: 'release',
+    })
+  })
+
+  it('parses meta: value tokens into metaAnyFilter', () => {
+    expect(parseSearchQuery('meta: smittapally@vsoftconsulting.com')).toEqual({
+      metaFilter: {},
+      metaAnyFilter: ['smittapally@vsoftconsulting.com'],
+      plainText: '',
+    })
+  })
+
+  it('parses meta: and meta.field: tokens together', () => {
+    expect(parseSearchQuery('meta.company: Acme meta: john fix bug')).toEqual({
+      metaFilter: { company: 'Acme' },
+      metaAnyFilter: ['john'],
+      plainText: 'fix bug',
+    })
+  })
+
+  it('parses multiple meta: tokens as AND needles', () => {
+    expect(parseSearchQuery('meta: foo meta: bar')).toEqual({
+      metaFilter: {},
+      metaAnyFilter: ['foo', 'bar'],
+      plainText: '',
+    })
+  })
+
+  it('supports quoted values in meta: tokens', () => {
+    expect(parseSearchQuery('meta: "hello world"')).toEqual({
+      metaFilter: {},
+      metaAnyFilter: ['hello world'],
+      plainText: '',
     })
   })
 })
@@ -231,5 +346,25 @@ describe('card search helpers', () => {
 
     expect(matchesCardSearch(card, 'meta.team: backend plumbng')).toBe(false)
     expect(matchesCardSearch(card, 'meta.team: backend plumbng', {}, true)).toBe(true)
+  })
+
+  it('meta: value finds cards matching any metadata field at any depth', () => {
+    const card = createCard({
+      metadata: {
+        company: 'Curriculum Associates',
+        contacts: [
+          { external: { name: 'Soumya Mittapally', email: 'smittapally@vsoftconsulting.com' } },
+          { internal: { name: 'Jason Norman', email: 'jnorman@dewintergroup.com' } },
+        ],
+      },
+    })
+
+    expect(matchesCardSearch(card, 'meta: smittapally@vsoftconsulting.com')).toBe(true)
+    expect(matchesCardSearch(card, 'meta: smittapally')).toBe(true)
+    expect(matchesCardSearch(card, 'meta: Curriculum')).toBe(true)
+    expect(matchesCardSearch(card, 'meta: nobody@example.com')).toBe(false)
+    // multiple meta: tokens are AND-combined
+    expect(matchesCardSearch(card, 'meta: smittapally meta: jnorman')).toBe(true)
+    expect(matchesCardSearch(card, 'meta: smittapally meta: nobody')).toBe(false)
   })
 })

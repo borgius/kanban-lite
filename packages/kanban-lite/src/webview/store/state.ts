@@ -165,13 +165,18 @@ export function formatMetadataTokenValue(value: string): string {
   return /\s/.test(normalized) ? JSON.stringify(normalized) : normalized
 }
 
-export function buildSearchQuery(plainText: string, metaFilter: Record<string, string>): string {
+export function buildSearchQuery(plainText: string, metaFilter: Record<string, string>, metaAnyFilter: string[] = []): string {
   const metaTokens = Object.entries(metaFilter)
     .map(([path, value]) => [path.trim(), value.trim()] as const)
     .filter(([path, value]) => path.length > 0 && value.length > 0)
     .map(([path, value]) => `meta.${path}: ${formatMetadataTokenValue(value)}`)
 
-  return [plainText.trim(), ...metaTokens].filter(Boolean).join(' ').trim()
+  const metaAnyTokens = metaAnyFilter
+    .map(v => v.trim())
+    .filter(v => v.length > 0)
+    .map(v => `meta: ${formatMetadataTokenValue(v)}`)
+
+  return [plainText.trim(), ...metaTokens, ...metaAnyTokens].filter(Boolean).join(' ').trim()
 }
 
 

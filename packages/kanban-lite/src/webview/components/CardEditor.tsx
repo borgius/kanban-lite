@@ -693,12 +693,27 @@ function MetadataTree({ data, depth, pathPrefix = '', onOpenMetadataFile }: { da
               <MetadataTree data={value as Record<string, unknown>} depth={depth + 1} pathPrefix={path} onOpenMetadataFile={onOpenMetadataFile} />
             </>
           ) : Array.isArray(value) ? (
-            <div className="flex items-baseline gap-1">
-              <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
-              <CopyableValue value={`[${value.join(', ')}]`} />
-              <MetadataFilterButton path={path} value={normalizedValue} />
-              <MetadataPreviewCountButton path={path} value={normalizedValue} />
-            </div>
+            value.some(item => item !== null && typeof item === 'object') ? (
+              <div>
+                <span className="text-zinc-500 dark:text-zinc-400">{key}:</span>
+                {value.map((item, i) => (
+                  item !== null && typeof item === 'object' ? (
+                    <MetadataTree key={i} data={item as Record<string, unknown>} depth={depth + 1} pathPrefix={path} onOpenMetadataFile={onOpenMetadataFile} />
+                  ) : (
+                    <div key={i} className="flex items-baseline gap-1" style={{ paddingLeft: 12 }}>
+                      <CopyableValue value={String(item)} />
+                    </div>
+                  )
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-baseline gap-1">
+                <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
+                <CopyableValue value={`[${(value as unknown[]).join(', ')}]`} />
+                <MetadataFilterButton path={path} value={normalizedValue} />
+                <MetadataPreviewCountButton path={path} value={normalizedValue} />
+              </div>
+            )
           ) : (
             <div className="flex items-baseline gap-1 flex-wrap">
               <span className="text-zinc-500 dark:text-zinc-400">{key}: </span>
@@ -897,7 +912,12 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
   const pinnedMetadataEntries = useMemo(
     () => pinnedMetadataKeys
       .map((key) => ({ key, value: metadata[key] }))
-      .filter(({ value }) => value !== undefined && value !== null && String(value).trim() !== ''),
+      .filter(({ value }) => {
+        if (value === undefined || value === null) return false
+        if (Array.isArray(value)) return value.length > 0 && value.every(item => item === null || typeof item !== 'object')
+        if (typeof value === 'object') return false
+        return String(value).trim() !== ''
+      }),
     [metadata, pinnedMetadataKeys]
   )
   const isDrawerMode = (cardSettings.panelMode ?? 'drawer') === 'drawer'

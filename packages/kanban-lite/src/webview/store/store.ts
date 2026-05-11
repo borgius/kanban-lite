@@ -263,9 +263,9 @@ export const useStore = create<KanbanState>((set, get) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFuzzySearch: (enabled) => set({ fuzzySearch: enabled }),
   clearPlainTextSearch: () => set((state) => {
-    const { metaFilter } = parseSearchQuery(state.searchQuery)
+    const { metaFilter, metaAnyFilter } = parseSearchQuery(state.searchQuery)
     return {
-      searchQuery: buildSearchQuery('', metaFilter),
+      searchQuery: buildSearchQuery('', metaFilter, metaAnyFilter),
     }
   }),
   applyMetadataFilterToken: (path, value) => set((state) => {
@@ -273,24 +273,24 @@ export const useStore = create<KanbanState>((set, get) => ({
     const normalizedValue = value.trim().replace(/\s+/g, ' ')
     if (!normalizedPath || !normalizedValue) return {}
 
-    const { metaFilter, plainText } = parseSearchQuery(state.searchQuery)
+    const { metaFilter, metaAnyFilter, plainText } = parseSearchQuery(state.searchQuery)
     metaFilter[normalizedPath] = normalizedValue
 
     return {
-      searchQuery: buildSearchQuery(plainText, metaFilter),
+      searchQuery: buildSearchQuery(plainText, metaFilter, metaAnyFilter),
     }
   }),
   removeMetadataFilterToken: (path) => set((state) => {
     const normalizedPath = path.trim()
     if (!normalizedPath) return {}
 
-    const { metaFilter, plainText } = parseSearchQuery(state.searchQuery)
+    const { metaFilter, metaAnyFilter, plainText } = parseSearchQuery(state.searchQuery)
     if (!(normalizedPath in metaFilter)) return {}
 
     delete metaFilter[normalizedPath]
 
     return {
-      searchQuery: buildSearchQuery(plainText, metaFilter),
+      searchQuery: buildSearchQuery(plainText, metaFilter, metaAnyFilter),
     }
   }),
   applyLabelFilter: (label) => set(() => {

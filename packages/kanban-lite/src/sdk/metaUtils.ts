@@ -18,12 +18,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * // => 'PROJ-123'
  */
 export function getNestedValue(obj: Record<string, unknown>, path: string): unknown {
-  return path.split('.').reduce<unknown>((curr, key) =>
-    isRecord(curr) ? curr[key] : undefined, obj)
+  return path.split('.').reduce<unknown>((curr, key) => {
+    if (Array.isArray(curr)) {
+      const results = curr
+        .filter(item => isRecord(item))
+        .map(item => (item as Record<string, unknown>)[key])
+        .filter(v => v !== undefined)
+      if (results.length === 0) return undefined
+      return results.length === 1 ? results[0] : results
+    }
+    return isRecord(curr) ? curr[key] : undefined
+  }, obj)
 }
 
 export interface ParsedSearchQuery {
   metaFilter: Record<string, string>
+  /** Values from `meta: value` tokens — matched against all metadata fields at any depth. */
+  metaAnyFilter: string[]
   plainText: string
 }
 
@@ -39,7 +50,7 @@ const PARSE_SEARCH_QUERY_CACHE_MAX = 32
 const parseSearchQueryCache = new Map<string, ParsedSearchQuery>()
 
 function cloneParsedSearchQuery(parsed: ParsedSearchQuery): ParsedSearchQuery {
-  return { metaFilter: { ...parsed.metaFilter }, plainText: parsed.plainText }
+  return { metaFilter: { ...parsed.metaFilter }, metaAnyFilter: [...parsed.metaAnyFilter], plainText: parsed.plainText }
 }
 
 /**
@@ -64,15 +75,22 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
   }
 
   const metaFilter: Record<string, string> = {}
+  const metaAnyFilter: string[] = []
   const plainText = query
     .replace(/meta\.([a-zA-Z0-9_.]+):\s*(?:"((?:\\.|[^"])*)"|'((?:\\.|[^'])*)'|(\S+))/g, (_full, key, doubleQuoted, singleQuoted, bareValue) => {
       const rawValue = doubleQuoted ?? singleQuoted ?? bareValue ?? ''
       metaFilter[key] = decodeSearchTokenValue(rawValue)
       return ''
     })
+    .replace(/\bmeta:\s*(?:"((?:\\.|[^"])*)"|'((?:\\.|[^'])*)'|(\S+))/g, (_full, doubleQuoted, singleQuoted, bareValue) => {
+      const rawValue = doubleQuoted ?? singleQuoted ?? bareValue ?? ''
+      const decoded = decodeSearchTokenValue(rawValue)
+      if (decoded) metaAnyFilter.push(decoded)
+      return ''
+    })
     .replace(/\s{2,}/g, ' ')
     .trim()
-  const parsed: ParsedSearchQuery = { metaFilter, plainText }
+  const parsed: ParsedSearchQuery = { metaFilter, metaAnyFilter, plainText }
 
   if (parseSearchQueryCache.size >= PARSE_SEARCH_QUERY_CACHE_MAX) {
     const firstKey = parseSearchQueryCache.keys().next().value
@@ -185,6 +203,29 @@ export function matchesFuzzyTextSearch(
 }
 
 /**
+ * Returns `true` if every needle in `needles` matches at least one value
+ * anywhere in the metadata tree (any field, any depth, any array element).
+ * Uses case-insensitive substring matching; Fuse-powered fuzzy matching when
+ * `fuzzy` is enabled.
+ *
+ * This backs the `meta: value` search token.
+ */
+export function matchesMetaAnyFilter(
+  metadata: Record<string, unknown> | undefined,
+  needles: string[],
+  fuzzy = false
+): boolean {
+  if (needles.length === 0) return true
+  if (!metadata) return false
+  const allValues = collectMetadataValues(metadata)
+  return needles.every(needle =>
+    allValues.some(v =>
+      v.toLowerCase().includes(needle.toLowerCase()) || (fuzzy && hasFuzzyMatch(v, needle))
+    )
+  )
+}
+
+/**
  * Returns `true` if every entry in `filter` matches the card's metadata using
  * case-insensitive substring matching on the string representation of each resolved value.
  * When `fuzzy` is enabled, Fuse.js is used as an opt-in fallback for the same
@@ -219,8 +260,12 @@ export function matchesMetaFilter(
   for (const [path, needle] of Object.entries(filter)) {
     const value = getNestedValue(metadata, path)
     if (value == null) return false
-    const valueText = String(value)
-    if (!valueText.toLowerCase().includes(needle.toLowerCase()) && (!fuzzy || !hasFuzzyMatch(valueText, needle))) return false
+    const candidates = Array.isArray(value) ? value : [value]
+    const matched = candidates.some(v => {
+      const valueText = String(v)
+      return valueText.toLowerCase().includes(needle.toLowerCase()) || (fuzzy && hasFuzzyMatch(valueText, needle))
+    })
+    if (!matched) return false
   }
   return true
 }
@@ -277,18 +322,20 @@ export function createCardSearchPredicate(
     return () => true
   }
 
-  const { metaFilter: parsedMetaFilter, plainText } = hasQuery
+  const { metaFilter: parsedMetaFilter, metaAnyFilter: parsedMetaAnyFilter, plainText } = hasQuery
     ? parseSearchQuery(searchQuery as string)
-    : { metaFilter: {}, plainText: '' }
+    : { metaFilter: {}, metaAnyFilter: [] as string[], plainText: '' }
   const combinedMetaFilter = hasMetaFilter
     ? { ...metaFilter, ...parsedMetaFilter }
     : parsedMetaFilter
 
   const needsMetaMatch = Object.keys(combinedMetaFilter).length > 0
+  const needsMetaAnyMatch = parsedMetaAnyFilter.length > 0
   const needsTextMatch = plainText.length > 0
 
   return (card) => {
     if (needsMetaMatch && !matchesMetaFilter(card.metadata, combinedMetaFilter, fuzzy)) return false
+    if (needsMetaAnyMatch && !matchesMetaAnyFilter(card.metadata, parsedMetaAnyFilter, fuzzy)) return false
     if (!needsTextMatch) return true
     return fuzzy
       ? matchesFuzzyTextSearch(card, plainText)

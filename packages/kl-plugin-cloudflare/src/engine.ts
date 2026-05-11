@@ -90,6 +90,13 @@ class CloudflareAttachmentStore {
     await bucket.put(buildAttachmentKey(card, fileName), toUint8Array(content))
   }
 
+  async deleteAttachment(card: Card, attachment: string): Promise<void> {
+    const fileName = normalizeAttachmentName(attachment)
+    if (!fileName) return
+    const bucket = getAttachmentsBucket(this.worker, 'attachment.storage')
+    await bucket.delete(buildAttachmentKey(card, fileName))
+  }
+
   async readAttachment(
     card: Card,
     attachment: string,
@@ -314,6 +321,9 @@ export function createAttachmentStoragePlugin(context: CloudflareWorkerProviderC
     },
     async writeAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<void> {
       await attachments.writeAttachment(card, attachment, content)
+    },
+    async deleteAttachment(card: Card, attachment: string): Promise<void> {
+      await attachments.deleteAttachment(card, attachment)
     },
     async readAttachment(card: Card, attachment: string): Promise<{ data: Uint8Array; contentType?: string } | null> {
       return attachments.readAttachment(card, attachment)

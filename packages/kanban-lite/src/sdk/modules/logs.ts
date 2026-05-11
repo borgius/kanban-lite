@@ -280,15 +280,8 @@ export async function clearLogs(ctx: SDKContext, { cardId }: { cardId: string })
   if (!card) throw new Error(`Card not found: ${cardId}`)
 
   const logFileName = getLogFileName(card)
-  const logPath = await resolveExistingLogPath(ctx, card)
 
-  if (logPath) {
-    try {
-      await fs.unlink(logPath)
-    } catch {
-      // File may not exist or may only exist remotely — that's fine
-    }
-  }
+  await ctx.deleteAttachment(card, logFileName)
 
   if (card.attachments.includes(logFileName)) {
     card.attachments = card.attachments.filter(a => a !== logFileName)

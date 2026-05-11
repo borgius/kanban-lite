@@ -84,6 +84,9 @@ function createContext(initialCard: Card): SDKContext & {
       attachmentWrites.push(bytes.slice())
       attachmentStore.set(`${card.id}:${attachment}`, bytes)
     },
+    async deleteAttachment(card: Card, attachment: string): Promise<void> {
+      attachmentStore.delete(`${card.id}:${attachment}`)
+    },
     async listCards(): Promise<Card[]> {
       return [...cards.values()].map((card) => structuredClone(card))
     },

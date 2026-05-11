@@ -136,6 +136,7 @@ export interface CloudflareR2ObjectBody {
 export interface CloudflareR2Bucket {
   put(key: string, value: string | Uint8Array | ArrayBuffer): Promise<unknown>
   get(key: string): Promise<CloudflareR2ObjectBody | null>
+  delete(key: string): Promise<void>
 }
 
 export interface CardRow {

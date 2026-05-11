@@ -50,6 +50,7 @@ export interface AttachmentStoragePlugin {
   writeAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<void>
   readAttachment?(card: Card, attachment: string): Promise<{ data: Uint8Array; contentType?: string } | null>
   appendAttachment?(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
+  deleteAttachment?(card: Card, attachment: string): Promise<void>
   materializeAttachment?(card: Card, attachment: string): Promise<string | null>
 }
 

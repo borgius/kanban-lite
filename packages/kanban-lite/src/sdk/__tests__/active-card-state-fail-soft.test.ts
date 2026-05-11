@@ -43,6 +43,7 @@ function createContext(): SDKContext {
       return null
     },
     async writeAttachment() {},
+    async deleteAttachment() {},
     async materializeAttachment() {
       return null
     },

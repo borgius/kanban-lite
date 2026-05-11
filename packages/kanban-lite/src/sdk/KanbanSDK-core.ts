@@ -453,6 +453,14 @@ export class KanbanSDKCore {
     }
   }
 
+  async deleteAttachment(card: Card, attachment: string): Promise<void> {
+    const deleteHandler = this._capabilities?.attachmentStorage.deleteAttachment
+    if (deleteHandler) { await deleteHandler(card, attachment); return }
+    const materializedPath = await this.materializeAttachment(card, attachment)
+    if (!materializedPath) return
+    try { await fs.unlink(materializedPath) } catch { /* file may not exist */ }
+  }
+
   async materializeAttachment(card: Card, attachment: string): Promise<string | null> {
     if (this._capabilities) return this._capabilities.materializeAttachment(card, attachment)
     const normalized = attachment.replace(/\\/g, '/')

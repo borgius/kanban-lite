@@ -37,6 +37,7 @@ export interface SDKContext {
   appendAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<boolean>
   readAttachment(card: Card, attachment: string): Promise<{ data: Uint8Array; contentType?: string } | null>
   writeAttachment(card: Card, attachment: string, content: string | Uint8Array): Promise<void>
+  deleteAttachment(card: Card, attachment: string): Promise<void>
   materializeAttachment(card: Card, attachment: string): Promise<string | null>
   copyAttachment(sourcePath: string, card: Card): Promise<void>
 

@@ -10,6 +10,7 @@ type BoardSettingsConfig = {
     default: {
       defaultPriority?: string
       title?: string[]
+      titleTemplate?: string
       metadata?: Record<string, unknown>
       actions?: Record<string, string>
     }
@@ -56,14 +57,19 @@ describeStandaloneScenario('standalone board settings routes', 'board-settings',
     await expect.poll(() => readConfig(scenario).defaultPriority).toBe('high')
   })
 
-  test('routes to the title tab and persists added title fields', async ({ page }) => {
+  test('routes to the title tab and shows template editor', async ({ page }) => {
     await openBoardSettings(page)
     await switchBoardSubTab(page, 'Title', 'title')
     await expect(settingsDialog(page).getByRole('heading', { name: 'Title Template', exact: true })).toBeVisible()
 
+    // The template textarea should be visible
+    await expect(settingsDialog(page).getByLabel('Title template')).toBeVisible()
+
+    // Clicking a field inserts it into the template and saves as titleTemplate
+    await settingsDialog(page).getByLabel('Title template').fill('')
     await settingsDialog(page).getByRole('button', { name: 'location', exact: true }).click()
 
-    await expect.poll(() => readConfig(scenario).boards.default.title ?? []).toEqual(['ticketId', 'location'])
+    await expect.poll(() => readConfig(scenario).boards.default.titleTemplate ?? '').toContain('metadata.location')
   })
 
   test('routes to the actions tab and persists new board actions', async ({ page }) => {

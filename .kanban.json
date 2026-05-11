@@ -3,9 +3,7 @@
   "boards": {
     "default": {
       "name": "Default",
-      "title": [
-        "ticketId"
-      ],
+      "title": [],
       "metadata": {
         "ticketId": {
           "highlighted": true
@@ -55,7 +53,8 @@
       ],
       "nextCardId": 1,
       "defaultStatus": "backlog",
-      "defaultPriority": "medium"
+      "defaultPriority": "medium",
+      "titleTemplate": "${title} @ ${metadata.location}"
     }
   },
   "defaultBoard": "",

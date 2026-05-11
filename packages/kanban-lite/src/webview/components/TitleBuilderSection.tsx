@@ -1,10 +1,10 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useRef, useMemo, useState, type CSSProperties } from 'react'
 import type { BoardMetaFieldDef } from '../../shared/config'
 
 interface TitleBuilderSectionProps {
   boardMeta?: Record<string, BoardMetaFieldDef>
-  boardTitle?: string[]
-  onSave?: (title: string[]) => void
+  boardTitleTemplate?: string
+  onSave?: (titleTemplate: string) => void
 }
 
 const sectionStyle: CSSProperties = {
@@ -12,41 +12,59 @@ const sectionStyle: CSSProperties = {
   background: 'var(--vscode-editorWidget-background, var(--vscode-sideBar-background))',
 }
 
-function normalizeBoardTitle(boardTitle?: string[]): string[] {
-  if (!Array.isArray(boardTitle)) return []
-
-  return Array.from(new Set(boardTitle.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)))
+const inputStyle: CSSProperties = {
+  borderColor: 'var(--vscode-input-border, var(--vscode-panel-border))',
+  background: 'var(--vscode-input-background)',
+  color: 'var(--vscode-input-foreground)',
+  outline: 'none',
+  boxShadow: 'inset 0 0 0 1px var(--vscode-input-border, var(--vscode-panel-border))',
 }
 
-function getAvailableTitleFields(
-  boardMeta?: Record<string, BoardMetaFieldDef>,
-  boardTitle?: string[],
-): string[] {
-  const metadataKeys = Object.keys(boardMeta ?? {})
-  const selectedKeys = normalizeBoardTitle(boardTitle)
-  const ordered = [...selectedKeys, ...metadataKeys]
+/** Placeholder token used when no template is set. */
+const DEFAULT_TEMPLATE = '${title}'
 
-  return Array.from(new Set(ordered))
+function getAvailableFields(boardMeta?: Record<string, BoardMetaFieldDef>): string[] {
+  return Object.keys(boardMeta ?? {})
 }
 
-function createResetKey(boardMeta?: Record<string, BoardMetaFieldDef>, boardTitle?: string[]): string {
+function createResetKey(boardMeta?: Record<string, BoardMetaFieldDef>): string {
   return JSON.stringify({
     metadata: Object.keys(boardMeta ?? {}).sort(),
-    title: normalizeBoardTitle(boardTitle),
   })
 }
 
-export function TitleBuilderSection({ boardMeta, boardTitle, onSave }: TitleBuilderSectionProps) {
-  const availableFields = useMemo(() => getAvailableTitleFields(boardMeta, boardTitle), [boardMeta, boardTitle])
-  const initialSelection = useMemo(() => normalizeBoardTitle(boardTitle), [boardTitle])
-  const resetKey = useMemo(() => createResetKey(boardMeta, boardTitle), [boardMeta, boardTitle])
+/** Insert a placeholder at the cursor in a text input, inserting after any enclosing placeholder. */
+function insertPlaceholder(el: HTMLInputElement, placeholder: string): { value: string; cursor: number } {
+  const { selectionStart, selectionEnd, value } = el
+  const before = value.slice(0, selectionStart)
+  const after = value.slice(selectionEnd)
+
+  // If cursor is inside a placeholder, insert after it
+  const openIdx = before.lastIndexOf('${')
+  const closeIdx = before.lastIndexOf('}')
+  if (openIdx !== -1 && openIdx > closeIdx) {
+    const closingInAfter = value.indexOf('}', selectionStart)
+    if (closingInAfter !== -1) {
+      const newValue = value.slice(0, closingInAfter + 1) + placeholder + value.slice(Math.max(selectionEnd, closingInAfter + 1))
+      return { value: newValue, cursor: closingInAfter + 1 + placeholder.length }
+    }
+  }
+
+  const newValue = before + placeholder + after
+  return { value: newValue, cursor: selectionStart + placeholder.length }
+}
+
+export function TitleBuilderSection({ boardMeta, boardTitleTemplate, onSave }: TitleBuilderSectionProps) {
+  const availableFields = useMemo(() => getAvailableFields(boardMeta), [boardMeta])
+  // Only reset on metadata field changes, not on every template save — avoids focus loss
+  const resetKey = useMemo(() => createResetKey(boardMeta), [boardMeta])
 
   return (
     <TitleBuilderSectionContent
       key={resetKey}
       availableFields={availableFields}
-      initialSelection={initialSelection}
       boardMeta={boardMeta}
+      initialTemplate={boardTitleTemplate ?? DEFAULT_TEMPLATE}
       onSave={onSave}
     />
   )
@@ -54,30 +72,63 @@ export function TitleBuilderSection({ boardMeta, boardTitle, onSave }: TitleBuil
 
 function TitleBuilderSectionContent({
   availableFields,
-  initialSelection,
   boardMeta,
+  initialTemplate,
   onSave,
 }: {
   availableFields: string[]
-  initialSelection: string[]
   boardMeta?: Record<string, BoardMetaFieldDef>
-  onSave?: (title: string[]) => void
+  initialTemplate: string
+  onSave?: (titleTemplate: string) => void
 }) {
-  const [selectedFields, setSelectedFields] = useState<string[]>(() => initialSelection)
+  const [template, setTemplate] = useState(initialTemplate)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  const highlightedCount = useMemo(
-    () => selectedFields.filter((field) => boardMeta?.[field]?.highlighted).length,
-    [boardMeta, selectedFields],
-  )
+  const usedPlaceholders = useMemo(() => {
+    const matches = [...template.matchAll(/\$\{(title|metadata\.([^}]+))\}/g)]
+    return new Set(matches.map(m => m[0]))
+  }, [template])
 
-  const toggleField = (field: string) => {
-    const nextSelection = selectedFields.includes(field)
-      ? selectedFields.filter((value) => value !== field)
-      : [...selectedFields, field]
-
-    setSelectedFields(nextSelection)
-    onSave?.(nextSelection)
+  const handleBlur = () => {
+    onSave?.(template)
   }
+
+  const handleInsertField = (field: string) => {
+    const placeholder = field === 'title' ? '${title}' : `\${metadata.${field}}`
+
+    // If already in template, remove all occurrences
+    if (usedPlaceholders.has(placeholder)) {
+      const newValue = template.replace(new RegExp(`\\$\\{${field === 'title' ? 'title' : `metadata\\.${field}`}\\}`, 'g'), '').replace(/\s{2,}/g, ' ').trim()
+      setTemplate(newValue)
+      onSave?.(newValue)
+      return
+    }
+
+    const el = inputRef.current
+    if (!el) {
+      const newValue = template + placeholder
+      setTemplate(newValue)
+      onSave?.(newValue)
+      return
+    }
+    const { value, cursor } = insertPlaceholder(el, placeholder)
+    setTemplate(value)
+    onSave?.(value)
+    // Restore focus and cursor after React re-render
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  // Build preview: replace placeholders with example values
+  const previewText = useMemo(() => {
+    return template.replace(/\$\{(title|metadata\.([^}]+))\}/g, (_, key: string, metaKey: string | undefined) => {
+      if (key === 'title') return 'Card Title'
+      const fieldName = metaKey ?? key.slice('metadata.'.length)
+      return boardMeta?.[fieldName]?.description?.trim() ? `[${fieldName}]` : `[${fieldName}]`
+    })
+  }, [template, boardMeta])
 
   return (
     <div className="px-4 py-4 space-y-4">
@@ -87,43 +138,83 @@ function TitleBuilderSectionContent({
             Title Template
           </h3>
           <p className="mt-1 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            Choose which metadata keys prefix card titles in board views, toasts, and other user-facing surfaces.
+            Build a template for card titles. Use <code className="font-mono">{'${title}'}</code> for the card title and click a field below to insert it at the cursor.
           </p>
-          <p className="mt-1 text-xs" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            {selectedFields.length === 0
-              ? 'No title fields selected yet.'
-              : `${selectedFields.length} selected • ${highlightedCount} already highlighted on cards`}
-          </p>
+        </div>
+
+        <div className="space-y-2">
+          <input
+            ref={inputRef}
+            type="text"
+            value={template}
+            spellCheck={false}
+            autoComplete="off"
+            className="w-full rounded border px-2 py-1.5 font-mono text-sm"
+            style={inputStyle}
+            placeholder={DEFAULT_TEMPLATE}
+            onChange={(e) => setTemplate(e.target.value)}
+            onBlur={handleBlur}
+            aria-label="Title template"
+          />
+          {template !== previewText && (
+            <p className="text-xs leading-5 truncate" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+              Preview: <span className="font-medium" style={{ color: 'var(--vscode-foreground)' }}>{previewText}</span>
+            </p>
+          )}
         </div>
       </div>
 
-      {availableFields.length === 0 ? (
-        <div
-          className="rounded-xl border border-dashed px-6 py-8 text-center"
-          style={{ borderColor: 'var(--vscode-panel-border)' }}
-        >
-          <h4 className="text-sm font-semibold" style={{ color: 'var(--vscode-foreground)' }}>
-            No metadata fields available
-          </h4>
-          <p className="mx-auto mt-2 max-w-md text-sm leading-6" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-            Add board metadata fields first, then choose which ones should become part of the rendered card title.
+      <div className="rounded-xl border px-3 py-3 space-y-3" style={sectionStyle}>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            Insert field
+          </p>
+          <p className="mt-0.5 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+            Click a field to insert it at the cursor position in the template.
           </p>
         </div>
-      ) : (
-        <div className="rounded-xl border px-3 py-3 space-y-3" style={sectionStyle}>
-          <div className="flex flex-wrap gap-2">
-            {availableFields.map((field) => {
-              const selected = selectedFields.includes(field)
-              const description = boardMeta?.[field]?.description?.trim() ?? ''
+        <div className="flex flex-wrap gap-2">
+          {/* ${title} is always available */}
+          <button
+            type="button"
+            onClick={() => handleInsertField('title')}
+            className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+            style={
+              usedPlaceholders.has('${title}')
+                ? {
+                    borderColor: 'var(--vscode-button-background)',
+                    background: 'var(--vscode-button-background)',
+                    color: 'var(--vscode-button-foreground)',
+                  }
+                : {
+                    borderColor: 'var(--vscode-panel-border)',
+                    background: 'transparent',
+                    color: 'var(--vscode-foreground)',
+                  }
+            }
+            title="Insert ${title} placeholder"
+          >
+            title
+          </button>
 
-              return (
-                <button
-                  key={field}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() => toggleField(field)}
-                  className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
-                  style={selected
+          {availableFields.length === 0 && (
+            <span className="text-xs leading-5 self-center" style={{ color: 'var(--vscode-descriptionForeground)' }}>
+              No metadata fields — add some in the Meta tab.
+            </span>
+          )}
+
+          {availableFields.map((field) => {
+            const placeholder = `\${metadata.${field}}`
+            const isUsed = usedPlaceholders.has(placeholder)
+            const description = boardMeta?.[field]?.description?.trim() ?? ''
+            return (
+              <button
+                key={field}
+                type="button"
+                onClick={() => handleInsertField(field)}
+                className="rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
+                style={
+                  isUsed
                     ? {
                         borderColor: 'var(--vscode-button-background)',
                         background: 'var(--vscode-button-background)',
@@ -133,70 +224,16 @@ function TitleBuilderSectionContent({
                         borderColor: 'var(--vscode-panel-border)',
                         background: 'transparent',
                         color: 'var(--vscode-foreground)',
-                      }}
-                  title={description || undefined}
-                >
-                  {field}
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="space-y-2">
-            {availableFields.map((field) => {
-              const description = boardMeta?.[field]?.description?.trim() ?? ''
-              const isSelected = selectedFields.includes(field)
-              const isHighlighted = boardMeta?.[field]?.highlighted === true
-
-              return (
-                <div
-                  key={`${field}-description`}
-                  className="rounded-lg border px-3 py-2"
-                  style={{
-                    borderColor: 'var(--vscode-panel-border)',
-                    background: isSelected
-                      ? 'color-mix(in srgb, var(--vscode-button-background) 10%, transparent)'
-                      : 'transparent',
-                  }}
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs" style={{ color: 'var(--vscode-foreground)' }}>
-                      {field}
-                    </span>
-                    {isSelected && (
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                        style={{
-                          background: 'var(--vscode-button-background)',
-                          color: 'var(--vscode-button-foreground)',
-                        }}
-                      >
-                        In title
-                      </span>
-                    )}
-                    {isHighlighted && (
-                      <span
-                        className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-                        style={{
-                          background: 'var(--vscode-badge-background)',
-                          color: 'var(--vscode-badge-foreground)',
-                        }}
-                      >
-                        Highlighted
-                      </span>
-                    )}
-                  </div>
-                  {description.length > 0 && (
-                    <p className="mt-1 text-xs leading-5" style={{ color: 'var(--vscode-descriptionForeground)' }}>
-                      {description}
-                    </p>
-                  )}
-                </div>
-              )
-            })}
-          </div>
+                      }
+                }
+                title={description || `Insert \${metadata.${field}} placeholder`}
+              >
+                {field}
+              </button>
+            )
+          })}
         </div>
-      )}
+      </div>
     </div>
   )
 }

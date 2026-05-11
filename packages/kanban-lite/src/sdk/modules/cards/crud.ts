@@ -368,7 +368,7 @@ export async function updateCard(
   if (Array.isArray(safeUpdates.labels)) {
     await assertChecklistReservedLabelUpdateAllowed(ctx, card, safeUpdates.labels)
   }
-  const qualifyingFields = getQualifyingCardEditFields(safeUpdates)
+  const qualifyingFields = getQualifyingCardEditFields(safeUpdates, card)
   Object.assign(card, safeUpdates)
   card.modified = new Date().toISOString()
 

@@ -113,8 +113,13 @@ const CARD_EDIT_ACTIVITY_FIELDS = new Set<keyof Card>([
   'metadata',
 ])
 
-export function getQualifyingCardEditFields(updates: Partial<Card>): string[] {
-  return Object.keys(updates).filter((key) => CARD_EDIT_ACTIVITY_FIELDS.has(key as keyof Card))
+export function getQualifyingCardEditFields(updates: Partial<Card>, original: Card): string[] {
+  return Object.keys(updates).filter((key) => {
+    if (!CARD_EDIT_ACTIVITY_FIELDS.has(key as keyof Card)) return false
+    const prev = original[key as keyof Card]
+    const next = updates[key as keyof Card]
+    return JSON.stringify(prev) !== JSON.stringify(next)
+  })
 }
 
 export function hasSameReservedChecklistLabels(left: readonly string[], right: readonly string[]): boolean {

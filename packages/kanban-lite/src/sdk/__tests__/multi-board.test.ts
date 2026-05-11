@@ -388,6 +388,46 @@ describe('Multi-board SDK operations', () => {
         status: 'done',
       })
     })
+
+    it('should skip an ID already used on another board when the counter is stale', async () => {
+      // Seed board A with a card whose numeric ID is 1 by creating it normally.
+      const boardACard = await sdk.createCard({ content: '# Board A Card', boardId: 'default' })
+      expect(boardACard.id).toBe('1')
+
+      // Create board B.
+      await sdk.createBoard('sprint', 'Sprint')
+
+      // Force the workspace counter back to 1 (stale).
+      const configPath = path.join(workspaceDir, '.kanban.json')
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as KanbanConfig
+      raw.nextCardId = 1
+      fs.writeFileSync(configPath, JSON.stringify(raw, null, 2))
+
+      // Creating on board B must skip 1 (already used) and choose the next free ID.
+      const boardBCard = await sdk.createCard({ content: '# Board B Card', boardId: 'sprint' })
+
+      expect(boardBCard.id).not.toBe('1')
+      expect(parseInt(boardBCard.id, 10)).toBeGreaterThan(1)
+    })
+
+    it('should advance nextCardId past the recovered fallback ID', async () => {
+      // Create a card with ID 1 on the default board.
+      await sdk.createCard({ content: '# First Card', boardId: 'default' })
+      await sdk.createBoard('sprint', 'Sprint')
+
+      // Rewind the counter to 1.
+      const configPath = path.join(workspaceDir, '.kanban.json')
+      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as KanbanConfig
+      raw.nextCardId = 1
+      fs.writeFileSync(configPath, JSON.stringify(raw, null, 2))
+
+      const recovered = await sdk.createCard({ content: '# Recovered Card', boardId: 'sprint' })
+      const recoveredId = parseInt(recovered.id, 10)
+
+      // The persisted counter must be greater than the card ID that was just used.
+      const afterRaw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as KanbanConfig
+      expect(afterRaw.nextCardId).toBeGreaterThan(recoveredId)
+    })
   })
 
   describe('listColumns with boardId', () => {

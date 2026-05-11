@@ -1,7 +1,7 @@
 import { generateKeyBetween, generateNKeysBetween } from 'fractional-indexing'
 import type { Card, CardSortOption, CardTask } from '../../../shared/types'
 import { getTitleFromContent, generateCardFilename, extractNumericId, CARD_FORMAT_VERSION } from '../../../shared/types'
-import { readConfig, allocateCardId, syncCardIdCounter } from '../../../shared/config'
+import { readConfig, writeConfig, allocateCardId, syncCardIdCounter } from '../../../shared/config'
 import { getCardFilePath } from '../../fileUtils'
 import { createCardSearchPredicate } from '../../metaUtils'
 import type { CreateCardInput } from '../../types'
@@ -230,6 +230,60 @@ export async function clearActiveCard(ctx: SDKContext, { boardId }: { boardId?: 
 }
 
 /**
+ * Returns the numeric candidate ID unchanged if no card already uses it across
+ * any board in the workspace.  On collision, gathers all existing numeric card
+ * IDs from every board, selects the next unused integer, and advances the
+ * workspace-level counter past that value before returning it.
+ *
+ * This is intentionally a private helper called only from `createCard`.
+ */
+async function allocateUniqueCardIdAcrossBoards(
+  ctx: SDKContext,
+  candidate: number,
+): Promise<number> {
+  const config = readConfig(ctx.workspaceRoot)
+  const allBoardIds = Object.keys(config.boards)
+
+  // Fast path: verify the candidate is unused on every board.
+  // Use getCardById when available (O(1) targeted lookup), otherwise fall back
+  // to an in-memory scan of each board.
+  for (const boardId of allBoardIds) {
+    const boardDir = ctx._boardDir(boardId)
+    let found: boolean
+    if (ctx._storage.getCardById) {
+      found = (await ctx._storage.getCardById(boardDir, boardId, String(candidate))) !== null
+    } else {
+      const cards = await ctx._storage.scanCards(boardDir, boardId)
+      found = cards.some(c => c.id === String(candidate))
+    }
+    if (found) {
+      // Collision detected — collect all numeric IDs across the workspace.
+      const takenIds = new Set<number>()
+      for (const bid of allBoardIds) {
+        const bDir = ctx._boardDir(bid)
+        const cards = await ctx._storage.scanCards(bDir, bid)
+        for (const c of cards) {
+          const n = parseInt(c.id, 10)
+          if (!Number.isNaN(n)) takenIds.add(n)
+        }
+      }
+      // Also mark every value already below the current counter as taken so we
+      // never re-issue an ID that was previously handed out but whose card was
+      // already removed — the counter is the minimum safe floor.
+      const freshConfig = readConfig(ctx.workspaceRoot)
+      let next = freshConfig.nextCardId
+      while (takenIds.has(next)) next++
+      // Advance the workspace counter past the chosen fallback value.
+      freshConfig.nextCardId = next + 1
+      writeConfig(ctx.workspaceRoot, freshConfig)
+      return next
+    }
+  }
+
+  return candidate
+}
+
+/**
  * Creates a new card on a board.
  */
 export async function createCard(ctx: SDKContext, data: CreateCardInput): Promise<Card> {
@@ -244,7 +298,8 @@ export async function createCard(ctx: SDKContext, data: CreateCardInput): Promis
   const status = data.status || board?.defaultStatus || config.defaultStatus || 'backlog'
   const priority = data.priority || board?.defaultPriority || config.defaultPriority || 'medium'
   const title = getTitleFromContent(data.content)
-  const numericId = allocateCardId(ctx.workspaceRoot, resolvedBoardId)
+  const candidate = allocateCardId(ctx.workspaceRoot, resolvedBoardId)
+  const numericId = await allocateUniqueCardIdAcrossBoards(ctx, candidate)
   const filename = generateCardFilename(numericId, title)
   const now = new Date().toISOString()
 

@@ -498,7 +498,14 @@ export function getBoardConfig(workspaceRoot: string, boardId?: string): BoardCo
 
 /**
  * Allocates the next card ID for a board by reading and incrementing the
- * board's `nextCardId` counter. The updated config is persisted to disk.
+ * workspace-level `nextCardId` counter. The updated config is persisted to
+ * disk.
+ *
+ * **Important**: this helper only reads the counter from the config file.  It
+ * does not verify whether the returned ID is already used by a card in
+ * storage.  Callers that need a globally unique ID across all boards must
+ * perform an additional cross-board collision check after calling this function
+ * (as `createCard` does via `allocateUniqueCardIdAcrossBoards`).
  *
  * @param workspaceRoot - Absolute path to the workspace root directory.
  * @param boardId - Optional board ID. Defaults to the workspace's default board.

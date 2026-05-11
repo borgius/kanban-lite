@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cross-board card ID collision guard**: `createCard` no longer reuses a numeric card ID that already exists on another board when the workspace-level `nextCardId` counter is stale. The SDK now verifies the candidate ID is unused across all boards before writing the new card. On collision, it selects the next free numeric ID and advances the workspace counter past it. No API, CLI, or MCP contract changes are required; all surfaces inherit the fix through the shared SDK create path.
+
 ### Added
 
 - **All Boards overview page**: A new overview page aggregates card counts and notification summaries across every board in the workspace. Open it from the board menu (⋯ → All Boards). Each board card shows total card count, per-column breakdown with color indicators, and an unread-notification badge when the `card.state` plugin is active. Click **Open board** to jump directly to a board. The feature is available across all surfaces: webview UI, REST API (`GET /api/boards/overview`), CLI (`kl boards overview`), and MCP (`list_boards_overview`).

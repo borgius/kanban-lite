@@ -904,6 +904,13 @@ export function CardEditor({ cardId, content, frontmatter, comments, contentVers
   )
   const [currentFrontmatter, setCurrentFrontmatter] = useState(frontmatter)
   const [currentContent, setCurrentContent] = useState(content)
+  const [prevCardId, setPrevCardId] = useState(cardId)
+  // Reset frontmatter synchronously during render when the card changes so that
+  // children (MetadataEditorTab) receive correct data on their first render.
+  if (prevCardId !== cardId) {
+    setPrevCardId(cardId)
+    setCurrentFrontmatter(frontmatter)
+  }
   const [confirmingPermanentDelete, setConfirmingPermanentDelete] = useState(false)
   const [showAdvanced, setShowAdvanced] = useState(false)
   const isDeleted = currentFrontmatter.status === DELETED_STATUS_ID

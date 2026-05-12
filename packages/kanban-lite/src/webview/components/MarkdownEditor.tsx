@@ -584,6 +584,7 @@ export function MarkdownEditor({ value, onChange, placeholder = 'Write markdown.
         )}
         {activeTab === 'meta' && onMetadataChange && (
           <MetadataEditorTab
+            key={cardId}
             metadata={currentMetadata}
             onMetadataChange={onMetadataChange}
             onInvalidYaml={onMetadataInvalid}

@@ -522,3 +522,142 @@ describe('standalone shim reconnect behavior', () => {
     expect(MockWebSocket.instances[0]?.sent).toEqual([])
   })
 })
+
+describe('standalone shim hybrid session deduplication', () => {
+  it('attaches the Cloudflare session ID to HTTP sync requests after syncTransportMode assigns one', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          messages: [
+            {
+              type: 'init',
+              cards: [],
+              columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+              settings: { defaultStatus: 'backlog' },
+            },
+          ],
+        },
+      }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+    api.postMessage({ type: 'switchBoard', boardId: 'ops' })
+
+    const socket = MockWebSocket.instances[0]
+    socket.open()
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockClear()
+
+    // DO sends syncTransportMode with a session ID
+    socket.emitMessage({ type: 'syncTransportMode', mode: 'http-sync-websocket-notify', sessionId: 'test-session-abc' })
+    await flushAsyncWork()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, reqInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect((reqInit.headers as Record<string, string>)['X-Kanban-Session-Id']).toBe('test-session-abc')
+  })
+
+  it('does not add a session ID header when no sessionId was received in syncTransportMode', async () => {
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          messages: [
+            {
+              type: 'init',
+              cards: [],
+              columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+              settings: { defaultStatus: 'backlog' },
+            },
+          ],
+        },
+      }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+
+    const socket = MockWebSocket.instances[0]
+    socket.open()
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockClear()
+
+    // DO sends syncTransportMode without a session ID (legacy / older DO)
+    socket.emitMessage({ type: 'syncTransportMode', mode: 'http-sync-websocket-notify' })
+    await flushAsyncWork()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, reqInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect((reqInit.headers as Record<string, string>)['X-Kanban-Session-Id']).toBeUndefined()
+  })
+
+  it('keeps the session ID on subsequent HTTP syncs including syncRequired replays', async () => {
+    vi.useFakeTimers()
+    const postMessageSpy = vi.fn()
+    installStandaloneGlobals(postMessageSpy)
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        data: {
+          messages: [
+            {
+              type: 'init',
+              cards: [],
+              columns: [{ id: 'todo', name: 'Todo', color: '#000000' }],
+              settings: { defaultStatus: 'backlog' },
+            },
+          ],
+        },
+      }),
+    })))
+
+    await import('./standalone-shim')
+
+    const api = (window as typeof window & {
+      acquireVsCodeApi: () => { postMessage: (message: unknown) => void }
+    }).acquireVsCodeApi()
+
+    api.postMessage({ type: 'ready' })
+    api.postMessage({ type: 'switchBoard', boardId: 'ops' })
+    api.postMessage({ type: 'openCard', cardId: 'card-1' })
+
+    const socket = MockWebSocket.instances[0]
+    socket.open()
+
+    socket.emitMessage({ type: 'syncTransportMode', mode: 'http-sync-websocket-notify', sessionId: 'session-xyz' })
+    await flushAsyncWork()
+
+    const fetchMock = vi.mocked(fetch)
+    fetchMock.mockClear()
+
+    // Simulate a syncRequired from another tab's mutation (DO excludes the origin, but a different tab triggers one)
+    socket.emitMessage({ type: 'syncRequired', reason: 'task.updated' })
+    await vi.advanceTimersByTimeAsync(200)
+    await flushAsyncWork()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [, reqInit] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect((reqInit.headers as Record<string, string>)['X-Kanban-Session-Id']).toBe('session-xyz')
+  })
+})

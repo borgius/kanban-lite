@@ -25,6 +25,7 @@ let allowReconnect = true
 let httpFallbackActive = false
 let httpFallbackActivation: Promise<boolean> | null = null
 let syncTransportMode: SyncTransportMode = 'websocket'
+let hybridSessionId: string | null = null
 let openCardAbortController: AbortController | null = null
 let syncRequiredDebounceTimer: number | null = null
 const SYNC_REQUIRED_DEBOUNCE_MS = 150
@@ -140,9 +141,14 @@ function buildHttpSyncMessages(message: unknown): unknown[] {
 }
 
 async function syncMessagesOverHttp(messages: unknown[], signal?: AbortSignal): Promise<void> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (hybridSessionId !== null) {
+    headers['X-Kanban-Session-Id'] = hybridSessionId
+  }
+
   const response = await fetch(HTTP_SYNC_URL, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ messages }),
     signal,
   })
@@ -314,10 +320,13 @@ function connect() {
       const data = JSON.parse(event.data) as ExtensionMessage
       if (data.type === 'syncTransportMode') {
         syncTransportMode = data.mode
-        if (data.mode === 'http-sync-websocket-notify' && readyRequested) {
-          void syncCurrentStateOverHttp().catch((err) => {
-            console.error('Standalone HTTP resync failed:', err)
-          })
+        if (data.mode === 'http-sync-websocket-notify') {
+          hybridSessionId = typeof data.sessionId === 'string' ? data.sessionId : null
+          if (readyRequested) {
+            void syncCurrentStateOverHttp().catch((err) => {
+              console.error('Standalone HTTP resync failed:', err)
+            })
+          }
         }
         return
       }

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Cloudflare hybrid sync — origin-tab duplicate replay eliminated**: The Cloudflare Worker now threads the browser tab's `sessionId` (assigned by the Durable Object on WebSocket accept and forwarded by the browser shim as `X-Kanban-Session-Id`) through the `syncRequired` DO fan-out so the tab that initiated a mutation is excluded from the subsequent `/api/webview-sync` replay. Previously every connected tab including the originating one received the invalidation signal, causing a redundant refetch that could bounce card order after a drag-and-drop move. The fix is transparent to all other surfaces.
+
+- **Cloudflare Worker MCP docs/test parity**: README, `docs/mcp.md`, and `docs/cloudflare.md` now document the deployed `/mcp` Streamable HTTP endpoint instead of implying MCP is stdio-only, and Worker regression coverage now verifies `initialize`, `tools/list`, and `list_boards` against the Cloudflare fetch handler.
+
 - **Cross-board card ID collision guard**: `createCard` no longer reuses a numeric card ID that already exists on another board when the workspace-level `nextCardId` counter is stale. The SDK now verifies the candidate ID is unused across all boards before writing the new card. On collision, it selects the next free numeric ID and advances the workspace counter past it. No API, CLI, or MCP contract changes are required; all surfaces inherit the fix through the shared SDK create path.
 
 ### Added

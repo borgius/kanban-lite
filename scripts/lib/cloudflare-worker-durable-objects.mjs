@@ -15,8 +15,9 @@ export function renderKanbanWorkerDurableObjectClassSource() {
     if (request.headers.get('Upgrade')?.toLowerCase() === 'websocket' && url.pathname.endsWith('/ws')) {
       const webSocketPair = new WebSocketPair()
       const [client, server] = Object.values(webSocketPair)
-      this.ctx.acceptWebSocket(server)
-      server.send(JSON.stringify({ type: 'syncTransportMode', mode: ${JSON.stringify(liveSyncTransportMode)} }))
+      const sessionId = crypto.randomUUID()
+      this.ctx.acceptWebSocket(server, [sessionId])
+      server.send(JSON.stringify({ type: 'syncTransportMode', mode: ${JSON.stringify(liveSyncTransportMode)}, sessionId }))
       return new Response(null, { status: 101, webSocket: client })
     }
 
@@ -28,6 +29,9 @@ export function renderKanbanWorkerDurableObjectClassSource() {
         payload = null
       }
 
+      const excludeSessionId = payload && typeof payload === 'object' && typeof payload.excludeSessionId === 'string'
+        ? payload.excludeSessionId
+        : null
       const message = {
         type: 'syncRequired',
         ...(payload && typeof payload === 'object' && typeof payload.reason === 'string'
@@ -36,6 +40,9 @@ export function renderKanbanWorkerDurableObjectClassSource() {
       }
       const json = JSON.stringify(message)
       for (const socket of this.ctx.getWebSockets()) {
+        if (excludeSessionId && this.ctx.getTags(socket).includes(excludeSessionId)) {
+          continue
+        }
         socket.send(json)
       }
 

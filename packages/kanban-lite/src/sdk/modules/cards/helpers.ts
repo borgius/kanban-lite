@@ -72,6 +72,177 @@ function shouldIgnoreActiveCardStatePersistenceError(error: unknown): boolean {
 
 export const formAjv: Ajv = createAjv({ allErrors: true, strict: false })
 
+function isCodegenRestrictedError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /code generation from strings disallowed|unsafe-eval|disallowed for this context/i.test(message)
+}
+
+function joinSchemaPath(basePath: string, key: string | number): string {
+  return basePath === '/' ? `/${key}` : `${basePath}/${key}`
+}
+
+function jsonValueEquals(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
+function validateFormSchemaWithoutCodegen(
+  schema: Record<string, unknown>,
+  value: unknown,
+  path = '/',
+): string[] {
+  const errors: string[] = []
+
+  if ('const' in schema && !jsonValueEquals(value, schema.const)) {
+    errors.push(`${path} must equal ${JSON.stringify(schema.const)}`)
+  }
+
+  if (Array.isArray(schema.enum) && schema.enum.length > 0 && !schema.enum.some((entry) => jsonValueEquals(entry, value))) {
+    errors.push(`${path} must be one of ${schema.enum.map((entry) => JSON.stringify(entry)).join(', ')}`)
+  }
+
+  if (Array.isArray(schema.oneOf) && schema.oneOf.length > 0) {
+    const matchingSchemas = schema.oneOf.filter((candidate) => isRecord(candidate) && validateFormSchemaWithoutCodegen(candidate, value, path).length === 0)
+    if (matchingSchemas.length !== 1) {
+      errors.push(`${path} must match exactly one allowed option`)
+    }
+  }
+
+  const schemaType = typeof schema.type === 'string' ? schema.type : undefined
+  switch (schemaType) {
+    case 'object': {
+      if (!isRecord(value)) {
+        errors.push(`${path} must be object`)
+        return errors
+      }
+
+      const properties = isRecord(schema.properties) ? schema.properties : {}
+      const required = Array.isArray(schema.required)
+        ? schema.required.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+        : []
+
+      for (const key of required) {
+        if (value[key] === undefined) {
+          errors.push(`${joinSchemaPath(path, key)} is required`)
+        }
+      }
+
+      for (const [key, propertySchema] of Object.entries(properties)) {
+        if (!isRecord(propertySchema) || value[key] === undefined) continue
+        errors.push(...validateFormSchemaWithoutCodegen(propertySchema, value[key], joinSchemaPath(path, key)))
+      }
+
+      if (schema.additionalProperties === false) {
+        const allowedKeys = new Set(Object.keys(properties))
+        for (const key of Object.keys(value)) {
+          if (!allowedKeys.has(key)) {
+            errors.push(`${joinSchemaPath(path, key)} is not allowed`)
+          }
+        }
+      }
+      return errors
+    }
+
+    case 'array': {
+      if (!Array.isArray(value)) {
+        errors.push(`${path} must be array`)
+        return errors
+      }
+
+      if (typeof schema.minItems === 'number' && value.length < schema.minItems) {
+        errors.push(`${path} must contain at least ${schema.minItems} items`)
+      }
+      if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
+        errors.push(`${path} must contain no more than ${schema.maxItems} items`)
+      }
+
+      if (isRecord(schema.items)) {
+        value.forEach((entry, index) => {
+          errors.push(...validateFormSchemaWithoutCodegen(schema.items as Record<string, unknown>, entry, joinSchemaPath(path, index)))
+        })
+      }
+      return errors
+    }
+
+    case 'string': {
+      if (typeof value !== 'string') {
+        errors.push(`${path} must be string`)
+        return errors
+      }
+      if (typeof schema.minLength === 'number' && value.length < schema.minLength) {
+        errors.push(`${path} must NOT have fewer than ${schema.minLength} characters`)
+      }
+      if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) {
+        errors.push(`${path} must NOT have more than ${schema.maxLength} characters`)
+      }
+      if (typeof schema.pattern === 'string' && !(new RegExp(schema.pattern).test(value))) {
+        errors.push(`${path} must match pattern ${schema.pattern}`)
+      }
+      return errors
+    }
+
+    case 'number': {
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        errors.push(`${path} must be number`)
+        return errors
+      }
+      if (typeof schema.minimum === 'number' && value < schema.minimum) {
+        errors.push(`${path} must be >= ${schema.minimum}`)
+      }
+      if (typeof schema.maximum === 'number' && value > schema.maximum) {
+        errors.push(`${path} must be <= ${schema.maximum}`)
+      }
+      return errors
+    }
+
+    case 'integer': {
+      if (typeof value !== 'number' || Number.isNaN(value) || !Number.isInteger(value)) {
+        errors.push(`${path} must be integer`)
+        return errors
+      }
+      if (typeof schema.minimum === 'number' && value < schema.minimum) {
+        errors.push(`${path} must be >= ${schema.minimum}`)
+      }
+      if (typeof schema.maximum === 'number' && value > schema.maximum) {
+        errors.push(`${path} must be <= ${schema.maximum}`)
+      }
+      return errors
+    }
+
+    case 'boolean': {
+      if (typeof value !== 'boolean') {
+        errors.push(`${path} must be boolean`)
+      }
+      return errors
+    }
+
+    case 'null': {
+      if (value !== null) {
+        errors.push(`${path} must be null`)
+      }
+      return errors
+    }
+
+    default:
+      return errors
+  }
+}
+
+export function validateFormData(schema: Record<string, unknown>, value: unknown): string | null {
+  try {
+    const validate = formAjv.compile(schema)
+    const valid = validate(value)
+    if (valid) return null
+    return formatValidationErrors(validate.errors)
+  } catch (error) {
+    if (!isCodegenRestrictedError(error)) {
+      throw error
+    }
+
+    const fallbackErrors = validateFormSchemaWithoutCodegen(schema, value)
+    return fallbackErrors.length > 0 ? fallbackErrors.join('; ') : null
+  }
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

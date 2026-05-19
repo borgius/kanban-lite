@@ -51,6 +51,17 @@ export function enableScanCardsCache(ctx: StandaloneContext): void {
           return result
         }
       }
+      // Any card write operation makes previously cached scan results stale.
+      // Clear the whole cache so subsequent reads see the updated disk state.
+      if (prop === 'writeCard' || prop === 'moveCard' || prop === 'renameCard' || prop === 'deleteCard') {
+        const method = Reflect.get(target, prop, receiver) as ((...args: unknown[]) => Promise<unknown>) | undefined
+        if (typeof method !== 'function') return method
+        return async (...args: unknown[]): Promise<unknown> => {
+          const result = await method.apply(target, args)
+          cache.clear()
+          return result
+        }
+      }
       return Reflect.get(target, prop, receiver)
     },
   }) as StorageEngine

@@ -108,6 +108,7 @@ On Workers, REST, MCP, and WebSocket auth context extraction keeps normal `Autho
 ### Supported in this patch
 
 - standalone HTTP API hosting through the existing dispatcher
+- streamable HTTP MCP hosting at `/mcp`
 - standalone static asset hosting through Wrangler assets
 - Durable Object-backed `/ws` upgrades for Worker live-sync invalidations
 - event-driven latest-state resync over `/api/webview-sync` after committed mutations
@@ -153,10 +154,12 @@ Cloudflare can support WebSockets, but matching the current semantics safely wou
 So the Worker runtime uses a cheaper hybrid transport instead:
 
 1. the browser opens `/ws`
-2. the Durable Object replies with `{ type: "syncTransportMode", mode: "http-sync-websocket-notify" }`
-3. the browser keeps sending authoritative board/card messages through `/api/webview-sync`
-4. after committed non-auth SDK mutations, the Worker posts `{ type: "syncRequired", reason }` to the same Durable Object
-5. connected tabs resync the latest board/card state over HTTP
+2. the Durable Object replies with `{ type: "syncTransportMode", mode: "http-sync-websocket-notify", sessionId: "<uuid>" }`
+3. the browser shim records the `sessionId` and includes it as `X-Kanban-Session-Id` on every `/api/webview-sync` POST
+4. the browser keeps sending authoritative board/card messages through `/api/webview-sync`
+5. after committed non-auth SDK mutations, the Worker posts `{ type: "syncRequired", reason, excludeSessionId }` to the same Durable Object, where `excludeSessionId` is the originating tab's session ID
+6. the Durable Object fans out to all connected tabs **except the one that sent the mutation** — that tab already has the latest state
+7. remaining tabs resync the latest board/card state over HTTP
 
 What that gives you:
 
@@ -349,6 +352,7 @@ After deploying, verify that:
 
 - static board assets load
 - REST API routes respond
+- MCP `initialize` / `tools/list` succeeds against `/mcp`
 - any bundled standalone plugin routes work
 - opening two tabs shows committed mutations propagate via the Worker live-sync transport
 - `/ws` no longer returns `501` when the generated Durable Object binding is present

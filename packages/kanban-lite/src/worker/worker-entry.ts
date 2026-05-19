@@ -88,16 +88,22 @@ async function notifyWorkerLiveSync(
   env: CloudflareWorkerRuntimeEnv | undefined,
   kanbanDir: string,
   event: string,
+  excludeSessionId?: string | null,
 ): Promise<void> {
   const namespace = getWorkerLiveSyncNamespace(env)
   if (!namespace) {
     return
   }
 
+  const body: Record<string, string> = { type: 'syncRequired', reason: event }
+  if (excludeSessionId) {
+    body.excludeSessionId = excludeSessionId
+  }
+
   const response = await getWorkerLiveSyncStub(namespace, kanbanDir).fetch(new Request(`https://kanban-lite.worker${LIVE_SYNC_NOTIFY_PATH}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ type: 'syncRequired', reason: event }),
+    body: JSON.stringify(body),
   }))
 
   if (!response.ok) {
@@ -108,27 +114,36 @@ async function notifyWorkerLiveSync(
 function createWorkerSyncEventHandler(
   getEnv: () => CloudflareWorkerRuntimeEnv | undefined,
   kanbanDir: string,
-): (event: string, data: unknown) => void {
+): { onEvent: (event: string, data: unknown) => void; setOriginSession: (id: string | null) => void } {
   let pendingNotify: ReturnType<typeof setTimeout> | null = null
   let latestEvent: string | null = null
+  let currentOriginSessionId: string | null = null
 
-  return (event, data) => {
-    if (event.startsWith('auth.') || !isAfterEventEnvelope(data)) {
-      return
-    }
+  return {
+    setOriginSession(id: string | null) {
+      currentOriginSessionId = id
+    },
+    onEvent: (event, data) => {
+      if (event.startsWith('auth.') || !isAfterEventEnvelope(data)) {
+        return
+      }
 
-    // Debounce: bulk SDK operations (cleanupColumn, purgeDeletedCards)
-    // fire one event per card; coalesce into a single Durable Object notify.
-    latestEvent = event
-    if (pendingNotify !== null) return
-    pendingNotify = setTimeout(() => {
-      pendingNotify = null
-      const ev = latestEvent ?? event
-      latestEvent = null
-      void notifyWorkerLiveSync(getEnv(), kanbanDir, ev).catch((error) => {
-        console.error(`Failed to publish Cloudflare live sync event (${ev}):`, error)
-      })
-    }, 0)
+      // Debounce: bulk SDK operations (cleanupColumn, purgeDeletedCards)
+      // fire one event per card; coalesce into a single Durable Object notify.
+      latestEvent = event
+      if (pendingNotify !== null) return
+      // Capture the origin session synchronously so concurrent requests
+      // cannot overwrite it before the deferred notify fires.
+      const capturedSessionId = currentOriginSessionId
+      pendingNotify = setTimeout(() => {
+        pendingNotify = null
+        const ev = latestEvent ?? event
+        latestEvent = null
+        void notifyWorkerLiveSync(getEnv(), kanbanDir, ev, capturedSessionId).catch((error) => {
+          console.error(`Failed to publish Cloudflare live sync event (${ev}):`, error)
+        })
+      }, 0)
+    },
   }
 }
 
@@ -259,7 +274,9 @@ async function maybeHandleWebSocketUpgrade(
   installWorkerRuntimeHost(workerRuntimeHost.runtimeHost)
 
   if (!state.dispatcher || workerRuntimeHost.needsDispatcherRefresh()) {
-    const ctx = createWorkerContext(kanbanDir, createWorkerSyncEventHandler(() => state.runtimeEnv, kanbanDir))
+    const syncHandler = createWorkerSyncEventHandler(() => state.runtimeEnv, kanbanDir)
+    state.setOriginSession = syncHandler.setOriginSession
+    const ctx = createWorkerContext(kanbanDir, syncHandler.onEvent)
     state.dispatcher = createStandaloneRouteDispatcher(ctx, options.webviewDir ?? '', getIndexHtml(basePath), basePath)
     workerRuntimeHost.markDispatcherReady()
   }
@@ -344,17 +361,30 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
       installWorkerRuntimeHost(workerRuntimeHost.runtimeHost)
 
       if (!state.dispatcher || workerRuntimeHost.needsDispatcherRefresh()) {
-        const ctx = createWorkerContext(kanbanDir, createWorkerSyncEventHandler(() => state.runtimeEnv, kanbanDir))
+        const syncHandler = createWorkerSyncEventHandler(() => state.runtimeEnv, kanbanDir)
+        state.setOriginSession = syncHandler.setOriginSession
+        const ctx = createWorkerContext(kanbanDir, syncHandler.onEvent)
         state.dispatcher = createStandaloneRouteDispatcher(ctx, options.webviewDir ?? '', getIndexHtml(basePath), basePath)
         workerRuntimeHost.markDispatcherReady()
+      }
+
+      const isWebviewSync = url.pathname === `${basePath}/api/webview-sync` && request.method === 'POST'
+      if (isWebviewSync) {
+        state.setOriginSession?.(request.headers.get('x-kanban-session-id'))
       }
 
       const req = await toIncomingMessage(request)
       const { response, toResponse } = createNodeLikeResponse()
 
-      await workerRuntimeHost.runWithRequestScope(async () => {
-        await state.dispatcher?.handle(req, response as unknown as import('node:http').ServerResponse)
-      })
+      try {
+        await workerRuntimeHost.runWithRequestScope(async () => {
+          await state.dispatcher?.handle(req, response as unknown as import('node:http').ServerResponse)
+        })
+      } finally {
+        if (isWebviewSync) {
+          state.setOriginSession?.(null)
+        }
+      }
 
       return toResponse()
     } catch (error) {
@@ -408,7 +438,7 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
         workerProviderContext,
       )
       const sdk = new KanbanSDK(path.resolve(kanbanDir), {
-        onEvent: createWorkerSyncEventHandler(() => env, kanbanDir),
+        onEvent: createWorkerSyncEventHandler(() => env, kanbanDir).onEvent,
       })
 
       try {
@@ -473,7 +503,7 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
       }
 
       const sdk = new KanbanSDK(path.resolve(kanbanDir), {
-        onEvent: createWorkerSyncEventHandler(() => env, kanbanDir),
+        onEvent: createWorkerSyncEventHandler(() => env, kanbanDir).onEvent,
       })
 
       try {

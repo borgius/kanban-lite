@@ -1002,6 +1002,8 @@ kl mcp --dir .kanban            # Explicit directory
 kanban-mcp --dir .kanban        # Via dedicated binary
 ```
 
+Local Node-hosted Kanban Lite uses stdio for MCP. Cloudflare Worker deployments also expose a remote Streamable HTTP MCP endpoint at `/mcp`, so Streamable HTTP-capable clients can connect directly to the deployed app. See `docs/mcp.md` and `docs/cloudflare.md` for the remote Worker transport details.
+
 ### Available Tools
 
 | Tool | Description |

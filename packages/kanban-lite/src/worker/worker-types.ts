@@ -50,6 +50,8 @@ export interface WorkerEntrypointState {
   moduleRegistry: WorkerModuleRegistry
   runtimeEnv?: CloudflareWorkerRuntimeEnv
   runtimeContext?: CloudflareWorkerExecutionContext
+  /** Sets the origin session ID for the next live-sync notify, excluding that session from the fan-out. */
+  setOriginSession?: ((id: string | null) => void) | null
 }
 
 

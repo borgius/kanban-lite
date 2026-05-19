@@ -124,7 +124,7 @@ export type SyncTransportMode = 'websocket' | 'http-sync-websocket-notify'
 export type ExtensionMessage =
   | { type: 'init'; cards: Card[]; columns: KanbanColumn[]; settings: CardDisplaySettings; boards?: BoardInfo[]; currentBoard?: string; workspace?: WorkspaceInfo; currentUser?: string; labels?: Record<string, LabelDefinition>; minimizedColumnIds?: string[] }
   | ConnectionStatusMessage
-  | { type: 'syncTransportMode'; mode: SyncTransportMode }
+  | { type: 'syncTransportMode'; mode: SyncTransportMode; sessionId?: string }
   | { type: 'syncRequired'; reason?: string }
   | { type: 'cardsUpdated'; cards: Card[] }
   | { type: 'triggerCreateDialog' }

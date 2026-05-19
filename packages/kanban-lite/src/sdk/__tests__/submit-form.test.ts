@@ -1,9 +1,10 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { KanbanSDK } from '../KanbanSDK'
 import { readConfig, writeConfig } from '../../shared/config'
+import { formAjv } from '../modules/cards/helpers'
 
 function createTempDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'kanban-submit-form-test-'))
@@ -293,6 +294,85 @@ describe('KanbanSDK.submitForm', () => {
     const reloaded = await sdk.getCard(card.id)
     expect(reloaded?.formData?.checklist).toEqual({ approved: true })
     expect(events.some(event => event.type === 'form.submitted')).toBe(false)
+  })
+
+  it('falls back to a runtime-safe validator when Ajv code generation is blocked', async () => {
+    const compileSpy = vi.spyOn(formAjv, 'compile').mockImplementation(() => {
+      throw new EvalError('Code generation from strings disallowed for this context')
+    })
+
+    try {
+      const sdk = new KanbanSDK(kanbanDir)
+      await sdk.init()
+
+      const card = await sdk.createCard({
+        content: '# Analyze card',
+      })
+
+      await sdk.updateCard(card.id, {
+        forms: [
+          {
+            schema: {
+              type: 'object',
+              title: 'Analyze',
+              required: ['model', 'promptTemplate'],
+              properties: {
+                model: {
+                  type: 'string',
+                  oneOf: [
+                    { const: '__default__' },
+                    { const: '@cf/meta/llama-4-scout-17b-16e-instruct' },
+                  ],
+                },
+                promptTemplate: {
+                  type: 'string',
+                  oneOf: [
+                    { const: 'default' },
+                    { const: 'approval_readiness' },
+                  ],
+                },
+                reviewerQuestion: {
+                  type: 'string',
+                  maxLength: 120,
+                },
+              },
+            },
+            data: {
+              model: '__default__',
+              promptTemplate: 'default',
+            },
+          },
+        ],
+      })
+
+      await expect(sdk.submitForm({
+        cardId: card.id,
+        formId: 'analyze',
+        data: {
+          model: 'not-a-real-model',
+          promptTemplate: 'default',
+        },
+      })).rejects.toThrow('Invalid form submission for analyze')
+
+      const result = await sdk.submitForm({
+        cardId: card.id,
+        formId: 'analyze',
+        data: {
+          model: '@cf/meta/llama-4-scout-17b-16e-instruct',
+          promptTemplate: 'approval_readiness',
+          reviewerQuestion: 'What evidence is still missing for auto-approve?',
+        },
+      })
+
+      expect(result.data).toEqual({
+        model: '@cf/meta/llama-4-scout-17b-16e-instruct',
+        promptTemplate: 'approval_readiness',
+        reviewerQuestion: 'What evidence is still missing for auto-approve?',
+      })
+      expect((await sdk.getCard(card.id))?.formData?.analyze).toEqual(result.data)
+    } finally {
+      compileSpy.mockRestore()
+    }
   })
 
   it('persists submitted form state with matching semantics in sqlite storage mode', async () => {

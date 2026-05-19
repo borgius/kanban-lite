@@ -1,6 +1,6 @@
 # MCP Server
 
-The MCP server is the agent-native interface for Kanban Lite. It runs over stdio, delegates its built-in operations to the same `KanbanSDK` methods used by the CLI and standalone server, and can be extended by active plugin packages.
+The MCP server is the agent-native interface for Kanban Lite. Local Node-hosted usage runs over stdio, Cloudflare Worker deployments expose Streamable HTTP at `/mcp`, built-in operations delegate to the same `KanbanSDK` methods used by the CLI and standalone server, and active plugin packages can extend the tool surface.
 
 ## Starting the server
 
@@ -11,9 +11,9 @@ kanban-mcp --dir .kanban
 npx kanban-lite mcp
 ```
 
-The current implementation exposes **stdio transport only**.
+The local Node-hosted server started by these commands exposes **stdio transport**.
 
-When the server starts, it resolves the workspace in this order:
+When the local stdio server starts, it resolves the workspace in this order:
 
 1. `--dir <path>`
 2. `KANBAN_DIR`
@@ -38,14 +38,39 @@ If your MCP client does not inherit your shell environment, pass the directory a
 }
 ```
 
+### Cloudflare Worker transport
+
+Cloudflare Worker deployments additionally expose **Streamable HTTP** at `/mcp`.
+Use any Streamable HTTP-capable MCP client and point it at your deployed board URL.
+
+```ts
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+
+const transport = new StreamableHTTPClientTransport(new URL('https://your-kanban.example.com/mcp'), {
+  requestInit: {
+    headers: {
+      Authorization: 'Bearer kl-your-token',
+    },
+  },
+})
+
+const client = new Client({ name: 'my-agent', version: '1.0.0' })
+await client.connect(transport)
+```
+
+When the Worker sits behind Cloudflare Access, edge-authenticated requests can also arrive with a forwarded `CF-Access-Jwt-Assertion` header; the Worker uses that JWT as the MCP auth token when `Authorization` is absent.
+
 ## Authentication and environment
 
-The MCP server itself does not prompt for credentials. It reads auth state from the process environment and the workspace configuration:
+The local stdio MCP server does not prompt for credentials. It reads auth state from the process environment and the workspace configuration:
 
 - `KANBAN_LITE_TOKEN` is the preferred token environment variable.
 - `KANBAN_TOKEN` is still accepted as a compatibility alias.
 - If no auth providers are configured for the workspace, MCP access remains open just like the CLI and SDK.
 - If auth is enabled, pass the token through your MCP client config or launch the server from a shell that already exports it.
+
+Cloudflare Worker MCP requests use the same shared auth model, but credentials arrive per request instead of through the host process environment. `Authorization: Bearer ...` stays authoritative, and the Worker can also consume a forwarded `CF-Access-Jwt-Assertion` header in Cloudflare Access deployments.
 
 Useful diagnostics:
 

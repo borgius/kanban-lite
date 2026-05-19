@@ -201,4 +201,198 @@ describe('Cloudflare worker live sync runtime', () => {
       })
     })
   })
+
+  it('includes excludeSessionId in the live-sync notify when X-Kanban-Session-Id is present on a webview-sync mutation', async () => {
+    const workspaceRoot = createTempWorkspaceRoot()
+    const kanbanDir = path.join(workspaceRoot, '.kanban')
+    const liveSyncNamespace = new FakeLiveSyncDurableObjectNamespace()
+    let runtimeConfig = structuredClone(createWorkerBootstrapConfig()) as Record<string, unknown>
+
+    writeWorkspaceConfig(workspaceRoot)
+
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir,
+      bootstrap: createCloudflareWorkerBootstrap({ config: createWorkerBootstrapConfig() }),
+      runtimeHost: {
+        readConfig() {
+          return structuredClone(runtimeConfig)
+        },
+        writeConfig(_workspaceRoot, _filePath, nextConfig) {
+          runtimeConfig = structuredClone(nextConfig) as Record<string, unknown>
+          return true
+        },
+      },
+    })
+
+    // Browser tab sends a webview-sync mutation request with its session identifier
+    const response = await handler(new Request('https://example.test/api/webview-sync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-kanban-session-id': 'browser-session-111',
+      },
+      body: JSON.stringify({
+        messages: [
+          { type: 'switchBoard', boardId: 'default' },
+          { type: 'createCard', data: { content: '# Session ID test', status: 'backlog' } },
+          { type: 'ready' },
+        ],
+      }),
+    }), {
+      KANBAN_ACTIVE_CARD_STATE: liveSyncNamespace,
+    })
+
+    expect(response.ok).toBe(true)
+
+    await vi.waitFor(() => {
+      const notifyPayloads = liveSyncNamespace.fetches
+        .filter((record) => record.url === 'https://kanban-lite.worker/live-sync/notify')
+        .map((record) => JSON.parse(record.bodyText ?? '{}'))
+
+      expect(notifyPayloads).toContainEqual(expect.objectContaining({
+        type: 'syncRequired',
+        excludeSessionId: 'browser-session-111',
+      }))
+    })
+  })
+
+  it('omits excludeSessionId from the live-sync notify when no session header is present on the webview-sync request', async () => {
+    const workspaceRoot = createTempWorkspaceRoot()
+    const kanbanDir = path.join(workspaceRoot, '.kanban')
+    const liveSyncNamespace = new FakeLiveSyncDurableObjectNamespace()
+    let runtimeConfig = structuredClone(createWorkerBootstrapConfig()) as Record<string, unknown>
+
+    writeWorkspaceConfig(workspaceRoot)
+
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir,
+      bootstrap: createCloudflareWorkerBootstrap({ config: createWorkerBootstrapConfig() }),
+      runtimeHost: {
+        readConfig() {
+          return structuredClone(runtimeConfig)
+        },
+        writeConfig(_workspaceRoot, _filePath, nextConfig) {
+          runtimeConfig = structuredClone(nextConfig) as Record<string, unknown>
+          return true
+        },
+      },
+    })
+
+    const response = await handler(new Request('https://example.test/api/webview-sync', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { type: 'switchBoard', boardId: 'default' },
+          { type: 'createCard', data: { content: '# No session', status: 'backlog' } },
+          { type: 'ready' },
+        ],
+      }),
+    }), {
+      KANBAN_ACTIVE_CARD_STATE: liveSyncNamespace,
+    })
+
+    expect(response.ok).toBe(true)
+
+    await vi.waitFor(() => {
+      const notifyPayloads = liveSyncNamespace.fetches
+        .filter((record) => record.url === 'https://kanban-lite.worker/live-sync/notify')
+        .map((record) => JSON.parse(record.bodyText ?? '{}'))
+
+      expect(notifyPayloads.length).toBeGreaterThan(0)
+    })
+
+    const notifyPayloads = liveSyncNamespace.fetches
+      .filter((record) => record.url === 'https://kanban-lite.worker/live-sync/notify')
+      .map((record) => JSON.parse(record.bodyText ?? '{}'))
+
+    for (const payload of notifyPayloads) {
+      expect(payload.excludeSessionId).toBeUndefined()
+    }
+  })
+
+  it('move-card webview-sync request excludes the origin session from the subsequent live-sync fan-out', async () => {
+    const workspaceRoot = createTempWorkspaceRoot()
+    const kanbanDir = path.join(workspaceRoot, '.kanban')
+    const liveSyncNamespace = new FakeLiveSyncDurableObjectNamespace()
+    let runtimeConfig = structuredClone(createWorkerBootstrapConfig()) as Record<string, unknown>
+
+    writeWorkspaceConfig(workspaceRoot)
+
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir,
+      bootstrap: createCloudflareWorkerBootstrap({ config: createWorkerBootstrapConfig() }),
+      runtimeHost: {
+        readConfig() {
+          return structuredClone(runtimeConfig)
+        },
+        writeConfig(_workspaceRoot, _filePath, nextConfig) {
+          runtimeConfig = structuredClone(nextConfig) as Record<string, unknown>
+          return true
+        },
+      },
+    })
+
+    // Create a card via REST API to get a real card ID
+    const createResponse = await handler(new Request('https://example.test/api/boards/default/tasks', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ content: '# Move regression card' }),
+    }), {
+      KANBAN_ACTIVE_CARD_STATE: liveSyncNamespace,
+    })
+
+    if (createResponse.status !== 201) {
+      throw new Error(`Create card failed: ${createResponse.status} ${await createResponse.text()}`)
+    }
+
+    const createdCard = (await createResponse.json() as { data?: { id?: string } }).data
+    if (!createdCard?.id) throw new Error('Create-card response missing id')
+
+    // Flush the create-card notify (fires in a setTimeout) before resetting the
+    // fetch log so it does not bleed into the move-card assertion below.
+    await vi.waitFor(() => {
+      expect(liveSyncNamespace.fetches.some(r => r.url === 'https://kanban-lite.worker/live-sync/notify')).toBe(true)
+    })
+    liveSyncNamespace.fetches.length = 0
+
+    // The origin browser tab sends a webview-sync move-card request with its session ID
+    const moveResponse = await handler(new Request('https://example.test/api/webview-sync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-kanban-session-id': 'origin-move-session',
+      },
+      body: JSON.stringify({
+        messages: [
+          { type: 'switchBoard', boardId: 'default' },
+          { type: 'moveCard', cardId: createdCard.id, newStatus: 'backlog', newOrder: 0 },
+          { type: 'ready' },
+        ],
+      }),
+    }), {
+      KANBAN_ACTIVE_CARD_STATE: liveSyncNamespace,
+    })
+
+    expect(moveResponse.ok).toBe(true)
+
+    await vi.waitFor(() => {
+      const notifyPayloads = liveSyncNamespace.fetches
+        .filter((record) => record.url === 'https://kanban-lite.worker/live-sync/notify')
+        .map((record) => JSON.parse(record.bodyText ?? '{}'))
+
+      expect(notifyPayloads.length).toBeGreaterThan(0)
+    })
+
+    // Every notify resulting from the move must exclude the origin session.
+    // This prevents the origin tab from receiving syncRequired and doing a
+    // redundant snapshot replay that would bounce the optimistic card order.
+    const notifyPayloads = liveSyncNamespace.fetches
+      .filter((record) => record.url === 'https://kanban-lite.worker/live-sync/notify')
+      .map((record) => JSON.parse(record.bodyText ?? '{}'))
+
+    for (const payload of notifyPayloads) {
+      expect(payload.excludeSessionId).toBe('origin-move-session')
+    }
+  })
 })

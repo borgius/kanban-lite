@@ -15,7 +15,7 @@ import type { SDKContext } from '../context'
 import { buildChecklistTask, buildChecklistToken, isReservedChecklistLabel, normalizeCardChecklistState, normalizeChecklistTasks, projectCardChecklistState } from '../checklist'
 import { appendActivityLog } from '../logs'
 
-import { resolveCardForms, cloneRecord, formAjv, formatValidationErrors } from './helpers'
+import { resolveCardForms, cloneRecord, validateFormData } from './helpers'
 import { getMutableCard, updateCard, getCard, listCards, listCardsRaw } from './crud'
 
 export async function triggerAction(
@@ -62,10 +62,9 @@ export async function submitForm(ctx: SDKContext, input: SubmitFormInput): Promi
     ...cloneRecord(input.data),
   }
 
-  const validate = formAjv.compile(form.schema)
-  const valid = validate(submittedData)
-  if (!valid) {
-    throw new Error(`Invalid form submission for ${form.id}: ${formatValidationErrors(validate.errors)}`)
+  const validationError = validateFormData(form.schema, submittedData)
+  if (validationError) {
+    throw new Error(`Invalid form submission for ${form.id}: ${validationError}`)
   }
 
   card.formData = {

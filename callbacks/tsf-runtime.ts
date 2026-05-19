@@ -57,8 +57,8 @@ function hasExistingCallbackLog(
   })
 }
 
-function getEmailAirtableReviewAction(event: unknown): {
-  action: 'approve' | 'rematch'
+interface EmailAirtableReviewQueuePayload {
+  action: 'approve' | 'rematch' | 'analyze'
   boardId: string
   cardId: string
   threadId: string
@@ -67,22 +67,21 @@ function getEmailAirtableReviewAction(event: unknown): {
   runId?: string
   actor?: string
   currentStatus?: string
-} | null {
-  if (!isRecord(event) || event.event !== 'card.action.triggered' || !isRecord(event.data)) {
-    return null
-  }
+  analysisModel?: string
+  promptTemplate?: string
+  reviewerQuestion?: string
+  triggerSource: 'action' | 'form'
+}
 
-  const action = typeof event.data.action === 'string' ? event.data.action.trim() : ''
-  if (action !== 'approve' && action !== 'rematch') {
-    return null
-  }
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
 
-  const boardId = typeof event.data.board === 'string' ? event.data.board.trim() : ''
-  if (boardId !== 'email-ops') {
-    return null
-  }
-
-  const card = isRecord(event.data.card) ? event.data.card : null
+function getEmailAirtableReviewCardPayload(
+  boardId: string,
+  card: Record<string, unknown> | null,
+  actor: unknown,
+): Omit<EmailAirtableReviewQueuePayload, 'action' | 'analysisModel' | 'promptTemplate' | 'reviewerQuestion' | 'triggerSource'> | null {
   const cardId = typeof card?.id === 'string' ? card.id.trim() : ''
   const currentStatus = typeof card?.status === 'string' ? card.status.trim() : undefined
   const metadata = isRecord(card?.metadata) ? card.metadata : null
@@ -100,15 +99,74 @@ function getEmailAirtableReviewAction(event: unknown): {
   }
 
   return {
-    action,
     boardId,
     cardId,
     threadId,
-    candidateId: typeof metadata.candidate_id === 'string' ? metadata.candidate_id.trim() : undefined,
-    airtableRecordId: typeof metadata.airtable_record_id === 'string' ? metadata.airtable_record_id.trim() : undefined,
-    runId: typeof metadata.run_id === 'string' ? metadata.run_id.trim() : undefined,
-    actor: typeof event.actor === 'string' ? event.actor.trim() : undefined,
+    candidateId: normalizeOptionalString(metadata.candidate_id),
+    airtableRecordId: normalizeOptionalString(metadata.airtable_record_id),
+    runId: normalizeOptionalString(metadata.run_id),
+    actor: normalizeOptionalString(actor),
     currentStatus,
+  }
+}
+
+function getEmailAirtableReviewAction(event: unknown): EmailAirtableReviewQueuePayload | null {
+  if (!isRecord(event) || event.event !== 'card.action.triggered' || !isRecord(event.data)) {
+    return null
+  }
+
+  const action = typeof event.data.action === 'string' ? event.data.action.trim() : ''
+  if (action !== 'approve' && action !== 'rematch' && action !== 'analyze') {
+    return null
+  }
+
+  const boardId = typeof event.data.board === 'string' ? event.data.board.trim() : ''
+  if (boardId !== 'email-ops') {
+    return null
+  }
+
+  const card = isRecord(event.data.card) ? event.data.card : null
+  const payload = getEmailAirtableReviewCardPayload(boardId, card, event.actor)
+  if (!payload) return null
+
+  return {
+    action,
+    ...payload,
+    triggerSource: 'action',
+  }
+}
+
+function getEmailAirtableAnalyzeFormSubmission(event: unknown): EmailAirtableReviewQueuePayload | null {
+  if (!isRecord(event) || event.event !== 'form.submitted' || !isRecord(event.data)) {
+    return null
+  }
+
+  const boardId = typeof event.data.boardId === 'string' ? event.data.boardId.trim() : ''
+  if (boardId !== 'email-ops') {
+    return null
+  }
+
+  const form = isRecord(event.data.form) ? event.data.form : null
+  const formId = normalizeOptionalString(form?.id)?.toLowerCase()
+  const formName = normalizeOptionalString(form?.name)?.toLowerCase()
+  if (formId !== 'analyze' && formName !== 'analyze') {
+    return null
+  }
+
+  const card = isRecord(event.data.card) ? event.data.card : null
+  const payload = getEmailAirtableReviewCardPayload(boardId, card, event.actor)
+  if (!payload) return null
+
+  const data = isRecord(event.data.data) ? event.data.data : null
+  const requestedModel = normalizeOptionalString(data?.model)
+
+  return {
+    action: 'analyze',
+    ...payload,
+    analysisModel: requestedModel === '__default__' ? undefined : requestedModel,
+    promptTemplate: normalizeOptionalString(data?.promptTemplate),
+    reviewerQuestion: normalizeOptionalString(data?.reviewerQuestion),
+    triggerSource: 'form',
   }
 }
 
@@ -155,7 +213,7 @@ export async function enqueueEmailAirtableReviewAction(input: {
   event: unknown
   sdk: TsfCallbackSdk
 }): Promise<void> {
-  const payload = getEmailAirtableReviewAction(input.event)
+  const payload = getEmailAirtableReviewAction(input.event) ?? getEmailAirtableAnalyzeFormSubmission(input.event)
   if (!payload) {
     return
   }
@@ -182,6 +240,10 @@ export async function enqueueEmailAirtableReviewAction(input: {
     airtableRecordId: payload.airtableRecordId ?? null,
     runId: payload.runId ?? null,
     actor: payload.actor ?? null,
+    analysisModel: payload.analysisModel ?? null,
+    promptTemplate: payload.promptTemplate ?? null,
+    reviewerQuestion: payload.reviewerQuestion ?? null,
+    triggerSource: payload.triggerSource,
     callbackEventId: input.callback.eventId,
     handlerId: input.callback.handlerId,
     queuedAt: new Date().toISOString(),
@@ -193,7 +255,7 @@ export async function enqueueEmailAirtableReviewAction(input: {
 
   await input.sdk.addLog(
     payload.cardId,
-    `Queued pipeline ${payload.action} action for thread \`${payload.threadId}\``,
+    `Queued pipeline ${payload.action} ${payload.triggerSource === 'form' ? 'form' : 'action'} for thread \`${payload.threadId}\``,
     {
       source: TSF_CLOUDFLARE_CALLBACK_LOG_SOURCE,
       object: {
@@ -202,9 +264,12 @@ export async function enqueueEmailAirtableReviewAction(input: {
         handlerId: input.callback.handlerId,
         idempotencyKey: input.callback.idempotencyKey ?? null,
         action: payload.action,
+        triggerSource: payload.triggerSource,
         threadId: payload.threadId,
         candidateId: payload.candidateId ?? null,
         airtableRecordId: payload.airtableRecordId ?? null,
+        analysisModel: payload.analysisModel ?? null,
+        promptTemplate: payload.promptTemplate ?? null,
       },
     },
     payload.boardId,

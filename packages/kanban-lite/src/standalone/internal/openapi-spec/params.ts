@@ -90,21 +90,75 @@ export const listTasksQueryParams = [
   { name: 'meta.<field>', in: 'query' as const, schema: { type: 'string' as const }, description: 'Field-scoped metadata filter. Repeat for multiple metadata fields.' },
 ]
 
+const cardFormAttachmentBodySchema = {
+  type: 'object' as const,
+  description: 'Named workspace-form reference or inline form definition attached to the card.',
+  properties: {
+    name: { type: 'string' as const, description: 'Name of a reusable workspace form declared under `forms.<name>`.' },
+    schema: { type: 'object' as const, description: 'Inline JSON Schema for a card-local form. Required when `name` is omitted.' },
+    ui: { type: 'object' as const, description: 'Optional JSON Forms UI schema for layout and rendering hints.' },
+    data: { type: 'object' as const, description: 'Optional attachment-level default data merged before persisted `formData`.' },
+  },
+}
+
+const cardFormDataEntrySchema = {
+  type: 'object' as const,
+  description: 'Persisted field values for one resolved form ID.',
+  additionalProperties: true,
+}
+
+const cardFormDataBodySchema = {
+  type: 'object' as const,
+  description: 'Per-form saved data keyed by resolved form ID.',
+  additionalProperties: cardFormDataEntrySchema,
+}
+
+const cardActionsBodySchema = {
+  description: 'Per-card actions, either as an ordered list of action keys or a map of action key → display title.',
+  oneOf: [
+    {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+    },
+    {
+      type: 'object' as const,
+      additionalProperties: { type: 'string' as const },
+    },
+  ],
+}
+
+const taskMutableFieldProperties = {
+  status: { type: 'string' as const, description: 'Target status column. Defaults to the board default when omitted on create.' },
+  priority: { type: 'string' as const, enum: ['critical', 'high', 'medium', 'low'] as const, description: 'Priority level.' },
+  assignee: { type: 'string' as const, description: 'Assigned team member.' },
+  dueDate: { type: 'string' as const, description: 'Due date (ISO 8601).' },
+  labels: { type: 'array' as const, items: { type: 'string' as const }, description: 'Labels/tags.' },
+  metadata: { type: 'object' as const, description: 'Arbitrary user-defined key/value metadata.', additionalProperties: true },
+  actions: cardActionsBodySchema,
+  forms: {
+    type: 'array' as const,
+    items: cardFormAttachmentBodySchema,
+    description: 'Attached forms — named workspace references or inline definitions.',
+  },
+  formData: cardFormDataBodySchema,
+}
+
 export const createTaskBodySchema = {
   type: 'object' as const,
   required: ['content' as const],
   properties: {
     content: { type: 'string' as const, description: 'Markdown content. Task title is derived from the first `# heading`.' },
-    status: { type: 'string' as const, description: 'Initial status (defaults to board default).' },
-    priority: { type: 'string' as const, enum: ['critical', 'high', 'medium', 'low'] as const, description: 'Priority level (default: `medium`).' },
-    assignee: { type: 'string' as const, description: 'Assigned team member.' },
-    dueDate: { type: 'string' as const, description: 'Due date (ISO 8601).' },
-    labels: { type: 'array' as const, items: { type: 'string' as const }, description: 'Labels/tags.' },
+    ...taskMutableFieldProperties,
     tasks: { type: 'array' as const, items: { type: 'string' as const }, description: 'Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one.' },
-    metadata: { type: 'object' as const, description: 'Arbitrary user-defined key/value metadata.' },
-    forms: { type: 'array' as const, description: 'Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions.' },
-    formData: { type: 'object' as const, description: 'Per-form saved data keyed by resolved form ID.' },
-    actions: { type: 'array' as const, description: 'Action names or map of key → title available on this card.' },
+  },
+}
+
+export const updateTaskBodySchema = {
+  type: 'object' as const,
+  description: 'Any subset of mutable task fields. Omitted fields remain unchanged.',
+  properties: {
+    content: { type: 'string' as const, description: 'Full Markdown content that replaces the existing task body.' },
+    ...taskMutableFieldProperties,
   },
 }
 
@@ -126,8 +180,8 @@ export const cardStateReadBodySchema = {
       type: 'object' as const,
       description: 'Optional explicit unread cursor to acknowledge instead of the latest activity.',
       properties: {
-        cursor: { type: 'string' as const },
-        updatedAt: { type: 'string' as const },
+        cursor: { type: 'string' as const, description: 'Opaque unread cursor token previously returned by card-state read models.' },
+        updatedAt: { type: 'string' as const, description: 'Timestamp paired with the unread cursor token.' },
       },
     },
   },

@@ -4,6 +4,90 @@ import {
   labelNameParam,
 } from './params'
 
+const logsFilterSchema = {
+  type: 'object' as const,
+  description: 'Persisted log-panel filter preferences.',
+  properties: {
+    limit: {
+      description: 'Maximum number of log entries to display, or `all` for no limit.',
+      oneOf: [
+        { type: 'integer' as const },
+        { type: 'string' as const, enum: ['all'] as const },
+      ],
+    },
+    order: {
+      type: 'string' as const,
+      enum: ['asc', 'desc'] as const,
+      description: 'Log sort order.',
+    },
+    disabledSources: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: 'Log sources hidden from the view.',
+    },
+    show: {
+      type: 'object' as const,
+      description: 'Per-column visibility toggles for the log view.',
+      properties: {
+        timestamp: { type: 'boolean' as const, description: 'Show the timestamp column when true.' },
+        source: { type: 'boolean' as const, description: 'Show the source column when true.' },
+        objects: { type: 'boolean' as const, description: 'Show structured JSON payloads when true.' },
+      },
+    },
+  },
+}
+
+const settingsUpdateBodySchema = {
+  type: 'object' as const,
+  description: 'Any subset of `CardDisplaySettings`. Only provided fields are changed.',
+  properties: {
+    showPriorityBadges: { type: 'boolean' as const, description: 'Show colored priority badges on task cards.' },
+    showAssignee: { type: 'boolean' as const, description: 'Show assignee names on task cards.' },
+    showDueDate: { type: 'boolean' as const, description: 'Show due dates on task cards.' },
+    showLabels: { type: 'boolean' as const, description: 'Show labels/tags on task cards.' },
+    showBuildWithAI: { type: 'boolean' as const, description: 'Show the Build with AI action where supported.' },
+    showFileName: { type: 'boolean' as const, description: 'Show the source filename on task cards.' },
+    cardViewMode: {
+      type: 'string' as const,
+      enum: ['compact', 'normal', 'large', 'xlarge', 'xxlarge'] as const,
+      description: 'Card detail density preset used on the board surface.',
+    },
+    markdownEditorMode: { type: 'boolean' as const, description: 'Use the markdown editor when editing task content.' },
+    showDeletedColumn: { type: 'boolean' as const, description: 'Show the hidden Deleted column in the board UI.' },
+    defaultPriority: {
+      type: 'string' as const,
+      enum: ['critical', 'high', 'medium', 'low'] as const,
+      description: 'Default priority assigned to newly created tasks.',
+    },
+    defaultStatus: { type: 'string' as const, description: 'Default status/column assigned to newly created tasks.' },
+    boardZoom: { type: 'number' as const, description: 'Board zoom percentage (75–150).' },
+    cardZoom: { type: 'number' as const, description: 'Card detail zoom percentage (75–150).' },
+    columnWidth: { type: 'number' as const, description: 'Preferred board column width in pixels.' },
+    boardBackgroundMode: {
+      type: 'string' as const,
+      enum: ['fancy', 'plain'] as const,
+      description: 'Whether the board uses a fancy or plain background preset.',
+    },
+    boardBackgroundPreset: {
+      type: 'string' as const,
+      enum: ['aurora', 'sunset', 'meadow', 'nebula', 'lagoon', 'candy', 'ember', 'violet', 'paper', 'mist', 'sand'] as const,
+      description: 'Selected board background preset within the active background mode.',
+    },
+    panelMode: {
+      type: 'string' as const,
+      enum: ['popup', 'drawer'] as const,
+      description: 'Whether task details open as a popup or a drawer.',
+    },
+    drawerWidth: { type: 'number' as const, description: 'Drawer width as a percentage of the viewport when drawer mode is active.' },
+    drawerPosition: {
+      type: 'string' as const,
+      enum: ['right', 'left', 'top', 'bottom'] as const,
+      description: 'Drawer anchor edge when panel mode is `drawer`.',
+    },
+    logsFilter: logsFilterSchema,
+  },
+}
+
 export const miscPaths = {
     '/api/columns': {
       get: {
@@ -129,22 +213,7 @@ export const miscPaths = {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object' as const,
-                description: 'Full `CardDisplaySettings` object. Only provided fields are changed.',
-                properties: {
-                  showPriorityBadges: { type: 'boolean' },
-                  showAssignee: { type: 'boolean' },
-                  showDueDate: { type: 'boolean' },
-                  showLabels: { type: 'boolean' },
-                  showFileName: { type: 'boolean' },
-                  showDeletedColumn: { type: 'boolean' },
-                  defaultPriority: { type: 'string' },
-                  defaultStatus: { type: 'string' },
-                  boardBackgroundMode: { type: 'string', enum: ['fancy', 'plain'] },
-                  boardBackgroundPreset: { type: 'string', enum: ['aurora', 'sunset', 'meadow', 'nebula', 'lagoon', 'candy', 'ember', 'violet', 'paper', 'mist', 'sand'] },
-                },
-              },
+              schema: settingsUpdateBodySchema,
             },
           },
         },

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **OpenAPI tool metadata is now proxy-friendly**: The standalone Swagger/OpenAPI spec now emits stable `operationId` values, copies path/query parameter descriptions onto the nested JSON Schema fields many tool proxies actually read, and expands previously vague update payloads (notably `update_task`, `update_board`, and `update_settings`) into explicit field-by-field request schemas. OpenAPI-driven action catalogs such as FreePIECES now show clearer action and parameter descriptions instead of generic or missing help text.
+
 - **Cloudflare hybrid sync — origin-tab duplicate replay eliminated**: The Cloudflare Worker now threads the browser tab's `sessionId` (assigned by the Durable Object on WebSocket accept and forwarded by the browser shim as `X-Kanban-Session-Id`) through the `syncRequired` DO fan-out so the tab that initiated a mutation is excluded from the subsequent `/api/webview-sync` replay. Previously every connected tab including the originating one received the invalidation signal, causing a redundant refetch that could bounce card order after a drag-and-drop move. The fix is transparent to all other surfaces.
 
 - **Cloudflare Worker MCP docs/test parity**: README, `docs/mcp.md`, and `docs/cloudflare.md` now document the deployed `/mcp` Streamable HTTP endpoint instead of implying MCP is stdio-only, and Worker regression coverage now verifies `initialize`, `tools/list`, and `list_boards` against the Cloudflare fetch handler.

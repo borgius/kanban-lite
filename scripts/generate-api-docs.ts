@@ -15,6 +15,7 @@ import * as path from 'path'
 import { normalizeWebhookCapabilities } from '../packages/kanban-lite/src/shared/config'
 import { resolveCapabilityBag, type StandaloneHttpPlugin } from '../packages/kanban-lite/src/sdk/plugins'
 import { KANBAN_OPENAPI_SPEC } from '../packages/kanban-lite/src/standalone/internal/openapi-spec'
+import { mergeStandaloneOpenApiDocs } from '../packages/kanban-lite/src/standalone/internal/openapi-spec/normalize'
 import { MOBILE_STANDALONE_API_DOCS } from '../packages/kanban-lite/src/standalone/internal/routes/mobile'
 
 const ROOT = path.resolve(__dirname, '..')
@@ -30,6 +31,9 @@ type OpenAPISchema = {
   required?: readonly string[]
   additionalProperties?: boolean | OpenAPISchema
   nullable?: boolean
+  oneOf?: readonly OpenAPISchema[]
+  anyOf?: readonly OpenAPISchema[]
+  allOf?: readonly OpenAPISchema[]
   $ref?: string
 }
 
@@ -53,6 +57,7 @@ type OpenAPIOperation = {
   tags?: readonly string[]
   summary?: string
   description?: string
+  operationId?: string
   parameters?: readonly OpenAPIParameter[]
   requestBody?: OpenAPIRequestBody
   responses?: OpenAPIResponses
@@ -178,32 +183,6 @@ const WEBHOOK_STANDALONE_API_DOCS = {
   },
 } as const
 
-function mergeStandaloneOpenApiDocs(
-  baseSpec: OpenAPISpec,
-  fragments: ReadonlyArray<OpenApiDocFragment>,
-): OpenAPISpec {
-  const mergedTags: OpenApiTag[] = [...(baseSpec.tags ?? [])]
-  const seenTagNames = new Set(mergedTags.map((tag) => tag.name))
-
-  for (const fragment of fragments) {
-    for (const tag of fragment.tags ?? []) {
-      if (!seenTagNames.has(tag.name)) {
-        mergedTags.push(tag)
-        seenTagNames.add(tag.name)
-      }
-    }
-  }
-
-  return {
-    ...baseSpec,
-    tags: mergedTags,
-    paths: {
-      ...baseSpec.paths,
-      ...Object.assign({}, ...fragments.map((fragment) => fragment.paths)),
-    },
-  }
-}
-
 function hasStandaloneWebhookPlugin(plugins: readonly StandaloneHttpPlugin[]): boolean {
   return plugins.some((plugin) => plugin.manifest.id === WEBHOOK_STANDALONE_PLUGIN_ID)
 }
@@ -242,6 +221,8 @@ function escapeTableCell(value: string): string {
 function formatSchemaType(schema?: OpenAPISchema): string {
   if (!schema) return '—'
   if (schema.$ref) return `\`${schema.$ref.replace('#/components/schemas/', '')}\``
+  const unionMembers = schema.oneOf ?? schema.anyOf ?? schema.allOf
+  if (unionMembers?.length) return unionMembers.map((member) => formatSchemaType(member)).join(' | ')
   if (schema.enum?.length) return schema.enum.map((value) => `\`${value}\``).join(' \\| ')
   if (schema.type === 'array') return schema.items ? `${formatSchemaType(schema.items)}[]` : 'array'
   if (schema.type === 'object' && schema.additionalProperties && typeof schema.additionalProperties === 'object') {

@@ -6,12 +6,80 @@ import {
   checklistIndexParam,
   listTasksQueryParams,
   createTaskBodySchema,
+  updateTaskBodySchema,
   logEntryBodySchema,
   cardStateReadBodySchema,
   checklistCreateBodySchema,
   checklistEditBodySchema,
   checklistExpectedRawBodySchema,
 } from './params'
+
+const boardColumnInputSchema = {
+  type: 'object' as const,
+  description: 'Board column definition.',
+  required: ['id', 'name', 'color'],
+  properties: {
+    id: { type: 'string' as const, description: 'Unique column identifier used as the task status value.' },
+    name: { type: 'string' as const, description: 'Human-readable column name.' },
+    color: { type: 'string' as const, description: 'Hex color string for the column header.' },
+  },
+}
+
+const boardMetadataFieldSchema = {
+  type: 'object' as const,
+  description: 'Board metadata field definition controlling preview visibility, defaults, and helper text.',
+  properties: {
+    default: { description: 'Default value pre-filled when the field has no task-specific value.' },
+    description: { type: 'string' as const, description: 'Tooltip or helper text shown for the field.' },
+    highlighted: { type: 'boolean' as const, description: 'When true, the field is shown on task previews.' },
+  },
+}
+
+const boardActionsSchema = {
+  type: 'object' as const,
+  description: 'Named board-level actions as a map of action key → display title.',
+  additionalProperties: { type: 'string' as const },
+}
+
+const updateBoardBodySchema = {
+  type: 'object' as const,
+  description: 'Any subset of board config fields. Omitted properties keep their current values.',
+  properties: {
+    name: { type: 'string' as const, description: 'Human-readable board name.' },
+    description: { type: 'string' as const, description: 'Optional board description.' },
+    columns: {
+      type: 'array' as const,
+      items: boardColumnInputSchema,
+      description: 'Ordered board columns. Replaces the full board column configuration when provided.',
+    },
+    defaultStatus: { type: 'string' as const, description: 'Default status/column for newly created tasks on this board.' },
+    defaultPriority: {
+      type: 'string' as const,
+      enum: ['critical', 'high', 'medium', 'low'] as const,
+      description: 'Default priority for newly created tasks on this board.',
+    },
+    actions: boardActionsSchema,
+    metadata: {
+      type: 'object' as const,
+      description: 'Named metadata field definitions keyed by field name.',
+      additionalProperties: boardMetadataFieldSchema,
+    },
+    title: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: 'Ordered metadata keys whose rendered values prefix user-visible task titles.',
+    },
+    titleTemplate: {
+      type: 'string' as const,
+      description: 'Template string for task titles. Takes precedence over `title` when set.',
+    },
+    minimizedColumnIds: {
+      type: 'array' as const,
+      items: { type: 'string' as const },
+      description: 'Column IDs currently minimized on this board.',
+    },
+  },
+}
 
 export const boardsPaths = {
     '/api/boards': {
@@ -36,7 +104,7 @@ export const boardsPaths = {
                   id: { type: 'string', description: 'Unique board identifier.' },
                   name: { type: 'string', description: 'Display name.' },
                   description: { type: 'string', description: 'Board description.' },
-                  columns: { type: 'array', description: 'Custom columns. Inherits from default board if omitted.' },
+                  columns: { type: 'array', items: boardColumnInputSchema, description: 'Custom columns. Inherits from the default board if omitted.' },
                 },
               },
             },
@@ -76,10 +144,7 @@ export const boardsPaths = {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object',
-                description: 'Any subset of board config fields: `name`, `description`, `columns`, `metadata`, `title`, `defaultStatus`, `defaultPriority`.',
-              },
+              schema: updateBoardBodySchema,
             },
           },
         },
@@ -259,7 +324,7 @@ export const boardsPaths = {
         parameters: [boardIdParam, taskIdParam],
         requestBody: {
           required: true,
-          content: { 'application/json': { schema: { type: 'object' as const, description: 'Any subset of task fields: `content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`, `actions`.' } } },
+          content: { 'application/json': { schema: updateTaskBodySchema } },
         },
         responses: { 200: { description: 'Updated task.' }, 404: { description: 'Not found.' }, 400: { description: 'Error.' } },
       },

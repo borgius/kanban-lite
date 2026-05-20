@@ -58,7 +58,7 @@ Required: Yes
 | `id` | string | Yes | Unique board identifier. |
 | `name` | string | Yes | Display name. |
 | `description` | string | No | Board description. |
-| `columns` | array | No | Custom columns. Inherits from default board if omitted. |
+| `columns` | object[] | No | Custom columns. Inherits from the default board if omitted. |
 
 #### Responses
 
@@ -115,7 +115,18 @@ Updates an existing board in place. Only provided fields are changed; omitted pr
 
 Required: Yes
 
-Any subset of board config fields: `name`, `description`, `columns`, `metadata`, `title`, `defaultStatus`, `defaultPriority`.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | string | No | Human-readable board name. |
+| `description` | string | No | Optional board description. |
+| `columns` | object[] | No | Ordered board columns. Replaces the full board column configuration when provided. |
+| `defaultStatus` | string | No | Default status/column for newly created tasks on this board. |
+| `defaultPriority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Default priority for newly created tasks on this board. |
+| `actions` | Record<string, string> | No | Named board-level actions as a map of action key → display title. |
+| `metadata` | Record<string, object> | No | Named metadata field definitions keyed by field name. |
+| `title` | string[] | No | Ordered metadata keys whose rendered values prefix user-visible task titles. |
+| `titleTemplate` | string | No | Template string for task titles. Takes precedence over `title` when set. |
+| `minimizedColumnIds` | string[] | No | Column IDs currently minimized on this board. |
 
 #### Responses
 
@@ -357,16 +368,16 @@ Required: Yes
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
 | `content` | string | Yes | Markdown content. Task title is derived from the first `# heading`. |
-| `status` | string | No | Initial status (defaults to board default). |
-| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level (default: `medium`). |
+| `status` | string | No | Target status column. Defaults to the board default when omitted on create. |
+| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level. |
 | `assignee` | string | No | Assigned team member. |
 | `dueDate` | string | No | Due date (ISO 8601). |
 | `labels` | string[] | No | Labels/tags. |
-| `tasks` | string[] | No | Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one. |
 | `metadata` | object | No | Arbitrary user-defined key/value metadata. |
-| `forms` | array | No | Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions. |
-| `formData` | object | No | Per-form saved data keyed by resolved form ID. |
-| `actions` | array | No | Action names or map of key → title available on this card. |
+| `actions` | string[] \| Record<string, string> | No | Per-card actions, either as an ordered list of action keys or a map of action key → display title. |
+| `forms` | object[] | No | Attached forms — named workspace references or inline definitions. |
+| `formData` | Record<string, object> | No | Per-form saved data keyed by resolved form ID. |
+| `tasks` | string[] | No | Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one. |
 
 #### Responses
 
@@ -422,7 +433,18 @@ Updates an existing task. Only the supplied fields are modified; omitted fields 
 
 Required: Yes
 
-Any subset of task fields: `content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`, `actions`.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `content` | string | No | Full Markdown content that replaces the existing task body. |
+| `status` | string | No | Target status column. Defaults to the board default when omitted on create. |
+| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level. |
+| `assignee` | string | No | Assigned team member. |
+| `dueDate` | string | No | Due date (ISO 8601). |
+| `labels` | string[] | No | Labels/tags. |
+| `metadata` | object | No | Arbitrary user-defined key/value metadata. |
+| `actions` | string[] \| Record<string, string> | No | Per-card actions, either as an ordered list of action keys or a map of action key → display title. |
+| `forms` | object[] | No | Attached forms — named workspace references or inline definitions. |
+| `formData` | Record<string, object> | No | Per-form saved data keyed by resolved form ID. |
 
 #### Responses
 
@@ -811,16 +833,16 @@ Required: Yes
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
 | `content` | string | Yes | Markdown content. Task title is derived from the first `# heading`. |
-| `status` | string | No | Initial status (defaults to board default). |
-| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level (default: `medium`). |
+| `status` | string | No | Target status column. Defaults to the board default when omitted on create. |
+| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level. |
 | `assignee` | string | No | Assigned team member. |
 | `dueDate` | string | No | Due date (ISO 8601). |
 | `labels` | string[] | No | Labels/tags. |
-| `tasks` | string[] | No | Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one. |
 | `metadata` | object | No | Arbitrary user-defined key/value metadata. |
-| `forms` | array | No | Attached forms — named workspace references (`{ "name": "..." }`) or inline definitions. |
-| `formData` | object | No | Per-form saved data keyed by resolved form ID. |
-| `actions` | array | No | Action names or map of key → title available on this card. |
+| `actions` | string[] \| Record<string, string> | No | Per-card actions, either as an ordered list of action keys or a map of action key → display title. |
+| `forms` | object[] | No | Attached forms — named workspace references or inline definitions. |
+| `formData` | Record<string, object> | No | Per-form saved data keyed by resolved form ID. |
+| `tasks` | string[] | No | Optional seeded checklist items. Each entry must be a single-line Markdown task string or plain text that can be canonicalized into one. |
 
 #### Responses
 
@@ -884,7 +906,18 @@ Updates fields of a task. Only supplied fields are modified; omitted fields rema
 
 Required: Yes
 
-Any subset of task fields: `content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`, `actions`.
+| Field | Type | Required | Description |
+|------|------|----------|-------------|
+| `content` | string | No | Full Markdown content that replaces the existing task body. |
+| `status` | string | No | Target status column. Defaults to the board default when omitted on create. |
+| `priority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Priority level. |
+| `assignee` | string | No | Assigned team member. |
+| `dueDate` | string | No | Due date (ISO 8601). |
+| `labels` | string[] | No | Labels/tags. |
+| `metadata` | object | No | Arbitrary user-defined key/value metadata. |
+| `actions` | string[] \| Record<string, string> | No | Per-card actions, either as an ordered list of action keys or a map of action key → display title. |
+| `forms` | object[] | No | Attached forms — named workspace references or inline definitions. |
+| `formData` | Record<string, object> | No | Per-form saved data keyed by resolved form ID. |
 
 #### Responses
 
@@ -1744,16 +1777,26 @@ Required: Yes
 
 | Field | Type | Required | Description |
 |------|------|----------|-------------|
-| `showPriorityBadges` | boolean | No | — |
-| `showAssignee` | boolean | No | — |
-| `showDueDate` | boolean | No | — |
-| `showLabels` | boolean | No | — |
-| `showFileName` | boolean | No | — |
-| `showDeletedColumn` | boolean | No | — |
-| `defaultPriority` | string | No | — |
-| `defaultStatus` | string | No | — |
-| `boardBackgroundMode` | `fancy` \\| `plain` | No | — |
-| `boardBackgroundPreset` | `aurora` \\| `sunset` \\| `meadow` \\| `nebula` \\| `lagoon` \\| `candy` \\| `ember` \\| `violet` \\| `paper` \\| `mist` \\| `sand` | No | — |
+| `showPriorityBadges` | boolean | No | Show colored priority badges on task cards. |
+| `showAssignee` | boolean | No | Show assignee names on task cards. |
+| `showDueDate` | boolean | No | Show due dates on task cards. |
+| `showLabels` | boolean | No | Show labels/tags on task cards. |
+| `showBuildWithAI` | boolean | No | Show the Build with AI action where supported. |
+| `showFileName` | boolean | No | Show the source filename on task cards. |
+| `cardViewMode` | `compact` \\| `normal` \\| `large` \\| `xlarge` \\| `xxlarge` | No | Card detail density preset used on the board surface. |
+| `markdownEditorMode` | boolean | No | Use the markdown editor when editing task content. |
+| `showDeletedColumn` | boolean | No | Show the hidden Deleted column in the board UI. |
+| `defaultPriority` | `critical` \\| `high` \\| `medium` \\| `low` | No | Default priority assigned to newly created tasks. |
+| `defaultStatus` | string | No | Default status/column assigned to newly created tasks. |
+| `boardZoom` | number | No | Board zoom percentage (75–150). |
+| `cardZoom` | number | No | Card detail zoom percentage (75–150). |
+| `columnWidth` | number | No | Preferred board column width in pixels. |
+| `boardBackgroundMode` | `fancy` \\| `plain` | No | Whether the board uses a fancy or plain background preset. |
+| `boardBackgroundPreset` | `aurora` \\| `sunset` \\| `meadow` \\| `nebula` \\| `lagoon` \\| `candy` \\| `ember` \\| `violet` \\| `paper` \\| `mist` \\| `sand` | No | Selected board background preset within the active background mode. |
+| `panelMode` | `popup` \\| `drawer` | No | Whether task details open as a popup or a drawer. |
+| `drawerWidth` | number | No | Drawer width as a percentage of the viewport when drawer mode is active. |
+| `drawerPosition` | `right` \\| `left` \\| `top` \\| `bottom` | No | Drawer anchor edge when panel mode is `drawer`. |
+| `logsFilter` | object | No | Persisted log-panel filter preferences. |
 
 #### Responses
 

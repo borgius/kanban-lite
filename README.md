@@ -334,6 +334,8 @@ The server provides:
 All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false, "error": "message" }`. CORS is enabled for all origins.
 
 > The REST API source of truth is the standalone Swagger/OpenAPI spec. Browse the interactive docs at `http://localhost:3000/api/docs`, the raw OpenAPI JSON at `http://localhost:3000/api/docs/json`, or the generated repo copy at [docs/api.md](docs/api.md).
+>
+> The OpenAPI JSON also ships stable `operationId` values plus schema-level descriptions for query, path, and request-body inputs, so OpenAPI-based tool proxies can present clearer action and parameter help.
 
 #### Boards
 

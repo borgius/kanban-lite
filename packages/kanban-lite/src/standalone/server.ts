@@ -9,21 +9,13 @@ import { swaggerUI } from '@hono/swagger-ui'
 import { configPath, readConfig } from '../shared/config'
 import type { StandaloneHttpPlugin } from '../sdk'
 import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
+import { mergeStandaloneOpenApiDocs, type OpenApiDocFragment, type OpenApiSpecWithPaths } from './internal/openapi-spec/normalize'
 import { setupStandaloneLifecycle } from './internal/lifecycle'
 import { createStandaloneRuntime, getIndexHtml } from './internal/runtime'
 import { MOBILE_STANDALONE_API_DOCS } from './internal/routes/mobile'
 import { attachWebSocketHandlers } from './internal/websocket'
 import type { IncomingMessageWithRawBody } from './httpUtils'
 import { createStandaloneRouteDispatcher } from './dispatch'
-
-type OpenApiTag = { name: string; description?: string }
-type OpenApiOperation = Record<string, unknown>
-type OpenApiPaths = Record<string, Record<string, OpenApiOperation>>
-type OpenApiDocFragment = { tags?: ReadonlyArray<OpenApiTag>; paths: OpenApiPaths }
-type OpenApiSpecWithPaths = Omit<typeof KANBAN_OPENAPI_SPEC, 'tags' | 'paths'> & {
-  tags?: OpenApiTag[]
-  paths: OpenApiPaths
-}
 
 const WEBHOOK_STANDALONE_PLUGIN_ID = 'webhooks'
 const BUILTIN_STANDALONE_API_DOCS = [MOBILE_STANDALONE_API_DOCS] as const
@@ -131,32 +123,6 @@ const WEBHOOK_STANDALONE_API_DOCS = {
     },
   },
 } as const
-
-function mergeStandaloneOpenApiDocs(
-  baseSpec: OpenApiSpecWithPaths,
-  fragments: ReadonlyArray<OpenApiDocFragment>,
-): OpenApiSpecWithPaths {
-  const mergedTags: OpenApiTag[] = [...(baseSpec.tags ?? [])]
-  const seenTagNames = new Set(mergedTags.map((tag) => tag.name))
-
-  for (const fragment of fragments) {
-    for (const tag of fragment.tags ?? []) {
-      if (!seenTagNames.has(tag.name)) {
-        mergedTags.push(tag)
-        seenTagNames.add(tag.name)
-      }
-    }
-  }
-
-  return {
-    ...baseSpec,
-    tags: mergedTags,
-    paths: {
-      ...baseSpec.paths,
-      ...Object.assign({}, ...fragments.map((fragment) => fragment.paths)),
-    },
-  }
-}
 
 function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): OpenApiSpecWithPaths {
   const baseSpec = KANBAN_OPENAPI_SPEC as OpenApiSpecWithPaths

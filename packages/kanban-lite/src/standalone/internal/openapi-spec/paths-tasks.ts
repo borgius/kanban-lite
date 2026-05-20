@@ -7,6 +7,7 @@ import {
   checklistIndexParam,
   listTasksQueryParams,
   createTaskBodySchema,
+  updateTaskBodySchema,
   logEntryBodySchema,
   cardStateReadBodySchema,
   checklistCreateBodySchema,
@@ -59,10 +60,7 @@ export const tasksPaths = {
           required: true,
           content: {
             'application/json': {
-              schema: {
-                type: 'object' as const,
-                description: 'Any subset of task fields: `content`, `status`, `priority`, `assignee`, `dueDate`, `labels`, `metadata`, `forms`, `formData`, `actions`.',
-              },
+              schema: updateTaskBodySchema,
             },
           },
         },

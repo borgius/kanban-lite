@@ -116,7 +116,7 @@ async function doChecklistMutationForBoard(
 
   ctx.migrating = true
   try {
-    const updated = await mutate(target.boardId)
+    const updated = await mutate()
     ctx.lastWrittenContent = serializeCard(updated)
     ctx.suppressWatcherEventsUntil = Math.max(ctx.suppressWatcherEventsUntil, Date.now() + 500)
     await reloadAndBroadcast(ctx)

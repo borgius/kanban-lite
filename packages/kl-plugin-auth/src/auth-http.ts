@@ -7,6 +7,7 @@ import type {
   AuthContext,
   AuthIdentity,
   AuthIdentityPlugin,
+  StandaloneOpenApiDocFragment,
   StandaloneHttpHandler,
   StandaloneHttpPlugin,
   StandaloneHttpPluginRegistrationOptions,
@@ -199,6 +200,151 @@ export function isLocalAuthEnabled(options: StandaloneHttpPluginRegistrationOpti
     || LOCAL_AUTH_PROVIDER_IDS.has(authCapabilities['auth.policy'].provider)
 }
 
+const mobileAuthenticationSchema = {
+  type: 'object',
+  required: ['provider', 'browserLoginTransport', 'mobileSessionTransport', 'sessionKind'],
+  properties: {
+    provider: { type: 'string', enum: ['local'], description: 'Fixed mobile auth provider scope for v1.' },
+    browserLoginTransport: { type: 'string', enum: ['cookie-session'], description: 'Browser-only login transport reused by `/auth/login`.' },
+    mobileSessionTransport: { type: 'string', enum: ['opaque-bearer'], description: 'Opaque bearer transport persisted by the mobile app.' },
+    sessionKind: { type: 'string', enum: ['local-mobile-session-v1'], description: 'Stable mobile session kind returned by the standalone login exchange.' },
+  },
+} as const
+
+const mobileSessionStatusSchema = {
+  type: 'object',
+  required: ['workspaceOrigin', 'workspaceId', 'subject', 'roles', 'expiresAt', 'authentication'],
+  properties: {
+    workspaceOrigin: { type: 'string', description: 'Canonical workspace origin bound to the validated mobile session.' },
+    workspaceId: { type: 'string', description: 'Stable workspace identifier safe for cache, draft, and restore namespace keys.' },
+    subject: { type: 'string', description: 'Resolved authenticated subject.' },
+    roles: { type: 'array', items: { type: 'string' }, description: 'Normalized role list safe to use for cache namespacing.' },
+    expiresAt: { type: 'string', nullable: true, description: 'Optional expiry hint surfaced for UX only.' },
+    authentication: mobileAuthenticationSchema,
+  },
+} as const
+
+const LOCAL_AUTH_MOBILE_SESSION_API_DOCS: StandaloneOpenApiDocFragment = {
+  tags: [
+    {
+      name: 'Mobile',
+      description: 'Minimal mobile bootstrap and opaque local-session contract for the Expo field app.',
+    },
+  ],
+  paths: {
+    '/api/mobile/session': {
+      post: {
+        tags: ['Mobile'],
+        summary: 'Create a mobile opaque bearer session',
+        description: 'Available when the local standalone auth provider is active. Exchanges local credentials or a validated one-time bootstrap token for a server-backed opaque mobile bearer session without reusing the browser cookie transport.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['workspaceOrigin'],
+                properties: {
+                  workspaceOrigin: { type: 'string', description: 'Workspace origin to bind to the created mobile session.' },
+                  username: { type: 'string', description: 'Local username for direct mobile login.' },
+                  password: { type: 'string', description: 'Local password for direct mobile login.' },
+                  bootstrapToken: { type: 'string', description: 'One-time bootstrap token to redeem instead of sending credentials.' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: 'Opaque mobile session created successfully.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ok: { type: 'boolean' },
+                    data: {
+                      type: 'object',
+                      properties: {
+                        session: {
+                          type: 'object',
+                          required: ['kind', 'token'],
+                          properties: {
+                            kind: { type: 'string', enum: ['local-mobile-session-v1'] },
+                            token: { type: 'string', description: 'Opaque bearer token stored by the mobile app.' },
+                          },
+                        },
+                        status: mobileSessionStatusSchema,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Invalid payload or missing required fields.' },
+          401: { description: 'Invalid credentials or bootstrap token.' },
+          403: { description: 'Bootstrap token or session is not valid for the requested workspace.' },
+        },
+      },
+      get: {
+        tags: ['Mobile'],
+        summary: 'Validate a stored mobile session',
+        description: 'Validates a previously issued opaque mobile bearer token for cold-start and resume gating. Shared automation tokens and browser cookie sessions are not accepted here.',
+        parameters: [
+          {
+            name: 'workspaceOrigin',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Workspace origin expected by the mobile cache namespace.',
+          },
+        ],
+        responses: {
+          200: {
+            description: 'Mobile session is valid for the requested workspace.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ok: { type: 'boolean' },
+                    data: mobileSessionStatusSchema,
+                  },
+                },
+              },
+            },
+          },
+          400: { description: 'Missing or invalid workspaceOrigin query parameter.' },
+          401: { description: 'Opaque mobile bearer token is missing, invalid, or expired.' },
+          403: { description: 'Session belongs to a different workspace namespace.' },
+        },
+      },
+      delete: {
+        tags: ['Mobile'],
+        summary: 'Revoke a stored mobile session',
+        description: 'Revokes the current opaque mobile bearer token for mobile logout. Shared automation tokens and browser cookie sessions are not accepted here.',
+        responses: {
+          200: {
+            description: 'Mobile session revoked successfully.',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    ok: { type: 'boolean' },
+                  },
+                },
+              },
+            },
+          },
+          401: { description: 'Opaque mobile bearer token is missing, invalid, or expired.' },
+        },
+      },
+    },
+  },
+}
+
 export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistrationOptions): StandaloneHttpPlugin {
   const authCapabilities = resolveAuthCapabilities(options)
   const localAuthEnabled = isLocalAuthEnabled(options)
@@ -316,6 +462,9 @@ export function createStandaloneHttpPlugin(options: StandaloneHttpPluginRegistra
 
   return {
     manifest: { id: 'kl-plugin-auth-standalone', provides: ['standalone.http'] },
+    getOpenApiDocs(): readonly StandaloneOpenApiDocFragment[] {
+      return localAuthEnabled ? [LOCAL_AUTH_MOBILE_SESSION_API_DOCS] : []
+    },
     registerMiddleware(): readonly StandaloneHttpHandler[] {
       if (!localAuthEnabled) return []
       return [

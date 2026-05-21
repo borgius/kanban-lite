@@ -60,6 +60,152 @@ await sdk.deleteCard(card.id)
 ---
 
 
+## Remote SDK
+
+<a name="RemoteKanbanSDK"></a>
+
+### RemoteKanbanSDK
+SDK client that transparently proxies all operations to a remote
+kanban-lite REST API. Use this instead of `KanbanSDK` when you want to
+connect to a running kanban-lite server from a remote client (browser, CI,
+agent) without any local filesystem access.
+
+**Kind**: global class  
+
+* [RemoteKanbanSDK](#RemoteKanbanSDK)
+    * [new RemoteKanbanSDK()](#new_RemoteKanbanSDK_new)
+    * [.kanbanDir](#RemoteKanbanSDK+kanbanDir)
+    * [.workspaceRoot](#RemoteKanbanSDK+workspaceRoot)
+    * [.init()](#RemoteKanbanSDK+init)
+    * [.listBoardsAsync()](#RemoteKanbanSDK+listBoardsAsync)
+    * ~~[.listBoards()](#RemoteKanbanSDK+listBoards)~~
+    * [.getLocalCardPath()](#RemoteKanbanSDK+getLocalCardPath)
+    * [.getAttachmentStoragePath()](#RemoteKanbanSDK+getAttachmentStoragePath)
+    * [.materializeAttachment()](#RemoteKanbanSDK+materializeAttachment)
+
+
+* * *
+
+<a name="new_RemoteKanbanSDK_new"></a>
+
+#### new RemoteKanbanSDK()
+**Example**  
+```typescript
+import { RemoteKanbanSDK } from "kanban-lite/sdk"
+
+const sdk = new RemoteKanbanSDK({
+  remoteUrl: "http://localhost:3000",
+  token: "my-bearer-token",
+})
+
+await sdk.init()
+const cards = await sdk.listCards()
+const card = await sdk.createCard({ content: "# New task" })
+```
+
+* * *
+
+<a name="RemoteKanbanSDK+kanbanDir"></a>
+
+#### remoteKanbanSDK.kanbanDir
+Empty sentinel — no local filesystem in remote mode.
+
+**Kind**: instance property of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+workspaceRoot"></a>
+
+#### remoteKanbanSDK.workspaceRoot
+Empty sentinel — no local filesystem in remote mode.
+
+**Kind**: instance property of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+init"></a>
+
+#### remoteKanbanSDK.init()
+Validate connectivity by hitting the health endpoint.
+
+**Kind**: instance method of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+listBoardsAsync"></a>
+
+#### remoteKanbanSDK.listBoardsAsync()
+List boards asynchronously.
+
+Note: The local `KanbanSDK.listBoards()` is synchronous. Use this async
+variant when working in remote mode.
+
+**Kind**: instance method of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+listBoards"></a>
+
+#### ~~remoteKanbanSDK.listBoards()~~
+***Remote mode does not support a synchronous `listBoards()`.
+Use `listBoardsAsync()` instead.***
+
+**Kind**: instance method of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+getLocalCardPath"></a>
+
+#### remoteKanbanSDK.getLocalCardPath()
+Always returns `null` — no local filesystem paths in remote mode.
+
+**Kind**: instance method of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+getAttachmentStoragePath"></a>
+
+#### remoteKanbanSDK.getAttachmentStoragePath()
+Always returns `null` — no local filesystem paths in remote mode.
+
+**Kind**: instance method of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="RemoteKanbanSDK+materializeAttachment"></a>
+
+#### remoteKanbanSDK.materializeAttachment()
+Always returns `null` — no local filesystem paths in remote mode.
+
+**Kind**: instance method of [<code>RemoteKanbanSDK</code>](#RemoteKanbanSDK)  
+
+* * *
+
+<a name="buildStandaloneApiUrl"></a>
+
+### buildStandaloneApiUrl()
+Build a fully qualified standalone API URL from an OpenAPI path template,
+typed path parameters, and typed query parameters.
+
+**Kind**: global function  
+
+* * *
+
+<a name="createStandaloneApiClient"></a>
+
+### createStandaloneApiClient()
+Create a typed fetch wrapper for the standalone HTTP API.
+
+The returned client validates path/method/body/query combinations against
+the generated OpenAPI contract at compile time, automatically attaches the
+optional bearer token, and unwraps Kanban Lite's `{ ok, data, error }`
+response envelopes for successful JSON requests.
+
+**Kind**: global function  
+
+* * *
+
+
 ## Parser
 
 <a name="parseCardFile"></a>

@@ -18,6 +18,24 @@ import type {
   KanbanFormSubmitResult,
   KanbanLogEntry,
 } from './types'
+import { createStandaloneApiClient } from 'kanban-lite/sdk'
+import type { StandaloneApiPath } from 'kanban-lite/sdk'
+
+const ADAPTER_API_PATHS = {
+  boards: '/api/boards',
+  board: '/api/boards/{boardId}',
+  boardColumns: '/api/boards/{boardId}/columns',
+  boardTasks: '/api/boards/{boardId}/tasks',
+  boardTask: '/api/boards/{boardId}/tasks/{id}',
+  boardTaskMove: '/api/boards/{boardId}/tasks/{id}/move',
+  boardTaskFormSubmit: '/api/boards/{boardId}/tasks/{id}/forms/{formId}/submit',
+  boardTaskAction: '/api/boards/{boardId}/tasks/{id}/actions/{action}',
+  boardActions: '/api/boards/{boardId}/actions',
+  taskLogs: '/api/tasks/{id}/logs',
+  taskComments: '/api/tasks/{id}/comments',
+  taskComment: '/api/tasks/{id}/comments/{commentId}',
+  taskCommentStream: '/api/tasks/{id}/comments/stream',
+} as const satisfies Record<string, StandaloneApiPath>
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -90,53 +108,46 @@ export class KanbanClient {
   readonly baseUrl: string
   readonly boardId: string
   private readonly apiToken: string | undefined
+  private readonly apiClient: ReturnType<typeof createStandaloneApiClient>
 
   constructor(config: KanbanClientConfig = {}) {
     this.baseUrl = (config.baseUrl ?? 'http://localhost:3000').replace(/\/+$/, '')
     this.boardId = config.boardId ?? 'default'
     this.apiToken = config.apiToken
+    this.apiClient = createStandaloneApiClient({
+      baseUrl: this.baseUrl,
+      token: this.apiToken,
+    })
   }
 
   // -------------------------------------------------------------------------
   // Internal HTTP helpers
   // -------------------------------------------------------------------------
 
-  private getHeaders(): Record<string, string> {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (this.apiToken) {
-      headers['Authorization'] = `Bearer ${this.apiToken}`
-    }
-    return headers
+  private async apiFetch<T>(
+    method: 'get' | 'put' | 'post' | 'delete' | 'patch',
+    path: StandaloneApiPath,
+    options?: {
+      path?: Record<string, string | number>
+      query?: Record<string, boolean | number | string | undefined>
+      body?: unknown
+      contentType?: 'application/json' | 'text/plain'
+    },
+  ): Promise<T> {
+    return await this.apiClient.request(method as never, path as never, options as never) as T
   }
 
-  private async apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-    const url = `${this.baseUrl}${path}`
-    const res = await fetch(url, {
-      ...init,
-      headers: { ...this.getHeaders(), ...(init?.headers ?? {}) },
-    })
-    const contentType = res.headers.get('content-type') ?? ''
-    const json = contentType.includes('application/json')
-      ? ((await res.json()) as ApiEnvelope<T>)
-      : null
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error ?? `kanban-lite API error ${res.status} – ${url}`)
-    }
-    return json.data
-  }
-
-  private async apiNoContent(path: string, init?: RequestInit): Promise<void> {
-    const url = `${this.baseUrl}${path}`
-    const res = await fetch(url, {
-      ...init,
-      headers: { ...this.getHeaders(), ...(init?.headers ?? {}) },
-    })
-    if (res.ok) return
-    const contentType = res.headers.get('content-type') ?? ''
-    const json = contentType.includes('application/json')
-      ? ((await res.json()) as ApiEnvelope<unknown>)
-      : null
-    throw new Error(json?.error ?? `kanban-lite API error ${res.status} – ${url}`)
+  private async apiNoContent(
+    method: 'get' | 'put' | 'post' | 'delete' | 'patch',
+    path: StandaloneApiPath,
+    options?: {
+      path?: Record<string, string | number>
+      query?: Record<string, boolean | number | string | undefined>
+      body?: unknown
+      contentType?: 'application/json' | 'text/plain'
+    },
+  ): Promise<void> {
+    await this.apiClient.request(method as never, path as never, options as never)
   }
 
   // -------------------------------------------------------------------------
@@ -145,21 +156,23 @@ export class KanbanClient {
 
   /** List all boards configured on the kanban-lite server. */
   async listBoards(): Promise<KanbanBoardInfo[]> {
-    return this.apiFetch<KanbanBoardInfo[]>('/api/boards')
+    return this.apiFetch<KanbanBoardInfo[]>('get', ADAPTER_API_PATHS.boards)
   }
 
   /** Get board configuration for a specific board. */
   async getBoard(boardId?: string): Promise<KanbanBoardInfo> {
     const id = boardId ?? this.boardId
-    return this.apiFetch<KanbanBoardInfo>(`/api/boards/${encodeURIComponent(id)}`)
+    return this.apiFetch<KanbanBoardInfo>('get', ADAPTER_API_PATHS.board, {
+      path: { boardId: id },
+    })
   }
 
   /** List columns for a board. */
   async listColumns(boardId?: string): Promise<KanbanColumn[]> {
     const id = boardId ?? this.boardId
-    return this.apiFetch<KanbanColumn[]>(
-      `/api/boards/${encodeURIComponent(id)}/columns`,
-    )
+    return this.apiFetch<KanbanColumn[]>('get', ADAPTER_API_PATHS.boardColumns, {
+      path: { boardId: id },
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -179,11 +192,9 @@ export class KanbanClient {
     options: CreateCardOptions = {},
   ): Promise<KanbanCard> {
     const content = description ? `# ${title}\n\n${description}` : `# ${title}`
-    const card = await this.apiFetch<KanbanCard>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
+    const card = await this.apiFetch<KanbanCard>('post', ADAPTER_API_PATHS.boardTasks, {
+      path: { boardId: this.boardId },
+      body: {
           content,
           priority,
           ...(options.assignee !== undefined ? { assignee: options.assignee } : {}),
@@ -194,26 +205,25 @@ export class KanbanClient {
           ...(options.actions ? { actions: options.actions } : {}),
           ...(options.forms ? { forms: options.forms } : {}),
           ...(options.formData ? { formData: options.formData } : {}),
-        }),
       },
-    )
+    })
     return normalizeCard(card)
   }
 
   /** List cards from the kanban board, optionally filtered by status column. */
   async listCards(status?: string): Promise<KanbanCard[]> {
-    const qs = status ? `?status=${encodeURIComponent(status)}` : ''
-    const cards = await this.apiFetch<KanbanCard[]>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks${qs}`,
-    )
+    const cards = await this.apiFetch<KanbanCard[]>('get', ADAPTER_API_PATHS.boardTasks, {
+      path: { boardId: this.boardId },
+      query: status ? { status } : undefined,
+    })
     return cards.map((c) => normalizeCard(c))
   }
 
   /** Fetch one card with full metadata, attached forms/actions, and comments. */
   async getCard(cardId: string): Promise<KanbanCard> {
-    const card = await this.apiFetch<KanbanCard>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}`,
-    )
+    const card = await this.apiFetch<KanbanCard>('get', ADAPTER_API_PATHS.boardTask, {
+      path: { boardId: this.boardId, id: cardId },
+    })
     return normalizeCard(card)
   }
 
@@ -226,34 +236,27 @@ export class KanbanClient {
     cardId: string,
     updates: Partial<Pick<KanbanCard, 'content' | 'priority' | 'assignee' | 'dueDate' | 'labels' | 'metadata' | 'actions' | 'forms' | 'formData'>>,
   ): Promise<KanbanCard> {
-    const card = await this.apiFetch<KanbanCard>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify(updates),
-      },
-    )
+    const card = await this.apiFetch<KanbanCard>('put', ADAPTER_API_PATHS.boardTask, {
+      path: { boardId: this.boardId, id: cardId },
+      body: updates,
+    })
     return normalizeCard(card)
   }
 
   /** Move a card to a different status column. Supports partial card ID. */
   async moveCard(cardId: string, status: string): Promise<KanbanCard> {
-    const card = await this.apiFetch<KanbanCard>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}/move`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({ status }),
-      },
-    )
+    const card = await this.apiFetch<KanbanCard>('patch', ADAPTER_API_PATHS.boardTaskMove, {
+      path: { boardId: this.boardId, id: cardId },
+      body: { status },
+    })
     return normalizeCard(card)
   }
 
   /** Soft-delete a card (moves it to the deleted column). */
   async deleteCard(cardId: string): Promise<void> {
-    await this.apiNoContent(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}`,
-      { method: 'DELETE' },
-    )
+    await this.apiNoContent('delete', ADAPTER_API_PATHS.boardTask, {
+      path: { boardId: this.boardId, id: cardId },
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -262,9 +265,9 @@ export class KanbanClient {
 
   /** List comments attached to a card. */
   async listComments(cardId: string): Promise<KanbanComment[]> {
-    return this.apiFetch<KanbanComment[]>(
-      `/api/tasks/${encodeURIComponent(cardId)}/comments`,
-    )
+    return this.apiFetch<KanbanComment[]>('get', ADAPTER_API_PATHS.taskComments, {
+      path: { id: cardId },
+    })
   }
 
   /** Add a markdown comment to a card. */
@@ -273,13 +276,10 @@ export class KanbanClient {
     author: string,
     content: string,
   ): Promise<KanbanComment> {
-    return this.apiFetch<KanbanComment>(
-      `/api/tasks/${encodeURIComponent(cardId)}/comments`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ author, content }),
-      },
-    )
+    return this.apiFetch<KanbanComment>('post', ADAPTER_API_PATHS.taskComments, {
+      path: { id: cardId },
+      body: { author, content },
+    })
   }
 
   /** Update an existing comment. */
@@ -288,21 +288,17 @@ export class KanbanClient {
     commentId: string,
     content: string,
   ): Promise<KanbanComment> {
-    return this.apiFetch<KanbanComment>(
-      `/api/tasks/${encodeURIComponent(cardId)}/comments/${encodeURIComponent(commentId)}`,
-      {
-        method: 'PUT',
-        body: JSON.stringify({ content }),
-      },
-    )
+    return this.apiFetch<KanbanComment>('put', ADAPTER_API_PATHS.taskComment, {
+      path: { id: cardId, commentId },
+      body: { content },
+    })
   }
 
   /** Delete a comment from a card. */
   async deleteComment(cardId: string, commentId: string): Promise<void> {
-    await this.apiNoContent(
-      `/api/tasks/${encodeURIComponent(cardId)}/comments/${encodeURIComponent(commentId)}`,
-      { method: 'DELETE' },
-    )
+    await this.apiNoContent('delete', ADAPTER_API_PATHS.taskComment, {
+      path: { id: cardId, commentId },
+    })
   }
 
   /**
@@ -318,24 +314,12 @@ export class KanbanClient {
     author: string,
     content: string,
   ): Promise<KanbanComment> {
-    const url = `${this.baseUrl}/api/tasks/${encodeURIComponent(cardId)}/comments/stream?author=${encodeURIComponent(author)}`
-    const headers: Record<string, string> = { 'Content-Type': 'text/plain' }
-    if (this.apiToken) {
-      headers['Authorization'] = `Bearer ${this.apiToken}`
-    }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
+    return this.apiFetch<KanbanComment>('post', ADAPTER_API_PATHS.taskCommentStream, {
+      path: { id: cardId },
+      query: { author },
       body: content,
+      contentType: 'text/plain',
     })
-    const contentType = res.headers.get('content-type') ?? ''
-    const json = contentType.includes('application/json')
-      ? ((await res.json()) as ApiEnvelope<KanbanComment>)
-      : null
-    if (!res.ok || !json?.ok) {
-      throw new Error(json?.error ?? `kanban-lite stream comment error ${res.status}`)
-    }
-    return json.data
   }
 
   // -------------------------------------------------------------------------
@@ -348,13 +332,10 @@ export class KanbanClient {
     formId: string,
     data: Record<string, unknown>,
   ): Promise<KanbanFormSubmitResult> {
-    const result = await this.apiFetch<KanbanFormSubmitResult>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}/forms/${encodeURIComponent(formId)}/submit`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ data }),
-      },
-    )
+    const result = await this.apiFetch<KanbanFormSubmitResult>('post', ADAPTER_API_PATHS.boardTaskFormSubmit, {
+      path: { boardId: this.boardId, id: cardId, formId },
+      body: { data },
+    })
     return { ...result, card: normalizeCard(result.card) }
   }
 
@@ -364,18 +345,17 @@ export class KanbanClient {
 
   /** Trigger a card-level action webhook. */
   async triggerCardAction(cardId: string, action: string): Promise<void> {
-    await this.apiNoContent(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}/actions/${encodeURIComponent(action)}`,
-      { method: 'POST' },
-    )
+    await this.apiNoContent('post', ADAPTER_API_PATHS.boardTaskAction, {
+      path: { boardId: this.boardId, id: cardId, action },
+    })
   }
 
   /** Get board-level actions. */
   async getBoardActions(boardId?: string): Promise<Record<string, string>> {
     const id = boardId ?? this.boardId
-    return this.apiFetch<Record<string, string>>(
-      `/api/boards/${encodeURIComponent(id)}/actions`,
-    )
+    return this.apiFetch<Record<string, string>>('get', ADAPTER_API_PATHS.boardActions, {
+      path: { boardId: id },
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -384,8 +364,8 @@ export class KanbanClient {
 
   /** List log entries for a card. */
   async listCardLogs(cardId: string): Promise<KanbanLogEntry[]> {
-    return this.apiFetch<KanbanLogEntry[]>(
-      `/api/boards/${encodeURIComponent(this.boardId)}/tasks/${encodeURIComponent(cardId)}/logs`,
-    )
+    return this.apiFetch<KanbanLogEntry[]>('get', ADAPTER_API_PATHS.taskLogs, {
+      path: { id: cardId },
+    })
   }
 }

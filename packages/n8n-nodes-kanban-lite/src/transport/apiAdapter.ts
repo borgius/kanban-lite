@@ -22,8 +22,8 @@ import type {
 } from './types'
 import { KanbanTransportError } from './types'
 import {
-  DEFAULT_EVENT_CAPABILITIES,
   buildApiHeaders,
+  DEFAULT_EVENT_CAPABILITIES,
   normalizeResult,
   resolveApiRoute,
   throwApiError,
@@ -54,6 +54,17 @@ export interface ApiTransportOptions {
    * Defaults to the global `fetch` when not provided.
    */
   fetchFn?: FetchFn
+}
+
+function unwrapApiPayload(payload: unknown): unknown {
+  if (payload && typeof payload === 'object' && 'ok' in payload) {
+    const envelope = payload as { ok?: boolean; data?: unknown; error?: string }
+    if (envelope.ok === true) {
+      return envelope.data ?? null
+    }
+  }
+
+  return payload
 }
 
 /**
@@ -139,7 +150,8 @@ export class ApiTransport implements KanbanLiteTransport {
       throwApiError(response.status, text)
     }
 
-    const webhookData = (await response.json()) as Record<string, unknown>
+    const webhookPayload = unwrapApiPayload(await response.json())
+    const webhookData = (webhookPayload ?? {}) as Record<string, unknown>
     const webhookId = typeof webhookData['id'] === 'string' ? webhookData['id'] : String(Date.now())
 
     let disposed = false
@@ -215,7 +227,7 @@ export class ApiTransport implements KanbanLiteTransport {
       const text = await response.text()
       if (text) {
         try {
-          data = JSON.parse(text)
+          data = unwrapApiPayload(JSON.parse(text))
         } catch {
           data = text
         }

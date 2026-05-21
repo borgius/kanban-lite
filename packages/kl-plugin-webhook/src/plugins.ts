@@ -10,6 +10,7 @@ import type {
   McpToolResult,
   SDKEventListenerPlugin,
   SDKExtensionPlugin,
+  StandaloneOpenApiDocFragment,
   StandaloneHttpHandler,
   StandaloneHttpPlugin,
   Webhook,
@@ -395,6 +396,136 @@ function authErrMessage(err: unknown): string {
   return (err instanceof Error ? err.message : String(err)) || 'Unauthorized'
 }
 
+const WEBHOOK_STANDALONE_API_DOCS: StandaloneOpenApiDocFragment = {
+  tags: [
+    {
+      name: 'Webhooks',
+      description: 'Webhook registration endpoints owned by the active standalone webhook plugin.',
+    },
+  ],
+  paths: {
+    '/api/webhooks': {
+      get: {
+        tags: ['Webhooks'],
+        summary: 'List webhooks',
+        description: 'Returns all registered webhooks. Runtime ownership stays on the active standalone webhook plugin, which preserves this public path.',
+        responses: { 200: { description: 'Webhook list.' }, 401: { description: 'Authentication required.' }, 403: { description: 'Forbidden.' } },
+      },
+      post: {
+        tags: ['Webhooks'],
+        summary: 'Create webhook',
+        description: 'Registers a new webhook endpoint through the active standalone webhook plugin.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['url', 'events'],
+                properties: {
+                  url: { type: 'string', description: 'Target HTTP(S) URL.' },
+                  events: { type: 'array', items: { type: 'string' }, description: 'Subscribed event names, or `["*"]` for all events.' },
+                  secret: { type: 'string', description: 'Optional HMAC signing secret.' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Webhook created.' },
+          400: { description: 'Validation error.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Forbidden.' },
+        },
+      },
+    },
+    '/api/webhooks/{id}': {
+      put: {
+        tags: ['Webhooks'],
+        summary: 'Update webhook',
+        description: 'Updates an existing webhook by id through the active standalone webhook plugin.',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Webhook identifier.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  url: { type: 'string', description: 'Updated HTTP(S) URL.' },
+                  events: { type: 'array', items: { type: 'string' }, description: 'Updated event filter list.' },
+                  secret: { type: 'string', description: 'Updated HMAC signing secret.' },
+                  active: { type: 'boolean', description: 'Whether the webhook is active.' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Webhook updated.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Forbidden.' },
+          404: { description: 'Webhook not found.' },
+        },
+      },
+      delete: {
+        tags: ['Webhooks'],
+        summary: 'Delete webhook',
+        description: 'Deletes a webhook by id through the active standalone webhook plugin.',
+        parameters: [
+          {
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Webhook identifier.',
+          },
+        ],
+        responses: {
+          200: { description: 'Webhook deleted.' },
+          401: { description: 'Authentication required.' },
+          403: { description: 'Forbidden.' },
+          404: { description: 'Webhook not found.' },
+        },
+      },
+    },
+    '/api/webhooks/test': {
+      post: {
+        tags: ['Webhooks'],
+        summary: 'Receive a webhook test payload',
+        description: 'Receives an arbitrary webhook payload and writes it to the board log so operators can verify delivery end to end without an external receiver.',
+        requestBody: {
+          required: false,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  event: { type: 'string', description: 'Event name to log for the test payload.' },
+                  timestamp: { type: 'string', description: 'Optional event timestamp to preserve in the board log entry.' },
+                },
+                additionalProperties: true,
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Webhook test payload received.' },
+          500: { description: 'Unable to persist the webhook test payload to the board log.' },
+        },
+      },
+    },
+  },
+}
+
 const handleGetWebhooks: StandaloneHttpHandler = async (ctx) => {
   if (!ctx.route('GET', '/api/webhooks')) return false
   const auth = pluginExtractAuth(ctx.req)
@@ -560,6 +691,9 @@ export const standaloneHttpPlugin: StandaloneHttpPlugin = {
   manifest: {
     id: 'webhooks',
     provides: ['standalone.http'] as const
+  },
+  getOpenApiDocs(): readonly StandaloneOpenApiDocFragment[] {
+    return [WEBHOOK_STANDALONE_API_DOCS]
   },
   registerRoutes(): readonly StandaloneHttpHandler[] {
     return [

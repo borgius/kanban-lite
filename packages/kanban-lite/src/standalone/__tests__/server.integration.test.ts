@@ -168,6 +168,35 @@ function waitForMessage(ws: WebSocket, expectedType: string, timeout = 5000): Pr
   })
 }
 
+function waitForMessageMatching(
+  ws: WebSocket,
+  expectedType: string,
+  predicate: (parsed: Record<string, unknown>) => boolean,
+  timeout = 5000,
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off('message', handler)
+      reject(new Error(`Timeout waiting for ${expectedType}`))
+    }, timeout)
+
+    const handler = (data: Buffer | string) => {
+      try {
+        const parsed = JSON.parse(data.toString())
+        if (parsed.type === expectedType && predicate(parsed)) {
+          clearTimeout(timer)
+          ws.off('message', handler)
+          resolve(parsed)
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    ws.on('message', handler)
+  })
+}
+
 function expectNoMessageOfTypes(
   ws: WebSocket,
   forbiddenTypes: string | string[],
@@ -262,6 +291,133 @@ function getPort(): Promise<number> {
       srv.close(() => resolve(port))
     })
   })
+}
+
+async function waitForServerReady(port: number, timeout = 5000): Promise<void> {
+  const started = Date.now()
+  let lastError: unknown
+
+  while (Date.now() - started < timeout) {
+    try {
+      await httpGet(`http://localhost:${port}/api/health`)
+      return
+    } catch (error) {
+      lastError = error
+      await sleep(25)
+    }
+  }
+
+  throw new Error(
+    `Timed out waiting for standalone server on port ${port}: ${lastError instanceof Error ? lastError.message : String(lastError)}`,
+  )
+}
+
+async function waitForListeningPort(server: http.Server, timeout = 5000): Promise<number> {
+  const existingAddress = server.address()
+  if (existingAddress && typeof existingAddress === 'object') {
+    return existingAddress.port
+  }
+
+  return await new Promise<number>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup()
+      reject(new Error('Timed out waiting for standalone server to start listening'))
+    }, timeout)
+
+    const handleListening = () => {
+      const address = server.address()
+      cleanup()
+      if (!address || typeof address !== 'object') {
+        reject(new Error('Standalone server did not expose a bound port'))
+        return
+      }
+      resolve(address.port)
+    }
+
+    const handleError = (error: Error) => {
+      cleanup()
+      reject(error)
+    }
+
+    const cleanup = () => {
+      clearTimeout(timer)
+      server.off('listening', handleListening)
+      server.off('error', handleError)
+    }
+
+    server.on('listening', handleListening)
+    server.on('error', handleError)
+  })
+}
+
+async function startStandaloneTestServer(
+  kanbanDir: string,
+  webviewDir: string,
+  resolvedConfigPath?: string,
+): Promise<{ server: http.Server; port: number }> {
+  const server = startServer(kanbanDir, 0, webviewDir, resolvedConfigPath)
+  const port = await waitForListeningPort(server)
+  await waitForServerReady(port)
+  return { server, port }
+}
+
+async function closeWebSocketConnection(socket: WebSocket | undefined, timeout = 250): Promise<void> {
+  if (!socket) return
+  if (socket.readyState === WebSocket.CLOSED) return
+
+  await new Promise<void>((resolve) => {
+    let settled = false
+    const finalize = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      socket.off('close', finalize)
+      socket.off('error', finalize)
+      resolve()
+    }
+
+    const timer = setTimeout(finalize, timeout)
+    socket.on('close', finalize)
+    socket.on('error', finalize)
+
+    try {
+      if (socket.readyState === WebSocket.OPEN) socket.close()
+      else if (socket.readyState !== WebSocket.CLOSING) finalize()
+    } catch {
+      finalize()
+    }
+  })
+}
+
+async function applyWatchedChangeAndWaitForInit(
+  ws: WebSocket,
+  mutate: (attempt: number) => void,
+  predicate: (parsed: Record<string, unknown>) => boolean,
+  timeoutMs = 5000,
+  attemptWindowMs = 500,
+): Promise<Record<string, unknown>> {
+  const started = Date.now()
+  let attempt = 0
+  let lastError: unknown
+
+  while (Date.now() - started < timeoutMs) {
+    attempt += 1
+    const remainingMs = timeoutMs - (Date.now() - started)
+    const windowMs = Math.max(100, Math.min(attemptWindowMs, remainingMs))
+    const responsePromise = waitForMessageMatching(ws, 'init', predicate, windowMs)
+
+    mutate(attempt)
+
+    try {
+      return await responsePromise
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Timed out waiting for watched file change broadcast')
 }
 
 // Helper: wait a bit
@@ -674,7 +830,7 @@ describe('Standalone Server Integration', () => {
     webviewDir = createTempWebviewDir()
     port = await getPort()
     server = startServer(tempDir, port, webviewDir)
-    await sleep(200)
+    await waitForServerReady(port)
   })
 
   afterAll(async () => {
@@ -702,10 +858,8 @@ describe('Standalone Server Integration', () => {
 
   afterEach(async () => {
     vi.restoreAllMocks()
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.close()
-      await sleep(50)
-    }
+    await closeWebSocketConnection(ws)
+    ws = undefined as unknown as WebSocket
   })
 
   // ── HTTP Tests ──
@@ -719,7 +873,7 @@ describe('Standalone Server Integration', () => {
 
       const localPort = await getPort()
       const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
-      await sleep(200)
+      await waitForServerReady(localPort)
       try {
         expect(logSpy).toHaveBeenCalledWith(`Kanban config: ${resolvedConfigPath}`)
       } finally {
@@ -785,7 +939,7 @@ describe('Standalone Server Integration', () => {
 
       const localPort = await getPort()
       const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
-      await sleep(200)
+      await waitForServerReady(localPort)
 
       try {
         const res = await httpGet(`http://localhost:${localPort}/api/plugin-sdk-context`)
@@ -826,7 +980,7 @@ describe('Standalone Server Integration', () => {
 
       const localPort = await getPort()
       const localServer = startServerWithMocks(tempDir, localPort, webviewDir)
-      await sleep(200)
+      await waitForServerReady(localPort)
       try {
         // Hono's @hono/swagger-ui renders a self-contained HTML page that loads
         // assets from a CDN, so the server must still come up and serve the UI
@@ -970,8 +1124,7 @@ describe('Standalone Server Integration', () => {
       const firstResponse = await sendAndReceive(firstSocket, { type: 'ready' }, 'init')
       expect(firstResponse.type).toBe('init')
 
-      firstSocket.close()
-      await sleep(50)
+      await closeWebSocketConnection(firstSocket)
 
       const secondSocket = await connectWs(port)
       ws = secondSocket
@@ -1068,7 +1221,7 @@ describe('Standalone Server Integration', () => {
 
       const localPort = await getPort()
       const localServer = startServer(tempDir, localPort, webviewDir, resolvedConfigPath)
-      await sleep(200)
+      await waitForServerReady(localPort)
 
       try {
         const createRes = await httpRequest('POST', `http://localhost:${localPort}/api/tasks`, {
@@ -1155,9 +1308,10 @@ describe('Standalone Server Integration', () => {
             open: null,
           })
         } finally {
-          wsAlice.close()
-          wsBob.close()
-          await sleep(50)
+          await Promise.all([
+            closeWebSocketConnection(wsAlice),
+            closeWebSocketConnection(wsBob),
+          ])
         }
       } finally {
         await new Promise<void>((resolve) => localServer.close(() => resolve()))
@@ -1916,81 +2070,148 @@ describe('Standalone Server Integration', () => {
 
   describe('file watcher', () => {
     it('should broadcast updates when a file is created externally', async () => {
-      ws = await connectWs(port)
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      let localWs: WebSocket | undefined
+      const { server: localServer, port: localPort } = await startStandaloneTestServer(
+        isolated.kanbanDir,
+        isolated.webviewDir,
+      )
 
-      await sendAndReceive(ws, { type: 'ready' }, 'init')
+      try {
+        localWs = await connectWs(localPort)
+        await sendAndReceive(localWs, { type: 'ready' }, 'init')
 
-      // Let chokidar fully initialize before making external changes
-      await sleep(2000)
+        const response = await applyWatchedChangeAndWaitForInit(
+          localWs,
+          (attempt) => {
+            writeCardFile(isolated.kanbanDir, 'external-card.md', makeCardContent({
+              id: 'external-card',
+              status: 'todo',
+              title: `External Card ${attempt}`
+            }), 'todo')
+          },
+          (parsed) => {
+            const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+            return Array.isArray(cards) && cards.some((card) => card.id === 'external-card')
+          },
+          5000,
+          500,
+        )
 
-      // Listen for the next init broadcast
-      const updatePromise = waitForMessage(ws, 'init', 15000)
-
-      writeCardFile(tempDir, 'external-card.md', makeCardContent({
-        id: 'external-card',
-        status: 'todo',
-        title: 'External Card'
-      }), 'todo')
-
-      const response = await updatePromise
-      const cards = response.cards as Array<Record<string, unknown>>
-      const external = cards.find(f => f.id === 'external-card')
-      expect(external).toBeDefined()
-      expect(external!.status).toBe('todo')
+        const cards = response.cards as Array<Record<string, unknown>>
+        const external = cards.find(f => f.id === 'external-card')
+        expect(external).toBeDefined()
+        expect(external!.status).toBe('todo')
+      } finally {
+        await closeWebSocketConnection(localWs)
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        isolated.cleanup()
+      }
     })
 
     it('should broadcast updates when a file is modified externally', async () => {
-      const filePath = writeCardFile(tempDir, 'modify-me.md', makeCardContent({
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const filePath = writeCardFile(isolated.kanbanDir, 'modify-me.md', makeCardContent({
         id: 'modify-me',
         status: 'backlog',
         priority: 'low',
         title: 'Modify Me'
       }), 'backlog')
+      let localWs: WebSocket | undefined
+      const { server: localServer, port: localPort } = await startStandaloneTestServer(
+        isolated.kanbanDir,
+        isolated.webviewDir,
+      )
 
-      ws = await connectWs(port)
+      try {
+        localWs = await connectWs(localPort)
+        await sendAndReceive(localWs, { type: 'ready' }, 'init')
 
-      await sendAndReceive(ws, { type: 'ready' }, 'init')
+        const response = await applyWatchedChangeAndWaitForInit(
+          localWs,
+          () => {
+            fs.writeFileSync(filePath, makeCardContent({
+              id: 'modify-me',
+              status: 'backlog',
+              priority: 'critical',
+              title: 'Modified Card'
+            }), 'utf-8')
+          },
+          (parsed) => {
+            const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+            return Array.isArray(cards)
+              && cards.some((card) => card.id === 'modify-me' && card.priority === 'critical')
+          },
+          5000,
+          500,
+        )
 
-      // Let chokidar fully initialize
-      await sleep(2000)
-
-      const updatePromise = waitForMessage(ws, 'init', 15000)
-
-      fs.writeFileSync(filePath, makeCardContent({
-        id: 'modify-me',
-        status: 'backlog',
-        priority: 'critical',
-        title: 'Modified Card'
-      }), 'utf-8')
-
-      const response = await updatePromise
-      const cards = response.cards as Array<Record<string, unknown>>
-      const modified = cards.find(f => f.id === 'modify-me')
-      expect(modified).toBeDefined()
-      expect(modified!.priority).toBe('critical')
+        const cards = response.cards as Array<Record<string, unknown>>
+        const modified = cards.find(f => f.id === 'modify-me')
+        expect(modified).toBeDefined()
+        expect(modified!.priority).toBe('critical')
+      } finally {
+        await closeWebSocketConnection(localWs)
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        isolated.cleanup()
+      }
     })
 
     it('should broadcast updates when a file is deleted externally', async () => {
-      const filePath = writeCardFile(tempDir, 'vanish-me.md', makeCardContent({
+      const isolated = createIsolatedStandaloneTestWorkspace()
+      const filePath = writeCardFile(isolated.kanbanDir, 'vanish-me.md', makeCardContent({
         id: 'vanish-me',
         title: 'Vanish Me'
       }), 'backlog')
+      let localWs: WebSocket | undefined
+      const { server: localServer, port: localPort } = await startStandaloneTestServer(
+        isolated.kanbanDir,
+        isolated.webviewDir,
+      )
 
-      ws = await connectWs(port)
+      try {
+        localWs = await connectWs(localPort)
 
-      const initResponse = await sendAndReceive(ws, { type: 'ready' }, 'init')
-      expect((initResponse.cards as Array<unknown>).length).toBe(1)
+        const initResponse = await sendAndReceive(localWs, { type: 'ready' }, 'init')
+        expect((initResponse.cards as Array<unknown>).length).toBe(1)
 
-      // Let chokidar fully initialize
-      await sleep(2000)
+        await applyWatchedChangeAndWaitForInit(
+          localWs,
+          (attempt) => {
+            fs.writeFileSync(filePath, makeCardContent({
+              id: 'vanish-me',
+              title: `Vanish Me ${attempt}`
+            }), 'utf-8')
+          },
+          (parsed) => {
+            const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+            return Array.isArray(cards) && cards.some((card) => card.id === 'vanish-me')
+          },
+          5000,
+          500,
+        )
 
-      const updatePromise = waitForMessage(ws, 'init', 15000)
+        const responsePromise = waitForMessageMatching(
+          localWs,
+          'init',
+          (parsed) => {
+            const cards = parsed.cards as Array<Record<string, unknown>> | undefined
+            return Array.isArray(cards) && cards.every((card) => card.id !== 'vanish-me')
+          },
+          5000,
+        )
 
-      fs.unlinkSync(filePath)
+        fs.rmSync(filePath, { force: true })
 
-      const response = await updatePromise
-      const cards = response.cards as Array<unknown>
-      expect(cards.length).toBe(0)
+        const response = await responsePromise
+
+        const cards = response.cards as Array<unknown>
+        expect(cards.length).toBe(0)
+      } finally {
+        await closeWebSocketConnection(localWs)
+        await new Promise<void>((resolve) => localServer.close(() => resolve()))
+        isolated.cleanup()
+      }
     })
 
     it('should honor provider-defined watch globs for non-markdown files', async () => {
@@ -2012,23 +2233,25 @@ describe('Standalone Server Integration', () => {
 
       const localPort = await getPort()
       const localServer = startServer(tempDir, localPort, webviewDir)
-      await sleep(200)
+      await waitForServerReady(localPort)
       try {
         const localWs = await connectWs(localPort)
         try {
           await sendAndReceive(localWs, { type: 'ready' }, 'init')
 
-          await sleep(2000)
+          const response = await applyWatchedChangeAndWaitForInit(
+            localWs,
+            (attempt) => {
+              fs.writeFileSync(providerStatePath, JSON.stringify({ version: attempt + 1 }), 'utf-8')
+            },
+            (parsed) => parsed.type === 'init',
+            5000,
+            500,
+          )
 
-          const updatePromise = waitForMessage(localWs, 'init', 15000)
-
-          fs.writeFileSync(providerStatePath, JSON.stringify({ version: 2 }), 'utf-8')
-
-          const response = await updatePromise
           expect(response.type).toBe('init')
         } finally {
-          localWs.close()
-          await sleep(50)
+          await closeWebSocketConnection(localWs)
         }
       } finally {
         statusSpy.mockRestore()
@@ -4160,9 +4383,11 @@ describe('Standalone Server Integration', () => {
         },
       })
 
-      const localPort = await getPort()
-      const localServer = startServer(isolated.kanbanDir, localPort, isolated.webviewDir, resolvedConfigPath)
-      await sleep(200)
+      const { server: localServer, port: localPort } = await startStandaloneTestServer(
+        isolated.kanbanDir,
+        isolated.webviewDir,
+        resolvedConfigPath,
+      )
 
       const readerHeaders = { Authorization: 'Bearer reader-token' }
       const writerHeaders = { Authorization: 'Bearer writer-token' }
@@ -6107,7 +6332,7 @@ describe('Standalone Server Integration', () => {
       localAuthWorkspaceRoot = writeLocalAuthConfig()
       localAuthPort = await getPort()
       localAuthServer = startServer(tempDir, localAuthPort, webviewDir)
-      await sleep(200)
+      await waitForServerReady(localAuthPort)
     })
 
     afterAll(async () => {

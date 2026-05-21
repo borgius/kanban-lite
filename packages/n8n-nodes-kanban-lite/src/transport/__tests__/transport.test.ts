@@ -81,16 +81,16 @@ describe('throwApiError', () => {
 describe('resolveApiRoute', () => {
   const base = 'http://localhost:3000'
 
-  it('maps card/list to GET /api/cards', () => {
+  it('maps card/list to GET /api/tasks', () => {
     const r = resolveApiRoute(base, 'card', 'list', {})
     expect(r?.method).toBe('GET')
-    expect(r?.url).toBe('http://localhost:3000/api/cards')
+    expect(r?.url).toBe('http://localhost:3000/api/tasks')
   })
 
-  it('maps card/create to POST /api/cards with body', () => {
+  it('maps card/create to POST /api/tasks with body', () => {
     const r = resolveApiRoute(base, 'card', 'create', { title: 'Task 1' })
     expect(r?.method).toBe('POST')
-    expect(r?.url).toBe('http://localhost:3000/api/cards')
+    expect(r?.url).toBe('http://localhost:3000/api/tasks')
     expect(r?.body).toMatchObject({ title: 'Task 1' })
   })
 
@@ -447,11 +447,12 @@ describe('ApiTransport', () => {
   })
 
   describe('execute', () => {
-    it('calls fetch with correct URL and method for card/list', async () => {
-      const fetchFn = makeOkFetch([{ id: 'c1' }])
+    it('calls fetch with correct URL and method for card/list and unwraps ok/data', async () => {
+      const fetchFn = makeOkFetch({ ok: true, data: [{ id: 'c1' }] })
       const t = new ApiTransport({ credentials: creds, fetchFn })
       const r = await t.execute('card', 'list', {})
-      expect(fetchFn).toHaveBeenCalledWith('http://localhost:3000/api/cards', expect.objectContaining({ method: 'GET' }))
+      expect(fetchFn).toHaveBeenCalledWith('http://localhost:3000/api/tasks', expect.objectContaining({ method: 'GET' }))
+      expect(r.data).toEqual([{ id: 'c1' }])
       expect(r.statusCode).toBe(200)
     })
 

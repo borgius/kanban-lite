@@ -11,7 +11,7 @@ import {
   cardStateReadBodySchema,
   checklistCreateBodySchema,
   checklistEditBodySchema,
-  checklistExpectedRawBodySchema,
+  checklistModifiedAtBodySchema,
 } from './params'
 
 const boardColumnInputSchema = {
@@ -390,7 +390,7 @@ export const boardsPaths = {
       put: {
         tags: ['Board Tasks'],
         summary: 'Edit checklist item (board-scoped)',
-        description: 'Edits one checklist item on the specified board and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Edits one checklist item on the specified board and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [boardIdParam, taskIdParam, checklistIndexParam],
         requestBody: {
           required: true,
@@ -405,13 +405,13 @@ export const boardsPaths = {
       delete: {
         tags: ['Board Tasks'],
         summary: 'Delete checklist item (board-scoped)',
-        description: 'Deletes one checklist item on the specified board and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Deletes one checklist item on the specified board and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [boardIdParam, taskIdParam, checklistIndexParam],
         requestBody: {
           required: false,
           content: {
             'application/json': {
-              schema: checklistExpectedRawBodySchema,
+              schema: checklistModifiedAtBodySchema,
             },
           },
         },
@@ -422,13 +422,13 @@ export const boardsPaths = {
       post: {
         tags: ['Board Tasks'],
         summary: 'Check checklist item (board-scoped)',
-        description: 'Marks one checklist item complete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Marks one checklist item complete and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [boardIdParam, taskIdParam, checklistIndexParam],
         requestBody: {
           required: false,
           content: {
             'application/json': {
-              schema: checklistExpectedRawBodySchema,
+              schema: checklistModifiedAtBodySchema,
             },
           },
         },
@@ -439,13 +439,13 @@ export const boardsPaths = {
       post: {
         tags: ['Board Tasks'],
         summary: 'Uncheck checklist item (board-scoped)',
-        description: 'Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [boardIdParam, taskIdParam, checklistIndexParam],
         requestBody: {
           required: false,
           content: {
             'application/json': {
-              schema: checklistExpectedRawBodySchema,
+              schema: checklistModifiedAtBodySchema,
             },
           },
         },
@@ -474,6 +474,34 @@ export const boardsPaths = {
           },
         },
         responses: { 200: { description: 'Updated task.' }, 404: { description: 'Not found.' } },
+      },
+    },
+    '/api/boards/{boardId}/tasks/{id}/comments': {
+      post: {
+        tags: ['Comments'],
+        summary: 'Add comment (board-scoped)',
+        description: 'Adds a new comment to a task on the specified board and emits the `comment.created` webhook event.',
+        parameters: [boardIdParam, taskIdParam],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['author', 'content'],
+                properties: {
+                  author: { type: 'string', description: 'Comment author.' },
+                  content: { type: 'string', description: 'Comment body (Markdown).' },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Created comment.' },
+          400: { description: 'Validation error (missing author or content).' },
+          404: { description: 'Task not found.' },
+        },
       },
     },
     '/api/boards/{boardId}/tasks/{id}/forms/{formId}/submit': {

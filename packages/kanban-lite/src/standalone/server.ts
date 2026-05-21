@@ -7,133 +7,18 @@ import { cors } from 'hono/cors'
 import { createAdaptorServer, type HttpBindings } from '@hono/node-server'
 import { swaggerUI } from '@hono/swagger-ui'
 import { configPath, readConfig } from '../shared/config'
-import type { StandaloneHttpPlugin } from '../sdk'
-import { KANBAN_OPENAPI_SPEC } from './internal/openapi-spec'
-import { mergeStandaloneOpenApiDocs, type OpenApiDocFragment, type OpenApiSpecWithPaths } from './internal/openapi-spec/normalize'
 import { setupStandaloneLifecycle } from './internal/lifecycle'
+import {
+  buildStandaloneOpenApiSpec,
+  collectStandalonePluginOpenApiDocs,
+} from './internal/openapi-spec/build'
 import { createStandaloneRuntime, getIndexHtml } from './internal/runtime'
-import { MOBILE_STANDALONE_API_DOCS } from './internal/routes/mobile'
 import { attachWebSocketHandlers } from './internal/websocket'
 import type { IncomingMessageWithRawBody } from './httpUtils'
-import { createStandaloneRouteDispatcher } from './dispatch'
-
-const WEBHOOK_STANDALONE_PLUGIN_ID = 'webhooks'
-const BUILTIN_STANDALONE_API_DOCS = [MOBILE_STANDALONE_API_DOCS] as const
-
-const WEBHOOK_STANDALONE_API_DOCS = {
-  tags: [
-    {
-      name: 'Webhooks',
-      description: 'Webhook registration endpoints. These routes are registered by the active standalone webhook plugin while preserving the public `/api/webhooks` contract.',
-    },
-  ],
-  paths: {
-    '/api/webhooks': {
-      get: {
-        tags: ['Webhooks'],
-        summary: 'List webhooks',
-        description: 'Returns all registered webhooks. Runtime ownership stays on the active standalone webhook plugin, which preserves this public path.',
-        responses: { 200: { description: 'Webhook list.' }, 401: { description: 'Authentication required.' }, 403: { description: 'Forbidden.' } },
-      },
-      post: {
-        tags: ['Webhooks'],
-        summary: 'Create webhook',
-        description: 'Registers a new webhook endpoint through the active standalone webhook plugin.',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['url', 'events'],
-                properties: {
-                  url: { type: 'string', description: 'Target HTTP(S) URL.' },
-                  events: { type: 'array', items: { type: 'string' }, description: 'Subscribed event names, or `["*"]` for all events.' },
-                  secret: { type: 'string', description: 'Optional HMAC signing secret.' },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          201: { description: 'Webhook created.' },
-          400: { description: 'Validation error.' },
-          401: { description: 'Authentication required.' },
-          403: { description: 'Forbidden.' },
-        },
-      },
-    },
-    '/api/webhooks/{id}': {
-      put: {
-        tags: ['Webhooks'],
-        summary: 'Update webhook',
-        description: 'Updates an existing webhook by id through the active standalone webhook plugin.',
-        parameters: [
-          {
-            name: 'id',
-            in: 'path',
-            required: true,
-            schema: { type: 'string' },
-            description: 'Webhook identifier.',
-          },
-        ],
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  url: { type: 'string', description: 'Updated HTTP(S) URL.' },
-                  events: { type: 'array', items: { type: 'string' }, description: 'Updated event filter list.' },
-                  secret: { type: 'string', description: 'Updated HMAC signing secret.' },
-                  active: { type: 'boolean', description: 'Whether the webhook is active.' },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          200: { description: 'Webhook updated.' },
-          401: { description: 'Authentication required.' },
-          403: { description: 'Forbidden.' },
-          404: { description: 'Webhook not found.' },
-        },
-      },
-      delete: {
-        tags: ['Webhooks'],
-        summary: 'Delete webhook',
-        description: 'Deletes a webhook by id through the active standalone webhook plugin.',
-        parameters: [
-          {
-            name: 'id',
-            in: 'path',
-            required: true,
-            schema: { type: 'string' },
-            description: 'Webhook identifier.',
-          },
-        ],
-        responses: {
-          200: { description: 'Webhook deleted.' },
-          401: { description: 'Authentication required.' },
-          403: { description: 'Forbidden.' },
-          404: { description: 'Webhook not found.' },
-        },
-      },
-    },
-  },
-} as const
-
-function buildStandaloneOpenApiSpec(plugins: readonly StandaloneHttpPlugin[]): OpenApiSpecWithPaths {
-  const baseSpec = KANBAN_OPENAPI_SPEC as OpenApiSpecWithPaths
-  const fragments: OpenApiDocFragment[] = [...BUILTIN_STANDALONE_API_DOCS]
-
-  if (plugins.some((plugin) => plugin.manifest.id === WEBHOOK_STANDALONE_PLUGIN_ID)) {
-    fragments.push(WEBHOOK_STANDALONE_API_DOCS)
-  }
-
-  return mergeStandaloneOpenApiDocs(baseSpec, fragments)
-}
+import {
+  createStandaloneHttpPluginRegistrationOptions,
+  createStandaloneRouteDispatcher,
+} from './dispatch'
 
 function resolveSwaggerUiStaticDir(): string | undefined {
   // Retained as a lightweight helper: `@hono/swagger-ui` serves UI assets from a CDN
@@ -210,7 +95,12 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
     resolvedIndexHtml = resolvedIndexHtml.replace('</head>', `${customHead}\n</head>`)
   }
   const standaloneHttpPlugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
-  const standaloneOpenApiSpec = buildStandaloneOpenApiSpec(standaloneHttpPlugins)
+  const standaloneOpenApiSpec = buildStandaloneOpenApiSpec(
+    collectStandalonePluginOpenApiDocs(
+      standaloneHttpPlugins,
+      createStandaloneHttpPluginRegistrationOptions(ctx),
+    ),
+  )
 
   // OpenAPI JSON + interactive Swagger UI. Registered before the catch-all so Hono
   // matches these routes first.
@@ -274,3 +164,4 @@ export function startServer(kanbanDir: string, port: number, webviewDir?: string
 
   return server
 }
+

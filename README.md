@@ -337,6 +337,8 @@ All responses follow the format `{ "ok": true, "data": ... }` or `{ "ok": false,
 >
 > The OpenAPI JSON also ships stable `operationId` values plus schema-level descriptions for query, path, and request-body inputs, so OpenAPI-based tool proxies can present clearer action and parameter help.
 
+The same contract also drives the checked-in remote path types in `packages/kanban-lite/src/sdk/remote/generated/standalone-api-paths.ts`. After changing standalone HTTP routes or request/response metadata, regenerate the typed contract with `pnpm contracts:openapi`; `RemoteKanbanSDK`, `kl-adapter-vercel-ai`, and the n8n remote transport all share the exported typed request helpers from `kanban-lite/sdk`.
+
 #### Boards
 
 | Method | Endpoint | Description |
@@ -1858,6 +1860,9 @@ pnpm dev
 
 # Build for production
 pnpm build
+
+# Regenerate OpenAPI-derived remote contract types
+pnpm contracts:openapi
 
 # Build individually
 pnpm build:cli

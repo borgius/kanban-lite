@@ -90,6 +90,13 @@ const SOURCE_GROUPS: { title: string; files: string[] }[] = [
     files: ['packages/kanban-lite/src/sdk/KanbanSDK.ts'],
   },
   {
+    title: 'Remote SDK',
+    files: [
+      'packages/kanban-lite/src/sdk/remote/RemoteKanbanSDK.ts',
+      'packages/kanban-lite/src/sdk/remote/openapi-client.ts',
+    ],
+  },
+  {
     title: 'Types',
     files: ['packages/kanban-lite/src/shared/types.ts', 'packages/kanban-lite/src/sdk/types.ts'],
   },

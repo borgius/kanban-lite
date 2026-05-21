@@ -89,6 +89,43 @@ const settingsUpdateBodySchema = {
 }
 
 export const miscPaths = {
+    '/api/health': {
+      get: {
+        tags: ['Workspace'],
+        summary: 'Get server health',
+        description: 'Returns a lightweight standalone runtime health payload including the default/current board context and workspace root.',
+        responses: { 200: { description: 'Standalone health status payload.' } },
+      },
+    },
+    '/api/webview-sync': {
+      post: {
+        tags: ['Workspace'],
+        summary: 'Sync webview messages',
+        description: 'Replays one or more serialized webview messages through the standalone server so browser clients can hydrate with the same SDK-backed mutation semantics as the extension host.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  message: { description: 'Single serialized webview message payload.' },
+                  messages: {
+                    type: 'array',
+                    description: 'Ordered array of serialized webview message payloads.',
+                    items: {},
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: { description: 'Normalized synced webview messages.' },
+          400: { description: 'Invalid or empty webview message payload.' },
+        },
+      },
+    },
     '/api/columns': {
       get: {
         tags: ['Columns'],
@@ -106,9 +143,8 @@ export const miscPaths = {
             'application/json': {
               schema: {
                 type: 'object',
-                required: ['id', 'name'],
+                required: ['name'],
                 properties: {
-                  id: { type: 'string', description: 'Unique column identifier.' },
                   name: { type: 'string', description: 'Display name.' },
                   color: { type: 'string', description: 'Hex color (default: `#6b7280`).' },
                 },

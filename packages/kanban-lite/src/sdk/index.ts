@@ -11,7 +11,20 @@ export {
   PluginSettingsValidationError,
   validatePluginSettingsInstallRequest,
 } from './KanbanSDK'
-export { RemoteKanbanSDK } from './remote'
+export { RemoteKanbanSDK, buildStandaloneApiUrl, createStandaloneApiClient } from './remote'
+export type {
+  StandaloneApiClientOptions,
+  StandaloneApiComponents,
+  StandaloneApiMethod,
+  StandaloneApiPath,
+  StandaloneApiPaths,
+  StandaloneApiPathParams,
+  StandaloneApiQueryParams,
+  StandaloneApiRequestBody,
+  StandaloneApiRequestOptions,
+  StandaloneApiResponse,
+  StandaloneBinaryResponse,
+} from './remote'
 export { parseCardFile, serializeCard } from './parser'
 export { getCardFilePath, ensureDirectories, ensureStatusSubfolders, moveCardFile, renameCardFile, getStatusFromPath } from './fileUtils'
 export { migrateFileSystemToMultiBoard } from './migration'
@@ -144,6 +157,15 @@ export type {
   McpSchemaFactory,
   McpToolDefinition,
   McpPluginRegistration,
+  StandaloneOpenApiDocFragment,
+  StandaloneOpenApiOperation,
+  StandaloneOpenApiParameter,
+  StandaloneOpenApiPathItem,
+  StandaloneOpenApiPaths,
+  StandaloneOpenApiRequestBody,
+  StandaloneOpenApiResponses,
+  StandaloneOpenApiSchema,
+  StandaloneOpenApiTag,
   PluginSettingsOptionsSchemaFactory,
   PluginSettingsOptionsSchemaInput,
   PluginSettingsOptionsSchemaValueResolver,

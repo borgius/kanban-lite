@@ -189,26 +189,28 @@ export const cardStateReadBodySchema = {
 
 export const checklistCreateBodySchema = {
   type: 'object' as const,
-  required: ['text' as const, 'expectedToken' as const],
+  required: ['title' as const, 'expectedToken' as const],
   properties: {
-    text: { type: 'string' as const, description: 'Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.' },
+    title: { type: 'string' as const, description: 'Single-line checklist item title. Markdown task markers are optional on input and are canonicalized.' },
+    description: { type: 'string' as const, description: 'Optional secondary checklist description stored alongside the checklist title.' },
     expectedToken: { type: 'string' as const, description: 'Checklist-wide optimistic-concurrency token returned by the latest checklist read model. Required for checklist adds to avoid lost updates.' },
   },
 }
 
 export const checklistEditBodySchema = {
   type: 'object' as const,
-  required: ['text' as const],
+  required: ['title' as const],
   properties: {
-    text: { type: 'string' as const, description: 'Single-line checklist item text. Markdown task markers are optional on input and are canonicalized.' },
-    expectedRaw: { type: 'string' as const, description: 'Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the edit is applied.' },
+    title: { type: 'string' as const, description: 'Single-line checklist item title. Markdown task markers are optional on input and are canonicalized.' },
+    description: { type: 'string' as const, description: 'Optional secondary checklist description stored alongside the checklist title.' },
+    modifiedAt: { type: 'string' as const, description: 'Optional optimistic-concurrency guard that must match the latest stored checklist item mutation timestamp before the edit is applied.' },
   },
 }
 
-export const checklistExpectedRawBodySchema = {
+export const checklistModifiedAtBodySchema = {
   type: 'object' as const,
   properties: {
-    expectedRaw: { type: 'string' as const, description: 'Optional optimistic-concurrency guard that must match the caller-visible raw checklist line before the mutation is applied.' },
+    modifiedAt: { type: 'string' as const, description: 'Optional optimistic-concurrency guard that must match the latest stored checklist item mutation timestamp before the mutation is applied.' },
   },
 }
 

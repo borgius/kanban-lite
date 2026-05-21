@@ -58,6 +58,77 @@ export interface StandaloneHttpRequestContext {
   mergeAuthContext(auth: Partial<AuthContext>): AuthContext
 }
 
+/** Minimal OpenAPI schema node shape used by standalone route-doc fragments. */
+export type StandaloneOpenApiSchema = {
+  type?: string
+  description?: string
+  items?: StandaloneOpenApiSchema
+  properties?: Record<string, StandaloneOpenApiSchema>
+  required?: readonly string[]
+  additionalProperties?: boolean | StandaloneOpenApiSchema
+  nullable?: boolean
+  oneOf?: readonly StandaloneOpenApiSchema[]
+  anyOf?: readonly StandaloneOpenApiSchema[]
+  allOf?: readonly StandaloneOpenApiSchema[]
+  $ref?: string
+  [key: string]: unknown
+}
+
+/** Minimal OpenAPI parameter shape used by standalone route-doc fragments. */
+export type StandaloneOpenApiParameter = {
+  name: string
+  in: string
+  required?: boolean
+  description?: string
+  schema?: StandaloneOpenApiSchema
+  [key: string]: unknown
+}
+
+/** Minimal OpenAPI request-body shape used by standalone route-doc fragments. */
+export type StandaloneOpenApiRequestBody = {
+  required?: boolean
+  description?: string
+  content?: Record<string, { schema?: StandaloneOpenApiSchema; [key: string]: unknown }>
+  [key: string]: unknown
+}
+
+/** Minimal OpenAPI response map used by standalone route-doc fragments. */
+export type StandaloneOpenApiResponses = Record<string, {
+  description?: string
+  content?: Record<string, { schema?: StandaloneOpenApiSchema; [key: string]: unknown }>
+  [key: string]: unknown
+}>
+
+/** Minimal OpenAPI operation shape used by standalone route-doc fragments. */
+export type StandaloneOpenApiOperation = {
+  tags?: readonly string[]
+  summary?: string
+  description?: string
+  operationId?: string
+  parameters?: readonly StandaloneOpenApiParameter[]
+  requestBody?: StandaloneOpenApiRequestBody
+  responses?: StandaloneOpenApiResponses
+  [key: string]: unknown
+}
+
+/** One standalone OpenAPI path-item map. */
+export type StandaloneOpenApiPathItem = Record<string, StandaloneOpenApiOperation>
+
+/** Tag metadata contributed by standalone OpenAPI fragments. */
+export type StandaloneOpenApiTag = {
+  name: string
+  description?: string
+}
+
+/** Standalone OpenAPI paths map. */
+export type StandaloneOpenApiPaths = Record<string, StandaloneOpenApiPathItem>
+
+/** Plugin-owned standalone OpenAPI fragment co-located with runtime ownership. */
+export type StandaloneOpenApiDocFragment = {
+  tags?: ReadonlyArray<StandaloneOpenApiTag>
+  paths: StandaloneOpenApiPaths
+}
+
 /** Request middleware/route handlers return `true` when they fully handled the request. */
 export type StandaloneHttpHandler = (request: StandaloneHttpRequestContext) => Promise<boolean>
 
@@ -81,6 +152,7 @@ export interface StandaloneHttpPlugin {
   readonly manifest: { readonly id: string; readonly provides: readonly ['standalone.http'] }
   registerMiddleware?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
   registerRoutes?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneHttpHandler[]
+  getOpenApiDocs?(options: StandaloneHttpPluginRegistrationOptions): readonly StandaloneOpenApiDocFragment[]
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +231,7 @@ function isValidStandaloneHttpPlugin(plugin: unknown): plugin is StandaloneHttpP
     && candidate.manifest.provides.includes('standalone.http')
     && (candidate.registerMiddleware === undefined || typeof candidate.registerMiddleware === 'function')
     && (candidate.registerRoutes === undefined || typeof candidate.registerRoutes === 'function')
+    && (candidate.getOpenApiDocs === undefined || typeof candidate.getOpenApiDocs === 'function')
 }
 
 function isValidSDKPluginEventDeclaration(value: unknown): value is SDKPluginEventDeclaration {

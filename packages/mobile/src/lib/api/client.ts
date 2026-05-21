@@ -8,6 +8,7 @@ import type {
   MobileTaskDetail,
   MobileTaskListItem,
 } from './contracts'
+import type { StandaloneApiPath, StandaloneApiRequestBody } from 'kanban-lite/sdk'
 
 export type {
   JsonObject,
@@ -41,8 +42,14 @@ export interface ChecklistAddInput {
 }
 
 export interface ChecklistPatchInput {
+  modifiedAt?: string | null
   expectedRaw?: string | null
   text?: string | null
+}
+
+export interface ChecklistMutationInput {
+  modifiedAt?: string | null
+  expectedRaw?: string | null
 }
 
 export interface CommentCreateInput {
@@ -77,12 +84,37 @@ export interface MobileApiClient {
   getChecklist(taskId: string): Promise<MobileChecklistReadModel>
   addChecklistItem(taskId: string, input: ChecklistAddInput): Promise<MobileChecklistReadModel>
   editChecklistItem(taskId: string, index: number, input: ChecklistPatchInput): Promise<MobileChecklistReadModel>
-  deleteChecklistItem(taskId: string, index: number, input?: { expectedRaw?: string | null }): Promise<MobileChecklistReadModel>
-  checkChecklistItem(taskId: string, index: number, input?: { expectedRaw?: string | null }): Promise<MobileChecklistReadModel>
-  uncheckChecklistItem(taskId: string, index: number, input?: { expectedRaw?: string | null }): Promise<MobileChecklistReadModel>
+  deleteChecklistItem(taskId: string, index: number, input?: ChecklistMutationInput): Promise<MobileChecklistReadModel>
+  checkChecklistItem(taskId: string, index: number, input?: ChecklistMutationInput): Promise<MobileChecklistReadModel>
+  uncheckChecklistItem(taskId: string, index: number, input?: ChecklistMutationInput): Promise<MobileChecklistReadModel>
   submitForm(taskId: string, formId: string, input: FormSubmitInput): Promise<JsonObject>
   triggerAction(taskId: string, action: string): Promise<void>
 }
+
+const MOBILE_API_PATHS = {
+  tasks: '/api/tasks',
+  task: '/api/tasks/{id}',
+  taskOpen: '/api/tasks/{id}/open',
+  taskRead: '/api/tasks/{id}/read',
+  taskComments: '/api/tasks/{id}/comments',
+  taskComment: '/api/tasks/{id}/comments/{commentId}',
+  taskAttachments: '/api/tasks/{id}/attachments',
+  taskAttachment: '/api/tasks/{id}/attachments/{filename}',
+  taskChecklist: '/api/tasks/{id}/checklist',
+  taskChecklistItem: '/api/tasks/{id}/checklist/{index}',
+  taskChecklistItemCheck: '/api/tasks/{id}/checklist/{index}/check',
+  taskChecklistItemUncheck: '/api/tasks/{id}/checklist/{index}/uncheck',
+  taskFormSubmit: '/api/tasks/{id}/forms/{formId}/submit',
+  taskAction: '/api/tasks/{id}/actions/{action}',
+} as const satisfies Record<string, StandaloneApiPath>
+
+type TaskAttachmentUploadBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskAttachments, 'post'>
+type TaskChecklistAddBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskChecklist, 'post'>
+type TaskChecklistEditBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskChecklistItem, 'put'>
+type TaskChecklistMutationBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskChecklistItem, 'delete'>
+type TaskCommentCreateBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskComments, 'post'>
+type TaskCommentUpdateBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskComment, 'put'>
+type TaskFormSubmitBody = StandaloneApiRequestBody<typeof MOBILE_API_PATHS.taskFormSubmit, 'post'>
 
 interface ApiEnvelope<T extends JsonValue> {
   ok?: boolean
@@ -224,7 +256,7 @@ async function requestNoContent(
 
 function createTaskUrl(baseUrl: URL, taskId: string, suffix?: string): URL {
   const pathSuffix = suffix ? `/${suffix}` : ''
-  return new URL(`/api/tasks/${encodeSegment(taskId)}${pathSuffix}`, baseUrl)
+  return new URL(`${MOBILE_API_PATHS.tasks}/${encodeSegment(taskId)}${pathSuffix}`, baseUrl)
 }
 
 export function createMobileApiClient(options: MobileApiClientOptions): MobileApiClient {
@@ -238,7 +270,7 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
 
   return {
     async listTasks(query) {
-      const url = new URL('/api/tasks', baseUrl)
+      const url = new URL(MOBILE_API_PATHS.tasks, baseUrl)
       applyQuery(url, query)
       return requestJson<MobileTaskListItem[]>(fetchImplementation, token, url, {
         method: 'GET',
@@ -285,7 +317,7 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
           body: {
             author: input.author,
             content: input.content,
-          },
+          } satisfies TaskCommentCreateBody,
         },
       )
     },
@@ -299,7 +331,7 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
           method: 'PUT',
           body: {
             content: input.content,
-          },
+          } satisfies TaskCommentUpdateBody,
         },
       )
     },
@@ -327,7 +359,7 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
               name: file.name,
               data: file.data,
             })),
-          },
+          } satisfies TaskAttachmentUploadBody,
         },
       )
     },
@@ -374,9 +406,9 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
         {
           method: 'POST',
           body: {
-            text: input.text,
+            title: input.text,
             expectedToken: input.expectedToken,
-          },
+          } satisfies TaskChecklistAddBody,
         },
       )
     },
@@ -389,9 +421,9 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
         {
           method: 'PUT',
           body: {
-            text: input.text ?? '',
-            expectedRaw: input.expectedRaw ?? undefined,
-          },
+            title: input.text ?? '',
+            modifiedAt: input.modifiedAt ?? undefined,
+          } satisfies TaskChecklistEditBody,
         },
       )
     },
@@ -404,8 +436,8 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
         {
           method: 'DELETE',
           body: {
-            expectedRaw: input?.expectedRaw ?? undefined,
-          },
+            modifiedAt: input?.modifiedAt ?? undefined,
+          } satisfies TaskChecklistMutationBody,
         },
       )
     },
@@ -418,8 +450,8 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
         {
           method: 'POST',
           body: {
-            expectedRaw: input?.expectedRaw ?? undefined,
-          },
+            modifiedAt: input?.modifiedAt ?? undefined,
+          } satisfies TaskChecklistMutationBody,
         },
       )
     },
@@ -432,8 +464,8 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
         {
           method: 'POST',
           body: {
-            expectedRaw: input?.expectedRaw ?? undefined,
-          },
+            modifiedAt: input?.modifiedAt ?? undefined,
+          } satisfies TaskChecklistMutationBody,
         },
       )
     },
@@ -447,7 +479,7 @@ export function createMobileApiClient(options: MobileApiClientOptions): MobileAp
           method: 'POST',
           body: {
             data: input.data,
-          },
+          } satisfies TaskFormSubmitBody,
         },
       )
     },

@@ -208,22 +208,22 @@
         "webhooks": [
           {
             "active": true,
-            "url": "https://localhost:2954/api/webhooks/test",
+            "url": "http://localhost:2954/api/webhooks/test",
             "events": [
               "attachment.added",
               "auth.allowed",
               "board.action"
-            ]
+            ],
+            "id": "wh_3e4d655fc8c605e0"
           },
           {
             "id": "wh_c2f78ab2784e87cb",
-            "url": "https://your-pipeline.example.com/events",
+            "url": "http://localhost:2954/api/webhooks/test",
             "events": [
-              "task.moved",
-              "task.created",
-              "comment.created",
               "attachment.added",
-              "form.submit"
+              "comment.created",
+              "task.created",
+              "task.moved"
             ],
             "active": true
           }

@@ -10,6 +10,63 @@
 
 import type { ApiTransportCredentials, EventCapabilityEntry, KanbanLiteResult } from './types'
 import { KanbanTransportError } from './types'
+import { buildStandaloneApiUrl } from 'kanban-lite/sdk'
+import type { StandaloneApiPath } from 'kanban-lite/sdk'
+
+const API_PATHS = {
+  boards: '/api/boards',
+  board: '/api/boards/{boardId}',
+  boardActionTrigger: '/api/boards/{boardId}/actions/{key}/trigger',
+  boardTasks: '/api/boards/{boardId}/tasks',
+  boardTask: '/api/boards/{boardId}/tasks/{id}',
+  boardTaskMove: '/api/boards/{boardId}/tasks/{id}/move',
+  boardTaskTransfer: '/api/boards/{boardId}/tasks/{id}/transfer',
+  boardTaskAction: '/api/boards/{boardId}/tasks/{id}/actions/{action}',
+  tasks: '/api/tasks',
+  task: '/api/tasks/{id}',
+  taskMove: '/api/tasks/{id}/move',
+  taskAction: '/api/tasks/{id}/actions/{action}',
+  taskComments: '/api/tasks/{id}/comments',
+  taskComment: '/api/tasks/{id}/comments/{commentId}',
+  taskAttachments: '/api/tasks/{id}/attachments',
+  taskAttachment: '/api/tasks/{id}/attachments/{filename}',
+  taskFormSubmit: '/api/tasks/{id}/forms/{formId}/submit',
+  columns: '/api/columns',
+  column: '/api/columns/{id}',
+  columnsReorder: '/api/columns/reorder',
+  columnsMinimized: '/api/columns/minimized',
+  labels: '/api/labels',
+  label: '/api/labels/{name}',
+  settings: '/api/settings',
+  storage: '/api/storage',
+  storageMigrateSqlite: '/api/storage/migrate-to-sqlite',
+  storageMigrateMarkdown: '/api/storage/migrate-to-markdown',
+  webhooks: '/api/webhooks',
+  webhook: '/api/webhooks/{id}',
+  workspace: '/api/workspace',
+  authStatus: '/api/auth',
+} as const satisfies Record<string, StandaloneApiPath | '/api/workspace'>
+
+function buildUrl(
+  baseUrl: string,
+  path: StandaloneApiPath | '/api/workspace',
+  options: { path?: Record<string, unknown>; query?: Record<string, unknown> } = {},
+): string {
+  if (path === '/api/workspace') {
+    const base = baseUrl.replace(/\/$/, '')
+    const url = new URL(`${base}${path}`)
+    for (const [key, value] of Object.entries(options.query ?? {})) {
+      if (value === undefined || value === null) continue
+      url.searchParams.set(key, String(value))
+    }
+    return url.toString()
+  }
+
+  return buildStandaloneApiUrl(baseUrl, path, {
+    path: options.path as never,
+    query: options.query as never,
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Result normalization
@@ -103,72 +160,96 @@ export function resolveApiRoute(
   operation: string,
   params: Record<string, unknown>,
 ): { method: string; url: string; body?: unknown } | undefined {
-  const base = baseUrl.replace(/\/$/, '')
   const id = typeof params['id'] === 'string' ? params['id'] : undefined
   const boardId = typeof params['boardId'] === 'string' ? params['boardId'] : undefined
   const cardId = typeof params['cardId'] === 'string' ? params['cardId'] : undefined
-
-  const boardPath = boardId ? `?boardId=${encodeURIComponent(boardId)}` : ''
+  const action = typeof params['action'] === 'string' ? params['action'] : undefined
+  const attachment = typeof params['attachment'] === 'string' ? params['attachment'] : undefined
+  const labelName = typeof params['name'] === 'string' ? params['name'] : undefined
+  const formId = typeof params['formId'] === 'string' ? params['formId'] : id
+  const taskId = cardId ?? id
 
   switch (`${resource}/${operation}`) {
     // --- BOARD ---
-    case 'board/list':        return { method: 'GET',    url: `${base}/api/boards` }
-    case 'board/get':         return { method: 'GET',    url: `${base}/api/boards/${id ?? ''}` }
-    case 'board/create':      return { method: 'POST',   url: `${base}/api/boards`, body: params }
-    case 'board/update':      return { method: 'PUT',    url: `${base}/api/boards/${id ?? ''}`, body: params }
-    case 'board/delete':      return { method: 'DELETE', url: `${base}/api/boards/${id ?? ''}` }
-    case 'board/setDefault':  return { method: 'POST',   url: `${base}/api/boards/${id ?? ''}/default` }
-    case 'board/triggerAction': return { method: 'POST', url: `${base}/api/boards/${id ?? ''}/actions/trigger`, body: params }
+    case 'board/list':        return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.boards) }
+    case 'board/get':         return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.board, { path: { boardId: id ?? '' } }) }
+    case 'board/create':      return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.boards), body: params }
+    case 'board/update':      return { method: 'PUT',    url: buildUrl(baseUrl, API_PATHS.board, { path: { boardId: id ?? '' } }), body: params }
+    case 'board/delete':      return { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.board, { path: { boardId: id ?? '' } }) }
+    case 'board/setDefault':  return undefined
+    case 'board/triggerAction': return action
+      ? { method: 'POST', url: buildUrl(baseUrl, API_PATHS.boardActionTrigger, { path: { boardId: id ?? '', key: action } }) }
+      : undefined
     // --- CARD ---
-    case 'card/list':         return { method: 'GET',    url: `${base}/api/cards${boardPath}` }
-    case 'card/get':          return { method: 'GET',    url: `${base}/api/cards/${id ?? ''}` }
-    case 'card/create':       return { method: 'POST',   url: `${base}/api/cards`, body: params }
-    case 'card/update':       return { method: 'PUT',    url: `${base}/api/cards/${id ?? ''}`, body: params }
-    case 'card/move':         return { method: 'PUT',    url: `${base}/api/cards/${id ?? ''}/move`, body: params }
-    case 'card/delete':       return { method: 'DELETE', url: `${base}/api/cards/${id ?? ''}` }
-    case 'card/transfer':     return { method: 'POST',   url: `${base}/api/cards/${id ?? ''}/transfer`, body: params }
-    case 'card/purgeDeleted': return { method: 'POST',   url: `${base}/api/cards/purge-deleted${boardPath}` }
-    case 'card/triggerAction': return { method: 'POST',  url: `${base}/api/cards/${id ?? ''}/actions/trigger`, body: params }
+    case 'card/list':         return boardId
+      ? { method: 'GET', url: buildUrl(baseUrl, API_PATHS.boardTasks, { path: { boardId } }) }
+      : { method: 'GET', url: buildUrl(baseUrl, API_PATHS.tasks) }
+    case 'card/get':          return boardId
+      ? { method: 'GET', url: buildUrl(baseUrl, API_PATHS.boardTask, { path: { boardId, id: id ?? '' } }) }
+      : { method: 'GET', url: buildUrl(baseUrl, API_PATHS.task, { path: { id: id ?? '' } }) }
+    case 'card/create':       return boardId
+      ? { method: 'POST', url: buildUrl(baseUrl, API_PATHS.boardTasks, { path: { boardId } }), body: params }
+      : { method: 'POST', url: buildUrl(baseUrl, API_PATHS.tasks), body: params }
+    case 'card/update':       return boardId
+      ? { method: 'PUT', url: buildUrl(baseUrl, API_PATHS.boardTask, { path: { boardId, id: id ?? '' } }), body: params }
+      : { method: 'PUT', url: buildUrl(baseUrl, API_PATHS.task, { path: { id: id ?? '' } }), body: params }
+    case 'card/move':         return boardId
+      ? { method: 'PATCH', url: buildUrl(baseUrl, API_PATHS.boardTaskMove, { path: { boardId, id: id ?? '' } }), body: params }
+      : { method: 'PATCH', url: buildUrl(baseUrl, API_PATHS.taskMove, { path: { id: id ?? '' } }), body: params }
+    case 'card/delete':       return boardId
+      ? { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.boardTask, { path: { boardId, id: id ?? '' } }) }
+      : { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.task, { path: { id: id ?? '' } }) }
+    case 'card/transfer':     return boardId
+      ? { method: 'POST', url: buildUrl(baseUrl, API_PATHS.boardTaskTransfer, { path: { boardId, id: id ?? '' } }), body: params }
+      : undefined
+    case 'card/purgeDeleted': return undefined
+    case 'card/triggerAction': return action
+      ? boardId
+        ? { method: 'POST', url: buildUrl(baseUrl, API_PATHS.boardTaskAction, { path: { boardId, id: id ?? '', action } }) }
+        : { method: 'POST', url: buildUrl(baseUrl, API_PATHS.taskAction, { path: { id: id ?? '', action } }) }
+      : undefined
     // --- COLUMN ---
-    case 'column/list':       return { method: 'GET',    url: `${base}/api/columns${boardPath}` }
-    case 'column/add':        return { method: 'POST',   url: `${base}/api/columns`, body: params }
-    case 'column/update':     return { method: 'PUT',    url: `${base}/api/columns/${id ?? ''}`, body: params }
-    case 'column/remove':     return { method: 'DELETE', url: `${base}/api/columns/${id ?? ''}` }
-    case 'column/reorder':    return { method: 'POST',   url: `${base}/api/columns/reorder`, body: params }
-    case 'column/setMinimized': return { method: 'POST', url: `${base}/api/columns/minimized`, body: params }
-    case 'column/cleanup':    return { method: 'POST',   url: `${base}/api/columns/${id ?? ''}/cleanup`, body: params }
+    case 'column/list':       return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.columns, { query: boardId ? { boardId } : undefined }) }
+    case 'column/add':        return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.columns), body: params }
+    case 'column/update':     return { method: 'PUT',    url: buildUrl(baseUrl, API_PATHS.column, { path: { id: id ?? '' } }), body: params }
+    case 'column/remove':     return { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.column, { path: { id: id ?? '' } }) }
+    case 'column/reorder':    return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.columnsReorder), body: params }
+    case 'column/setMinimized': return { method: 'PUT',  url: buildUrl(baseUrl, API_PATHS.columnsMinimized), body: params }
+    case 'column/cleanup':    return { method: 'POST',   url: `${baseUrl.replace(/\/$/, '')}/api/columns/${id ?? ''}/cleanup`, body: params }
     // --- COMMENT ---
-    case 'comment/list':      return { method: 'GET',    url: `${base}/api/cards/${cardId ?? id ?? ''}/comments` }
-    case 'comment/add':       return { method: 'POST',   url: `${base}/api/cards/${cardId ?? id ?? ''}/comments`, body: params }
-    case 'comment/update':    return { method: 'PUT',    url: `${base}/api/cards/${cardId ?? ''}/comments/${id ?? ''}`, body: params }
-    case 'comment/delete':    return { method: 'DELETE', url: `${base}/api/cards/${cardId ?? ''}/comments/${id ?? ''}` }
+    case 'comment/list':      return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.taskComments, { path: { id: taskId ?? '' } }) }
+    case 'comment/add':       return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.taskComments, { path: { id: taskId ?? '' } }), body: params }
+    case 'comment/update':    return { method: 'PUT',    url: buildUrl(baseUrl, API_PATHS.taskComment, { path: { id: taskId ?? '', commentId: id ?? '' } }), body: params }
+    case 'comment/delete':    return { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.taskComment, { path: { id: taskId ?? '', commentId: id ?? '' } }) }
     // --- ATTACHMENT ---
-    case 'attachment/list':   return { method: 'GET',    url: `${base}/api/cards/${cardId ?? id ?? ''}/attachments` }
-    case 'attachment/add':    return { method: 'POST',   url: `${base}/api/cards/${cardId ?? id ?? ''}/attachments`, body: params }
-    case 'attachment/remove': return { method: 'DELETE', url: `${base}/api/cards/${cardId ?? ''}/attachments/${typeof params['attachment'] === 'string' ? params['attachment'] : ''}` }
+    case 'attachment/list':   return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.taskAttachments, { path: { id: taskId ?? '' } }) }
+    case 'attachment/add':    return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.taskAttachments, { path: { id: taskId ?? '' } }), body: params }
+    case 'attachment/remove': return { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.taskAttachment, { path: { id: taskId ?? '', filename: attachment ?? '' } }) }
     // --- LABEL ---
-    case 'label/list':        return { method: 'GET',    url: `${base}/api/labels${boardPath}` }
-    case 'label/set':         return { method: 'POST',   url: `${base}/api/labels`, body: params }
-    case 'label/rename':      return { method: 'PUT',    url: `${base}/api/labels/${typeof params['name'] === 'string' ? encodeURIComponent(params['name']) : ''}`, body: params }
-    case 'label/delete':      return { method: 'DELETE', url: `${base}/api/labels/${typeof params['name'] === 'string' ? encodeURIComponent(params['name']) : ''}` }
+    case 'label/list':        return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.labels, { query: boardId ? { boardId } : undefined }) }
+    case 'label/set':         return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.labels), body: params }
+    case 'label/rename':      return { method: 'PUT',    url: buildUrl(baseUrl, API_PATHS.label, { path: { name: labelName ?? '' } }), body: params }
+    case 'label/delete':      return { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.label, { path: { name: labelName ?? '' } }) }
     // --- SETTINGS ---
-    case 'settings/get':      return { method: 'GET',    url: `${base}/api/settings${boardPath}` }
-    case 'settings/update':   return { method: 'PUT',    url: `${base}/api/settings`, body: params }
+    case 'settings/get':      return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.settings, { query: boardId ? { boardId } : undefined }) }
+    case 'settings/update':   return { method: 'PUT',    url: buildUrl(baseUrl, API_PATHS.settings), body: params }
     // --- STORAGE ---
-    case 'storage/getStatus':          return { method: 'GET',  url: `${base}/api/storage` }
-    case 'storage/migrateToSqlite':    return { method: 'POST', url: `${base}/api/storage/migrate-to-sqlite`, body: params }
-    case 'storage/migrateToMarkdown':  return { method: 'POST', url: `${base}/api/storage/migrate-to-markdown` }
+    case 'storage/getStatus':          return { method: 'GET',  url: buildUrl(baseUrl, API_PATHS.storage) }
+    case 'storage/migrateToSqlite':    return { method: 'POST', url: buildUrl(baseUrl, API_PATHS.storageMigrateSqlite), body: params }
+    case 'storage/migrateToMarkdown':  return { method: 'POST', url: buildUrl(baseUrl, API_PATHS.storageMigrateMarkdown) }
     // --- FORM ---
-    case 'form/submit':       return { method: 'POST',   url: `${base}/api/forms/${id ?? ''}/submit`, body: params }
+    case 'form/submit':       return taskId && formId
+      ? { method: 'POST', url: buildUrl(baseUrl, API_PATHS.taskFormSubmit, { path: { id: taskId, formId } }), body: params }
+      : undefined
     // --- WEBHOOK ---
-    case 'webhook/list':      return { method: 'GET',    url: `${base}/api/webhooks` }
-    case 'webhook/create':    return { method: 'POST',   url: `${base}/api/webhooks`, body: params }
-    case 'webhook/update':    return { method: 'PUT',    url: `${base}/api/webhooks/${id ?? ''}`, body: params }
-    case 'webhook/delete':    return { method: 'DELETE', url: `${base}/api/webhooks/${id ?? ''}` }
+    case 'webhook/list':      return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.webhooks) }
+    case 'webhook/create':    return { method: 'POST',   url: buildUrl(baseUrl, API_PATHS.webhooks), body: params }
+    case 'webhook/update':    return { method: 'PUT',    url: buildUrl(baseUrl, API_PATHS.webhook, { path: { id: id ?? '' } }), body: params }
+    case 'webhook/delete':    return { method: 'DELETE', url: buildUrl(baseUrl, API_PATHS.webhook, { path: { id: id ?? '' } }) }
     // --- WORKSPACE ---
-    case 'workspace/getInfo': return { method: 'GET',    url: `${base}/api/workspace` }
+    case 'workspace/getInfo': return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.workspace) }
     // --- AUTH ---
-    case 'auth/getStatus':    return { method: 'GET',    url: `${base}/api/auth/status` }
+    case 'auth/getStatus':    return { method: 'GET',    url: buildUrl(baseUrl, API_PATHS.authStatus) }
     // unmapped
     default: return undefined
   }

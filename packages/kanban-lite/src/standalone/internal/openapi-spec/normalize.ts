@@ -1,56 +1,33 @@
-type OpenApiSchema = {
-  type?: string
-  description?: string
-  items?: OpenApiSchema
-  properties?: Record<string, OpenApiSchema>
-  oneOf?: readonly OpenApiSchema[]
-  anyOf?: readonly OpenApiSchema[]
-  allOf?: readonly OpenApiSchema[]
-  [key: string]: unknown
-}
+import type {
+  StandaloneOpenApiDocFragment,
+  StandaloneOpenApiOperation,
+  StandaloneOpenApiParameter,
+  StandaloneOpenApiPaths,
+  StandaloneOpenApiRequestBody,
+  StandaloneOpenApiSchema,
+  StandaloneOpenApiTag,
+} from '../../../sdk/plugins'
 
-type OpenApiParameter = {
-  name: string
-  in: string
-  required?: boolean
-  description?: string
-  schema?: OpenApiSchema
-  [key: string]: unknown
-}
+type OpenApiSchema = StandaloneOpenApiSchema
+
+type OpenApiParameter = StandaloneOpenApiParameter
 
 type OpenApiMediaType = {
   schema?: OpenApiSchema
   [key: string]: unknown
 }
 
-type OpenApiRequestBody = {
-  description?: string
-  content?: Record<string, OpenApiMediaType>
-  [key: string]: unknown
-}
+type OpenApiRequestBody = StandaloneOpenApiRequestBody
 
-type OpenApiOperation = {
-  summary?: string
-  description?: string
-  operationId?: string
-  parameters?: readonly OpenApiParameter[]
-  requestBody?: OpenApiRequestBody
-  [key: string]: unknown
-}
+type OpenApiOperation = StandaloneOpenApiOperation
 
 type OpenApiPathItem = Record<string, OpenApiOperation>
 
-type OpenApiTag = {
-  name: string
-  description?: string
-}
+type OpenApiTag = StandaloneOpenApiTag
 
-export type OpenApiPaths = Record<string, OpenApiPathItem>
+export type OpenApiPaths = StandaloneOpenApiPaths
 
-export type OpenApiDocFragment = {
-  tags?: ReadonlyArray<OpenApiTag>
-  paths: OpenApiPaths
-}
+export type OpenApiDocFragment = StandaloneOpenApiDocFragment
 
 export type OpenApiSpecWithPaths = {
   tags?: OpenApiTag[]

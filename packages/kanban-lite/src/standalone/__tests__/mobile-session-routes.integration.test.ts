@@ -253,6 +253,22 @@ describe('Standalone mobile bootstrap/session routes', () => {
     })
   })
 
+  it('publishes /api/mobile/session in the standalone OpenAPI document when local auth is active', async () => {
+    const response = await httpRequest('GET', `http://localhost:${port}/api/docs/json`)
+
+    expect(response.status).toBe(200)
+
+    const spec = JSON.parse(response.body) as {
+      paths: Record<string, Record<string, unknown>>
+    }
+
+    expect(spec.paths['/api/mobile/bootstrap']).toBeDefined()
+    expect(spec.paths['/api/mobile/session']).toBeDefined()
+    expect(spec.paths['/api/mobile/session'].post).toBeDefined()
+    expect(spec.paths['/api/mobile/session'].get).toBeDefined()
+    expect(spec.paths['/api/mobile/session'].delete).toBeDefined()
+  })
+
   it('rejects wrong-workspace mobile session validation even when the token is otherwise valid', async () => {
     const loginResponse = await httpRequest('POST', `http://localhost:${port}/api/mobile/session`, {
       workspaceOrigin: 'https://field.example.com/mobile/',

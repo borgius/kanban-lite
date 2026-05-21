@@ -213,6 +213,42 @@ describe('Cloudflare worker entrypoint', () => {
     await expect(response.text()).resolves.toContain('WebSocket live sync is not configured')
   })
 
+  it('serves normalized OpenAPI JSON from the Cloudflare worker docs route', async () => {
+    const handler = createCloudflareWorkerFetchHandler({
+      kanbanDir: '.kanban',
+      bootstrap: createCloudflareWorkerBootstrap({ config: createWorkerBootstrapConfig() }),
+    })
+
+    const response = await handler(new Request('https://example.test/api/docs/json'))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/json')
+
+    const spec = await response.json() as {
+      openapi?: string
+      paths?: {
+        '/api/tasks'?: {
+          get?: {
+            operationId?: string
+            description?: string
+            parameters?: Array<{
+              name?: string
+              description?: string
+              schema?: { description?: string }
+            }>
+          }
+        }
+      }
+    }
+    const listTasks = spec.paths?.['/api/tasks']?.get
+    const qParam = listTasks?.parameters?.find((parameter) => parameter.name === 'q')
+
+    expect(spec.openapi).toBe('3.0.3')
+    expect(listTasks?.operationId).toBe('list_tasks')
+    expect(listTasks?.description).toContain('Returns tasks on the default board')
+    expect(qParam?.schema?.description).toBe(qParam?.description)
+  })
+
   it('serves health checks with the built-in cloudflare storage provider aliases and no explicit module registry entry', async () => {
     const workspaceRoot = '/virtual/worker-built-in-cloudflare'
     const database = new FakeCallbackD1Database()

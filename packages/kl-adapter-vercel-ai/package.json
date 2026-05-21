@@ -21,7 +21,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:ai --external:zod && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
+    "build": "esbuild src/index.ts --bundle --outfile=dist/index.cjs --format=cjs --platform=node --external:ai --external:zod --external:kanban-lite --external:kanban-lite/sdk && tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir dist",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -34,12 +34,14 @@
     "@types/node": "^20.10.0",
     "ai": "^4.0.0",
     "esbuild": "^0.19.0",
+    "kanban-lite": "workspace:*",
     "typescript": "^5.3.0",
     "vitest": "^4.0.18",
     "zod": "^3.22.0"
   },
   "peerDependencies": {
     "ai": ">=4.0.0",
+    "kanban-lite": ">=1.2.22",
     "zod": ">=3.22.0"
   },
   "keywords": [

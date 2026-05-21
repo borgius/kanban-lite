@@ -12,7 +12,7 @@ import {
   cardStateReadBodySchema,
   checklistCreateBodySchema,
   checklistEditBodySchema,
-  checklistExpectedRawBodySchema,
+  checklistModifiedAtBodySchema,
 } from './params'
 
 export const tasksPaths = {
@@ -128,7 +128,7 @@ export const tasksPaths = {
       put: {
         tags: ['Tasks'],
         summary: 'Edit checklist item',
-        description: 'Edits one checklist item on the task and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Edits one checklist item on the task and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [taskIdParam, checklistIndexParam],
         requestBody: {
           required: true,
@@ -143,13 +143,13 @@ export const tasksPaths = {
       delete: {
         tags: ['Tasks'],
         summary: 'Delete checklist item',
-        description: 'Deletes one checklist item on the task and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Deletes one checklist item on the task and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [taskIdParam, checklistIndexParam],
         requestBody: {
           required: false,
           content: {
             'application/json': {
-              schema: checklistExpectedRawBodySchema,
+              schema: checklistModifiedAtBodySchema,
             },
           },
         },
@@ -160,13 +160,13 @@ export const tasksPaths = {
       post: {
         tags: ['Tasks'],
         summary: 'Check checklist item',
-        description: 'Marks one checklist item complete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Marks one checklist item complete and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [taskIdParam, checklistIndexParam],
         requestBody: {
           required: false,
           content: {
             'application/json': {
-              schema: checklistExpectedRawBodySchema,
+              schema: checklistModifiedAtBodySchema,
             },
           },
         },
@@ -177,13 +177,13 @@ export const tasksPaths = {
       post: {
         tags: ['Tasks'],
         summary: 'Uncheck checklist item',
-        description: 'Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `expectedRaw` to guard against stale concurrent edits.',
+        description: 'Marks one checklist item incomplete and returns the refreshed checklist read model. Supply `modifiedAt` to guard against stale concurrent edits.',
         parameters: [taskIdParam, checklistIndexParam],
         requestBody: {
           required: false,
           content: {
             'application/json': {
-              schema: checklistExpectedRawBodySchema,
+              schema: checklistModifiedAtBodySchema,
             },
           },
         },
@@ -355,6 +355,39 @@ export const tasksPaths = {
         responses: {
           201: { description: 'Created comment.' },
           400: { description: 'Validation error (missing author or content).' },
+          404: { description: 'Task not found.' },
+        },
+      },
+    },
+    '/api/tasks/{id}/comments/stream': {
+      post: {
+        tags: ['Comments'],
+        summary: 'Stream comment',
+        description: 'Streams a plain-text comment body to the task incrementally while connected webview clients receive chunked updates in real time.',
+        parameters: [
+          taskIdParam,
+          {
+            name: 'author',
+            in: 'query' as const,
+            required: true as const,
+            schema: { type: 'string' as const },
+            description: 'Comment author for the streamed comment body.',
+          },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'text/plain': {
+              schema: {
+                type: 'string',
+                description: 'Plain-text request body streamed to the server and appended to the created comment.',
+              },
+            },
+          },
+        },
+        responses: {
+          201: { description: 'Created streamed comment.' },
+          400: { description: 'Validation error (missing author or invalid stream body).' },
           404: { description: 'Task not found.' },
         },
       },

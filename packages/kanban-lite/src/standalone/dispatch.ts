@@ -1,14 +1,15 @@
 import * as http from 'http'
-import type { StandaloneHttpHandler, StandaloneHttpPlugin } from '../sdk'
+import type {
+  StandaloneHttpHandler,
+  StandaloneHttpPlugin,
+  StandaloneHttpPluginRegistrationOptions,
+} from '../sdk'
 import { withConfigReadCache } from '../shared/config'
 import { extractAuthContext, getRequestAuthContext, mergeRequestAuthContext, setRequestAuthContext } from './authUtils'
 import type { StandaloneContext } from './context'
 import { createRouteMatcher, type StandaloneRequestContext, type StandaloneRouteHandler } from './internal/common'
-import { handleCardFileRoute } from './internal/lifecycle'
-import { handleBoardRoutes } from './internal/routes/boards'
-import { handleMobileRoutes } from './internal/routes/mobile'
-import { handleSystemRoutes } from './internal/routes/system'
-import { handleTaskRoutes } from './internal/routes/tasks'
+import { createBuiltInStandaloneRouteHandlers } from './internal/http-contracts'
+import { handleStandaloneAppRoutes } from './internal/routes/system'
 import { matchRoute, type IncomingMessageWithRawBody } from './httpUtils'
 
 function dispatchRequest(request: StandaloneRequestContext, handlers: StandaloneRouteHandler[]): Promise<void> {
@@ -26,11 +27,10 @@ function isPageRequest(method: string, pathname: string): boolean {
   return (method === 'GET' || method === 'HEAD') && !isApiRequestPath(pathname)
 }
 
-function collectStandaloneHttpHandlers(
+export function createStandaloneHttpPluginRegistrationOptions(
   ctx: StandaloneContext,
-): { middleware: StandaloneHttpHandler[]; routes: StandaloneHttpHandler[] } {
-  const plugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
-  const registrationOptions = {
+): StandaloneHttpPluginRegistrationOptions {
+  return {
     sdk: ctx.sdk,
     workspaceRoot: ctx.workspaceRoot,
     kanbanDir: ctx.absoluteKanbanDir,
@@ -45,7 +45,13 @@ function collectStandaloneHttpHandlers(
     },
     webhookCapabilities: ctx.sdk.capabilities?.webhookProviders ?? null,
   } as const
+}
 
+function collectStandaloneHttpHandlers(
+  ctx: StandaloneContext,
+): { registrationOptions: StandaloneHttpPluginRegistrationOptions; middleware: StandaloneHttpHandler[]; routes: StandaloneHttpHandler[] } {
+  const plugins = ctx.sdk.capabilities?.standaloneHttpPlugins ?? []
+  const registrationOptions = createStandaloneHttpPluginRegistrationOptions(ctx)
   const middleware: StandaloneHttpHandler[] = []
   const routes: StandaloneHttpHandler[] = []
   for (const plugin of plugins as StandaloneHttpPlugin[]) {
@@ -54,7 +60,7 @@ function collectStandaloneHttpHandlers(
     const rts = plugin.registerRoutes?.(registrationOptions)
     if (rts) routes.push(...rts)
   }
-  return { middleware, routes }
+  return { registrationOptions, middleware, routes }
 }
 
 function normalizeRequestUrl(req: IncomingMessageWithRawBody, basePath: string): void {
@@ -120,11 +126,8 @@ export function createStandaloneRouteDispatcher(
     }
   const routeHandlers: StandaloneRouteHandler[] = [
     ...pluginRouteHandlers,
-    handleMobileRoutes,
-    handleBoardRoutes,
-    handleTaskRoutes,
-    handleCardFileRoute,
-    handleSystemRoutes,
+    ...createBuiltInStandaloneRouteHandlers(),
+    handleStandaloneAppRoutes,
   ]
 
   return {

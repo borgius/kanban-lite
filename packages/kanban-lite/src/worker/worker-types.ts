@@ -45,6 +45,7 @@ export interface WorkerRuntimeHostHandle {
 
 export interface WorkerEntrypointState {
   dispatcher: ReturnType<typeof createStandaloneRouteDispatcher> | null
+  standaloneOpenApiSpec: Record<string, unknown> | null
   workerRuntimeHost: WorkerRuntimeHostHandle | null
   bootstrap: CloudflareWorkerBootstrap | null
   moduleRegistry: WorkerModuleRegistry

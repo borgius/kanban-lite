@@ -3,6 +3,29 @@ import type { CreateCardInput } from '../types'
 import type { SDKEvent, SDKEventListener } from '../types'
 import type { EventBusAnyListener, EventBusWaitOptions } from '../eventBus'
 import { EventBus } from '../eventBus'
+import { createStandaloneApiClient } from './openapi-client'
+
+const REMOTE_API_PATHS = {
+  health: '/api/health',
+  boards: '/api/boards',
+  board: '/api/boards/{boardId}',
+  boardTasks: '/api/boards/{boardId}/tasks',
+  boardActiveTask: '/api/boards/{boardId}/tasks/active',
+  boardTask: '/api/boards/{boardId}/tasks/{id}',
+  boardTaskMove: '/api/boards/{boardId}/tasks/{id}/move',
+  tasks: '/api/tasks',
+  activeTask: '/api/tasks/active',
+  task: '/api/tasks/{id}',
+  taskMove: '/api/tasks/{id}/move',
+  taskChecklist: '/api/tasks/{id}/checklist',
+  taskChecklistItem: '/api/tasks/{id}/checklist/{index}',
+  taskChecklistItemCheck: '/api/tasks/{id}/checklist/{index}/check',
+  taskChecklistItemUncheck: '/api/tasks/{id}/checklist/{index}/uncheck',
+  taskComments: '/api/tasks/{id}/comments',
+  taskComment: '/api/tasks/{id}/comments/{commentId}',
+  taskAttachments: '/api/tasks/{id}/attachments',
+  taskAttachment: '/api/tasks/{id}/attachments/{filename}',
+} as const
 
 /**
  * SDK client that transparently proxies all operations to a remote
@@ -28,6 +51,7 @@ export class RemoteKanbanSDK {
   private readonly _remoteUrl: string
   private readonly _token: string | undefined
   private readonly _eventBus: EventBus
+  private readonly _client: ReturnType<typeof createStandaloneApiClient>
 
   /** Empty sentinel — no local filesystem in remote mode. */
   readonly kanbanDir: string = ''
@@ -38,24 +62,27 @@ export class RemoteKanbanSDK {
     this._remoteUrl = options.remoteUrl.replace(/\/$/, '')
     this._token = options.token
     this._eventBus = new EventBus()
+    this._client = createStandaloneApiClient({
+      baseUrl: this._remoteUrl,
+      token: this._token,
+    })
   }
 
   // ---------------------------------------------------------------------------
   // Internal HTTP helper
   // ---------------------------------------------------------------------------
 
-  private async _request<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const url = `${this._remoteUrl}${path}`
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-    if (this._token) headers['Authorization'] = `Bearer ${this._token}`
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    })
-    const json = (await res.json()) as { ok: boolean; data?: T; error?: string }
-    if (!json.ok) throw new Error(json.error ?? `Remote API error ${res.status}`)
-    return json.data as T
+  private async _request<T>(
+    method: 'get' | 'put' | 'post' | 'delete' | 'patch',
+    path: typeof REMOTE_API_PATHS[keyof typeof REMOTE_API_PATHS],
+    options?: {
+      path?: Record<string, string | number>
+      query?: Record<string, boolean | number | string | undefined>
+      body?: unknown
+      contentType?: 'application/json' | 'text/plain'
+    },
+  ): Promise<T> {
+    return await this._client.request(method as never, path as never, options as never) as T
   }
 
   // ---------------------------------------------------------------------------
@@ -64,7 +91,7 @@ export class RemoteKanbanSDK {
 
   /** Validate connectivity by hitting the health endpoint. */
   async init(): Promise<void> {
-    await this._request<unknown>('GET', '/api/health')
+    await this._request<unknown>('get', REMOTE_API_PATHS.health)
   }
 
   // ---------------------------------------------------------------------------
@@ -72,20 +99,21 @@ export class RemoteKanbanSDK {
   // ---------------------------------------------------------------------------
 
   async listCards(columns?: string[], boardId?: string): Promise<Card[]> {
-    const params = new URLSearchParams()
-    if (boardId) params.set('boardId', boardId)
-    if (columns?.length) params.set('columns', columns.join(','))
-    const qs = params.toString()
-    const base = boardId
-      ? `/api/boards/${encodeURIComponent(boardId)}/tasks`
-      : '/api/tasks'
-    const path = qs ? `${base}?${qs}` : base
-    return this._request<Card[]>('GET', path)
+    const query = columns?.length ? { status: columns.join(',') } : undefined
+    if (boardId) {
+      return this._request<Card[]>('get', REMOTE_API_PATHS.boardTasks, {
+        path: { boardId },
+        query,
+      })
+    }
+    return this._request<Card[]>('get', REMOTE_API_PATHS.tasks, { query })
   }
 
   async getCard(cardId: string): Promise<Card | null> {
     try {
-      return await this._request<Card>('GET', `/api/tasks/${encodeURIComponent(cardId)}`)
+      return await this._request<Card>('get', REMOTE_API_PATHS.task, {
+        path: { id: cardId },
+      })
     } catch (err) {
       if (err instanceof Error && err.message.toLowerCase().includes('not found')) return null
       throw err
@@ -93,32 +121,40 @@ export class RemoteKanbanSDK {
   }
 
   async createCard(input: CreateCardInput): Promise<Card> {
-    return this._request<Card>('POST', '/api/tasks', input)
+    return this._request<Card>('post', REMOTE_API_PATHS.tasks, { body: input })
   }
 
   async updateCard(
     cardId: string,
     updates: Partial<CreateCardInput>,
   ): Promise<Card> {
-    return this._request<Card>('PATCH', `/api/tasks/${encodeURIComponent(cardId)}`, updates)
+    return this._request<Card>('put', REMOTE_API_PATHS.task, {
+      path: { id: cardId },
+      body: updates,
+    })
   }
 
   async deleteCard(cardId: string): Promise<void> {
-    await this._request<void>('DELETE', `/api/tasks/${encodeURIComponent(cardId)}`)
+    await this._request<void>('delete', REMOTE_API_PATHS.task, {
+      path: { id: cardId },
+    })
   }
 
   async moveCard(cardId: string, newStatus: string): Promise<Card> {
-    return this._request<Card>(
-      'POST',
-      `/api/tasks/${encodeURIComponent(cardId)}/move`,
-      { status: newStatus },
-    )
+    return this._request<Card>('patch', REMOTE_API_PATHS.taskMove, {
+      path: { id: cardId },
+      body: { status: newStatus },
+    })
   }
 
   async getActiveCard(boardId?: string): Promise<Card | null> {
     try {
-      const qs = boardId ? `?boardId=${encodeURIComponent(boardId)}` : ''
-      return await this._request<Card | null>('GET', `/api/tasks/active${qs}`)
+      if (boardId) {
+        return await this._request<Card | null>('get', REMOTE_API_PATHS.boardActiveTask, {
+          path: { boardId },
+        })
+      }
+      return await this._request<Card | null>('get', REMOTE_API_PATHS.activeTask)
     } catch {
       return null
     }
@@ -135,7 +171,7 @@ export class RemoteKanbanSDK {
    * variant when working in remote mode.
    */
   async listBoardsAsync(): Promise<BoardInfo[]> {
-    return this._request<BoardInfo[]>('GET', '/api/boards')
+    return this._request<BoardInfo[]>('get', REMOTE_API_PATHS.boards)
   }
 
   /**
@@ -149,7 +185,9 @@ export class RemoteKanbanSDK {
   }
 
   async getBoard(boardId: string): Promise<unknown> {
-    return this._request('GET', `/api/boards/${encodeURIComponent(boardId)}`)
+    return this._request('get', REMOTE_API_PATHS.board, {
+      path: { boardId },
+    })
   }
 
   async createBoard(
@@ -162,15 +200,22 @@ export class RemoteKanbanSDK {
       defaultPriority?: Priority
     },
   ): Promise<BoardInfo> {
-    return this._request<BoardInfo>('POST', '/api/boards', { id, name, ...options })
+    return this._request<BoardInfo>('post', REMOTE_API_PATHS.boards, {
+      body: { id, name, ...options },
+    })
   }
 
   async updateBoard(boardId: string, updates: Record<string, unknown>): Promise<unknown> {
-    return this._request('PUT', `/api/boards/${encodeURIComponent(boardId)}`, updates)
+    return this._request('put', REMOTE_API_PATHS.board, {
+      path: { boardId },
+      body: updates,
+    })
   }
 
   async deleteBoard(boardId: string): Promise<void> {
-    await this._request<void>('DELETE', `/api/boards/${encodeURIComponent(boardId)}`)
+    await this._request<void>('delete', REMOTE_API_PATHS.board, {
+      path: { boardId },
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -178,7 +223,9 @@ export class RemoteKanbanSDK {
   // ---------------------------------------------------------------------------
 
   async listComments(cardId: string): Promise<Comment[]> {
-    return this._request<Comment[]>('GET', `/api/tasks/${encodeURIComponent(cardId)}/comments`)
+    return this._request<Comment[]>('get', REMOTE_API_PATHS.taskComments, {
+      path: { id: cardId },
+    })
   }
 
   async addComment(
@@ -186,11 +233,10 @@ export class RemoteKanbanSDK {
     author: string,
     content: string,
   ): Promise<Card> {
-    return this._request<Card>(
-      'POST',
-      `/api/tasks/${encodeURIComponent(cardId)}/comments`,
-      { author, content },
-    )
+    return this._request<Card>('post', REMOTE_API_PATHS.taskComments, {
+      path: { id: cardId },
+      body: { author, content },
+    })
   }
 
   async updateComment(
@@ -198,21 +244,19 @@ export class RemoteKanbanSDK {
     commentId: string,
     content: string,
   ): Promise<Card> {
-    return this._request<Card>(
-      'PATCH',
-      `/api/tasks/${encodeURIComponent(cardId)}/comments/${encodeURIComponent(commentId)}`,
-      { content },
-    )
+    return this._request<Card>('put', REMOTE_API_PATHS.taskComment, {
+      path: { id: cardId, commentId },
+      body: { content },
+    })
   }
 
   async deleteComment(
     cardId: string,
     commentId: string,
   ): Promise<Card> {
-    return this._request<Card>(
-      'DELETE',
-      `/api/tasks/${encodeURIComponent(cardId)}/comments/${encodeURIComponent(commentId)}`,
-    )
+    return this._request<Card>('delete', REMOTE_API_PATHS.taskComment, {
+      path: { id: cardId, commentId },
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -220,11 +264,13 @@ export class RemoteKanbanSDK {
   // ---------------------------------------------------------------------------
 
   async addChecklistItem(cardId: string, title: string): Promise<Card> {
-    return this._request<Card>(
-      'POST',
-      `/api/tasks/${encodeURIComponent(cardId)}/checklist`,
-      { title },
-    )
+    const checklist = await this._request<{ token?: string }>('get', REMOTE_API_PATHS.taskChecklist, {
+      path: { id: cardId },
+    })
+    return this._request<Card>('post', REMOTE_API_PATHS.taskChecklist, {
+      path: { id: cardId },
+      body: { title, expectedToken: checklist.token ?? '' },
+    })
   }
 
   async editChecklistItem(
@@ -232,32 +278,28 @@ export class RemoteKanbanSDK {
     index: number,
     title: string,
   ): Promise<Card> {
-    return this._request<Card>(
-      'PATCH',
-      `/api/tasks/${encodeURIComponent(cardId)}/checklist/${index}`,
-      { title },
-    )
+    return this._request<Card>('put', REMOTE_API_PATHS.taskChecklistItem, {
+      path: { id: cardId, index },
+      body: { title },
+    })
   }
 
   async deleteChecklistItem(cardId: string, index: number): Promise<Card> {
-    return this._request<Card>(
-      'DELETE',
-      `/api/tasks/${encodeURIComponent(cardId)}/checklist/${index}`,
-    )
+    return this._request<Card>('delete', REMOTE_API_PATHS.taskChecklistItem, {
+      path: { id: cardId, index },
+    })
   }
 
   async checkChecklistItem(cardId: string, index: number): Promise<Card> {
-    return this._request<Card>(
-      'POST',
-      `/api/tasks/${encodeURIComponent(cardId)}/checklist/${index}/check`,
-    )
+    return this._request<Card>('post', REMOTE_API_PATHS.taskChecklistItemCheck, {
+      path: { id: cardId, index },
+    })
   }
 
   async uncheckChecklistItem(cardId: string, index: number): Promise<Card> {
-    return this._request<Card>(
-      'DELETE',
-      `/api/tasks/${encodeURIComponent(cardId)}/checklist/${index}/check`,
-    )
+    return this._request<Card>('post', REMOTE_API_PATHS.taskChecklistItemUncheck, {
+      path: { id: cardId, index },
+    })
   }
 
   // ---------------------------------------------------------------------------
@@ -269,43 +311,30 @@ export class RemoteKanbanSDK {
     filename: string,
     data: string | Uint8Array,
   ): Promise<Card> {
-    const url = `${this._remoteUrl}/api/tasks/${encodeURIComponent(cardId)}/attachments`
-    const headers: Record<string, string> = {}
-    if (this._token) headers['Authorization'] = `Bearer ${this._token}`
-    const blob =
-      typeof data === 'string'
-        ? new Blob([data], { type: 'text/plain' })
-        : new Blob([data as Uint8Array<ArrayBuffer>], { type: 'application/octet-stream' })
-    const form = new FormData()
-    form.append('file', blob, filename)
-    const res = await fetch(url, { method: 'POST', headers, body: form })
-    const json = (await res.json()) as { ok: boolean; data?: Card; error?: string }
-    if (!json.ok) throw new Error(json.error ?? `Remote API error ${res.status}`)
-    return json.data as Card
+    const encodedData = typeof data === 'string'
+      ? data
+      : Buffer.from(data).toString('base64')
+    return this._request<Card>('post', REMOTE_API_PATHS.taskAttachments, {
+      path: { id: cardId },
+      body: {
+        files: [{ name: filename, data: encodedData }],
+      },
+    })
   }
 
   async removeAttachment(cardId: string, attachment: string): Promise<Card> {
-    return this._request<Card>(
-      'DELETE',
-      `/api/tasks/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(attachment)}`,
-    )
+    return this._request<Card>('delete', REMOTE_API_PATHS.taskAttachment, {
+      path: { id: cardId, filename: attachment },
+    })
   }
 
   async getAttachmentData(
     cardId: string,
     filename: string,
   ): Promise<{ data: Uint8Array; contentType?: string } | null> {
-    const url =
-      `${this._remoteUrl}/api/tasks/${encodeURIComponent(cardId)}/attachments/${encodeURIComponent(filename)}`
-    const headers: Record<string, string> = {}
-    if (this._token) headers['Authorization'] = `Bearer ${this._token}`
-    const res = await fetch(url, { headers })
-    if (res.status === 404) return null
-    const buf = await res.arrayBuffer()
-    return {
-      data: new Uint8Array(buf),
-      contentType: res.headers.get('content-type') ?? undefined,
-    }
+    return this._client.requestBinary('get', REMOTE_API_PATHS.taskAttachment, {
+      path: { id: cardId, filename },
+    })
   }
 
   /** Always returns `null` — no local filesystem paths in remote mode. */

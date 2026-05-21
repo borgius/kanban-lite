@@ -737,6 +737,15 @@ describe('standaloneHttpPlugin', () => {
     expect(standaloneHttpPlugin.manifest.provides).toContain('standalone.http')
   })
 
+  it('owns standalone OpenAPI docs for /api/webhooks and /api/webhooks/test', () => {
+    const fragments = standaloneHttpPlugin.getOpenApiDocs?.() ?? []
+
+    expect(fragments).toHaveLength(1)
+    expect(fragments[0].paths['/api/webhooks']).toBeDefined()
+    expect(fragments[0].paths['/api/webhooks/{id}']).toBeDefined()
+    expect(fragments[0].paths['/api/webhooks/test']).toBeDefined()
+  })
+
   it('registerRoutes returns an array of 5 handler functions', () => {
     const handlers = standaloneHttpPlugin.registerRoutes()
     expect(Array.isArray(handlers)).toBe(true)

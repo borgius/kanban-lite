@@ -40,6 +40,11 @@ import { resolveWorkerRuntimeHostHandle, installWorkerRuntimeHost } from './work
 import { handleMcpRequest } from './mcp-handler'
 import { withCloudflareAccessAuthorizationFallback } from './worker-auth'
 import { verifyCfAccessJwt } from './lib/cf-access'
+import {
+  buildStandaloneOpenApiSpec,
+  collectStandalonePluginOpenApiDocs,
+} from '../standalone/internal/openapi-spec/build'
+import { createStandaloneHttpPluginRegistrationOptions } from '../standalone/dispatch'
 
 const CLOUDFLARE_ACTIVE_CARD_STATE_BINDING = 'KANBAN_ACTIVE_CARD_STATE'
 const LIVE_SYNC_OBJECT_NAME_PREFIX = 'live-sync:'
@@ -304,6 +309,7 @@ export function createCloudflareWorkerScheduledHandler(options: CloudflareWorker
 function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerOptions = {}) {
   const state: WorkerEntrypointState = {
     dispatcher: null,
+    standaloneOpenApiSpec: null,
     workerRuntimeHost: null,
     bootstrap: null,
     moduleRegistry: {},
@@ -326,6 +332,11 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
 
     const url = new URL(request.url)
     const basePath = options.basePath ?? ''
+    const docsJsonPath = `${basePath}/api/docs/json`
+    const docsUiPath = `${basePath}/api/docs`
+    const isDocsJsonRequest = url.pathname === docsJsonPath
+    const isDocsUiRequest = url.pathname === docsUiPath || url.pathname === `${docsUiPath}/`
+    const isDocsRequest = isDocsJsonRequest || isDocsUiRequest
 
     const mcpPath = `${basePath}/mcp`
     if (url.pathname === mcpPath || url.pathname === `${mcpPath}/`) {
@@ -347,6 +358,18 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
       return new Response(mcpResponse.body, { status: mcpResponse.status, statusText: mcpResponse.statusText, headers })
     }
 
+    if (isDocsRequest && request.method === 'OPTIONS') {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Max-Age': '86400',
+        },
+      })
+    }
+
     const isApiRequest = url.pathname === '/api' || url.pathname.startsWith('/api/')
     if (!isApiRequest && /\.[^./]+$/.test(url.pathname) && env?.ASSETS) {
       const assetResponse = await env.ASSETS.fetch(request)
@@ -365,7 +388,33 @@ function createCloudflareWorkerEntrypoint(options: CloudflareWorkerFetchHandlerO
         state.setOriginSession = syncHandler.setOriginSession
         const ctx = createWorkerContext(kanbanDir, syncHandler.onEvent)
         state.dispatcher = createStandaloneRouteDispatcher(ctx, options.webviewDir ?? '', getIndexHtml(basePath), basePath)
+        state.standaloneOpenApiSpec = buildStandaloneOpenApiSpec(
+          collectStandalonePluginOpenApiDocs(
+            ctx.sdk.capabilities?.standaloneHttpPlugins ?? [],
+            createStandaloneHttpPluginRegistrationOptions(ctx),
+          ),
+        ) as unknown as Record<string, unknown>
         workerRuntimeHost.markDispatcherReady()
+      }
+
+      if (isDocsJsonRequest && (request.method === 'GET' || request.method === 'HEAD')) {
+        return new Response(request.method === 'HEAD' ? null : JSON.stringify(state.standaloneOpenApiSpec ?? {}), {
+          status: 200,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Content-Type': 'application/json',
+          },
+        })
+      }
+
+      if (isDocsUiRequest && (request.method === 'GET' || request.method === 'HEAD')) {
+        return new Response(null, {
+          status: 302,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            Location: new URL(docsJsonPath, url).toString(),
+          },
+        })
       }
 
       const isWebviewSync = url.pathname === `${basePath}/api/webview-sync` && request.method === 'POST'

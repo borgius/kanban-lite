@@ -15,7 +15,7 @@ import { handlePluginSettingsRoutes } from './system-plugin-settings'
 import { handleSystemStorageRoutes } from './system-storage'
 import { syncWebviewMessages } from '../webview-sync'
 
-export async function handleSystemRoutes(request: StandaloneRequestContext): Promise<boolean> {
+export async function handleSystemApiRoutes(request: StandaloneRequestContext): Promise<boolean> {
   const { ctx, route, req, res, url, pathname, resolvedWebviewDir, indexHtml } = request
   const { sdk, workspaceRoot } = ctx
   const runWithRequestAuth = <T>(fn: () => Promise<T>): Promise<T> => sdk.runWithAuth(extractAuthContext(req), fn)
@@ -305,6 +305,11 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     return true
   }
 
+  return false
+}
+
+export async function handleStandaloneAppRoutes(request: StandaloneRequestContext): Promise<boolean> {
+  const { pathname, res, resolvedWebviewDir, indexHtml } = request
   if (pathname === '/api' || pathname.startsWith('/api/')) {
     jsonError(res, 404, 'Not found')
     return true
@@ -328,6 +333,10 @@ export async function handleSystemRoutes(request: StandaloneRequestContext): Pro
     res.end(data)
   })
   return true
+}
+
+export async function handleSystemRoutes(request: StandaloneRequestContext): Promise<boolean> {
+  return await handleSystemApiRoutes(request) || await handleStandaloneAppRoutes(request)
 }
 
 function pathHasExtension(filePath: string): boolean {

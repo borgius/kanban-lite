@@ -1,6 +1,4 @@
-import { boardsPaths } from './paths-boards'
-import { tasksPaths } from './paths-tasks'
-import { miscPaths } from './paths-misc'
+import { buildBuiltInStandaloneOpenApiPaths } from '../http-contracts'
 
 export const KANBAN_OPENAPI_SPEC = {
   openapi: '3.0.3',
@@ -42,6 +40,7 @@ export const KANBAN_OPENAPI_SPEC = {
     { name: 'Plugins', description: 'Plugin discovery, selection, options, and guarded installation' },
     { name: 'Labels', description: 'Label definitions and cascading renames' },
     { name: 'Workspace', description: 'Workspace metadata, storage, and auth status' },
+    { name: 'Mobile', description: 'Mobile bootstrap routes for standalone field clients' },
   ],
   components: {
     schemas: {
@@ -198,9 +197,5 @@ export const KANBAN_OPENAPI_SPEC = {
       },
     },
   },
-  paths: {
-    ...boardsPaths,
-    ...tasksPaths,
-    ...miscPaths,
-  },
+  paths: buildBuiltInStandaloneOpenApiPaths(),
 }

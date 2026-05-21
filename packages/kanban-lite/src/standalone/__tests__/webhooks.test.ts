@@ -20,6 +20,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
+const WEBHOOK_NEGATIVE_SETTLE_MS = 150
+
 async function waitFor(check: () => boolean, timeoutMs = 1500, intervalMs = 25): Promise<void> {
   const started = Date.now()
   while (!check()) {
@@ -234,7 +236,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# No delivery without plugin.' })
-      await sleep(400)
+      await sleep(WEBHOOK_NEGATIVE_SETTLE_MS)
       expect(received).toHaveLength(0)
       sdk.destroy()
     } finally {
@@ -257,7 +259,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Inactive webhook test.' })
-      await sleep(300)
+      await sleep(WEBHOOK_NEGATIVE_SETTLE_MS)
       expect(called).toBe(false)
       sdk.destroy()
     } finally {
@@ -281,7 +283,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Event filter test.' })
-      await sleep(300)
+      await sleep(WEBHOOK_NEGATIVE_SETTLE_MS)
       expect(called).toBe(false)
       sdk.destroy()
     } finally {
@@ -312,7 +314,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# Wildcard test.' })
-      await sleep(400)
+      await sleep(WEBHOOK_NEGATIVE_SETTLE_MS)
       expect(receivedEvent).toBe('')
       sdk.destroy()
     } finally {
@@ -344,7 +346,7 @@ describe('Webhook delivery via built-in listener (built-in fallback path)', () =
     try {
       const sdk = new KanbanSDK(kanbanDir, { storage: new MarkdownStorageEngine(kanbanDir) })
       await sdk.createCard({ content: '# HMAC signature test.' })
-      await sleep(500)
+      await sleep(WEBHOOK_NEGATIVE_SETTLE_MS)
 
       expect(receivedHeaders['x-webhook-signature']).toBeUndefined()
 

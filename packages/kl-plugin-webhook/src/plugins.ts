@@ -648,6 +648,7 @@ const handlePostWebhookTest: StandaloneHttpHandler = async (ctx) => {
       return true
     }
     const ts = typeof body.timestamp === 'string' ? body.timestamp : new Date().toISOString()
+    const boardId = typeof body.boardId === 'string' && body.boardId ? body.boardId : undefined
     const text = `[webhook-test] Received event: ${event}`
     debugLog(`[kl-plugin-webhook] /test: writing board log for event=${event}`)
     // Use a pre-resolved system identity so the auth policy allows the call
@@ -661,7 +662,7 @@ const handlePostWebhookTest: StandaloneHttpHandler = async (ctx) => {
         source: 'webhook-test',
         timestamp: ts,
         object: body as Record<string, unknown>
-      })
+      }, boardId)
     )
     debugLog(`[kl-plugin-webhook] /test: board log written for event=${event}`)
     pluginJsonOk(ctx.res, { received: true, event })

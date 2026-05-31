@@ -33,6 +33,32 @@ export const PLUGIN_SETTINGS_INSTALL_SCOPES = ['workspace', 'global'] as const s
 /** Exact package-name matcher for install requests accepted by the plugin settings contract. */
 export const EXACT_PLUGIN_SETTINGS_PACKAGE_NAME_PATTERN = /^kl-[a-z0-9]+(?:-[a-z0-9]+)*$/
 
+/**
+ * Capability namespaces whose plugin options govern authentication and
+ * authorization. Mutating these can change who may sign in and what each role
+ * is permitted to do, so they are guarded by elevated permissions in addition
+ * to the generic `plugin-settings.*` actions.
+ */
+export const AUTH_PLUGIN_SETTINGS_CAPABILITIES: ReadonlySet<PluginCapabilityNamespace> = new Set<PluginCapabilityNamespace>([
+  'auth.identity',
+  'auth.policy',
+  'auth.visibility',
+])
+
+/** Elevated authorization action required to read auth-namespace plugin settings. */
+export const PLUGIN_SETTINGS_AUTH_READ_ACTION = 'plugin-settings.auth.read'
+
+/** Elevated authorization action required to mutate auth-namespace plugin settings. */
+export const PLUGIN_SETTINGS_AUTH_UPDATE_ACTION = 'plugin-settings.auth.update'
+
+/**
+ * True when a capability namespace governs authentication or authorization
+ * configuration, requiring the elevated `plugin-settings.auth.*` permissions.
+ */
+export function isAuthPluginSettingsCapability(capability: PluginCapabilityNamespace): boolean {
+  return AUTH_PLUGIN_SETTINGS_CAPABILITIES.has(capability)
+}
+
 /** Stable validation error codes for plugin settings contract violations. */
 export type PluginSettingsValidationErrorCode =
   | 'invalid-plugin-install-package-name'

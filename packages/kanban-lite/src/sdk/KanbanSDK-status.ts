@@ -44,6 +44,9 @@ import {
   createPluginSettingsInstallCommand,
   createPluginSettingsManualInstallCommand,
   DEFAULT_PLUGIN_SETTINGS_REDACTION,
+  isAuthPluginSettingsCapability,
+  PLUGIN_SETTINGS_AUTH_READ_ACTION,
+  PLUGIN_SETTINGS_AUTH_UPDATE_ACTION,
   PLUGIN_SETTINGS_INSTALL_FAILURE_MESSAGE,
   PLUGIN_SETTINGS_INSTALL_SUCCESS_MESSAGE,
   PluginSettingsOperationError,
@@ -204,6 +207,9 @@ export class KanbanSDKStatus extends KanbanSDKCore {
     providerId: string,
   ): Promise<PluginSettingsProviderReadModel | null> {
     await this._authorizeAction('plugin-settings.read')
+    if (isAuthPluginSettingsCapability(capability)) {
+      await this._authorizeAction(PLUGIN_SETTINGS_AUTH_READ_ACTION)
+    }
 
     try {
       return await readPluginSettingsProvider(
@@ -229,6 +235,9 @@ export class KanbanSDKStatus extends KanbanSDKCore {
     providerId: string,
   ): Promise<PluginSettingsProviderReadModel | null> {
     await this._authorizeAction('plugin-settings.update')
+    if (isAuthPluginSettingsCapability(capability)) {
+      await this._authorizeAction(PLUGIN_SETTINGS_AUTH_UPDATE_ACTION)
+    }
 
     try {
       return await persistPluginSettingsProviderSelection(
@@ -255,6 +264,9 @@ export class KanbanSDKStatus extends KanbanSDKCore {
     options: Record<string, unknown>,
   ): Promise<PluginSettingsProviderReadModel> {
     await this._authorizeAction('plugin-settings.update')
+    if (isAuthPluginSettingsCapability(capability)) {
+      await this._authorizeAction(PLUGIN_SETTINGS_AUTH_UPDATE_ACTION)
+    }
 
     try {
       return await persistPluginSettingsProviderOptions(

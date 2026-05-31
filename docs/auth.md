@@ -460,14 +460,18 @@ Those values reopen as `••••••` in the shared workflow. Leaving the 
 
 ### Plugin settings auth split
 
-Shared plugin-settings surfaces now use two auth actions:
+Shared plugin-settings surfaces now use two base auth actions, plus an elevated pair for the auth-governing capabilities:
 
 - `plugin-settings.read` controls plugin-settings inventory/detail reads before any plugin-settings payload is materialized. This covers the Settings panel hosts, the standalone websocket settings bridge (`openSettings`, `loadPluginSettings`, `readPluginSettings`), REST `GET /api/plugin-settings` and `GET /api/plugin-settings/:capability/:providerId`, CLI `plugin-settings list|show`, and MCP `list_plugin_settings`.
 - `plugin-settings.update` controls provider selection, option updates, and guarded installs. This covers the Settings panel hosts, the standalone websocket bridge mutation messages, REST `select` / `options` / `install`, CLI `plugin-settings select|update-options|install`, and the matching MCP mutation tools.
+- `plugin-settings.auth.read` is an **additional** action required to read a single provider in an auth-governing capability (`auth.identity`, `auth.policy`, `auth.visibility`). `getPluginSettings` / REST `GET /api/plugin-settings/:capability/:providerId` / CLI `plugin-settings show` / MCP `get_plugin_settings` first require `plugin-settings.read` and then `plugin-settings.auth.read` when the capability is auth-governing. The aggregate `listPluginSettings` inventory still only requires `plugin-settings.read`.
+- `plugin-settings.auth.update` is an **additional** action required to mutate an auth-governing capability. `selectPluginSettingsProvider` / `updatePluginSettingsOptions` (and their REST `select` / `options`, CLI `select` / `update-options`, and MCP `select_plugin_settings_provider` / `update_plugin_settings_options` surfaces) first require `plugin-settings.update` and then `plugin-settings.auth.update` when the capability is auth-governing.
 - Allowed reads still reuse the shared redaction contract (`••••••` masked write-only placeholders plus redacted error payloads).
-- Redaction does **not** replace authorization; callers still need the matching auth action before any inventory or provider read model is returned.
+- Redaction does **not** replace authorization; callers still need the matching auth action(s) before any inventory or provider read model is returned.
 
-In the shipped RBAC defaults, only `admin` gets these actions automatically. A default `user` therefore cannot list/view plugin settings, while an `admin` can list/show redacted settings and perform plugin-settings mutations unless you override the permission matrix.
+The elevated `plugin-settings.auth.*` actions exist so an integration (for example an MCP agent) can be granted the ability to change non-auth plugin options and other settings without also gaining the power to rewrite identity/policy/visibility configuration — which would otherwise be a privilege-escalation path. Granting the auth-governing power is therefore an explicit, separate decision.
+
+In the shipped RBAC defaults, only `admin` gets all four actions automatically. A default `user` therefore cannot list/view plugin settings, while an `admin` can list/show redacted settings and perform plugin-settings mutations (including auth-governing ones) unless you override the permission matrix. To let a non-admin role change non-auth plugin options while withholding auth-config changes, grant it `plugin-settings.read` and `plugin-settings.update` but **not** `plugin-settings.auth.read` / `plugin-settings.auth.update`.
 
 ### Default (no auth)
 
@@ -1139,6 +1143,8 @@ Includes all `manager` and `user` actions plus:
 - `settings.update`
 - `plugin-settings.read`
 - `plugin-settings.update`
+- `plugin-settings.auth.read`
+- `plugin-settings.auth.update`
 - `webhook.create`
 - `webhook.update`
 - `webhook.delete`

@@ -619,7 +619,7 @@ Returns the redacted plugin settings read model for one provider.
 The read model includes the provider's discovery source, current selected
 state for the capability, any discovered options schema metadata, and a
 redacted snapshot of persisted options when this provider is selected.
-Requires the `plugin-settings.read` auth action before any provider payload is materialized.
+Requires the `plugin-settings.read` auth action before any provider payload is materialized, plus the elevated `plugin-settings.auth.read` action when the capability is auth-governing (`auth.identity`, `auth.policy`, `auth.visibility`).
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model, or `null` when the provider is not discovered.  
@@ -643,7 +643,8 @@ switching to a different provider replaces the previous single-provider entry.
 Selecting `none` for `webhook.delivery` disables webhook runtime loading while
 preserving any stored webhook options for later re-enable.
 Requires the `plugin-settings.update` auth action before any persistence or
-provider readback occurs.
+provider readback occurs, plus the elevated `plugin-settings.auth.update` action
+when the capability is auth-governing (`auth.identity`, `auth.policy`, `auth.visibility`).
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model after persistence succeeds, or `null`
@@ -671,7 +672,8 @@ shared plugin-options store so hosts can save and reopen schema-driven forms
 without changing enablement; selecting that provider later restores the
 cached options into `plugins[capability]`.
 Requires the `plugin-settings.update` auth action before any persistence or
-provider readback occurs.
+provider readback occurs, plus the elevated `plugin-settings.auth.update` action
+when the capability is auth-governing (`auth.identity`, `auth.policy`, `auth.visibility`).
 
 **Kind**: instance method of [<code>KanbanSDK</code>](#KanbanSDK)  
 **Returns**: The redacted provider read model after persistence succeeds.  

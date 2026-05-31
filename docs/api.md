@@ -1734,7 +1734,7 @@ Returns the capability-grouped plugin inventory with selected-provider state and
 
 **Read plugin settings**
 
-Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.
+Returns the redacted plugin-settings read model for one provider. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; reads of an auth-governing capability (`auth.identity`, `auth.policy`, `auth.visibility`) additionally require the elevated `plugin-settings.auth.read` action. Allowed reads remain redacted.
 
 #### Parameters
 
@@ -1749,7 +1749,7 @@ Returns the redacted plugin-settings read model for one provider. Persisted secr
 |--------|-------------|
 | `200` | Redacted provider read model. |
 | `401` | Authentication required. |
-| `403` | Authenticated caller is not allowed to perform `plugin-settings.read`. |
+| `403` | Authenticated caller is not allowed to perform `plugin-settings.read` (or `plugin-settings.auth.read` for auth-governing capabilities). |
 | `404` | Provider not found for the requested capability. |
 | `500` | Unable to read plugin settings. |
 
@@ -1757,7 +1757,7 @@ Returns the redacted plugin-settings read model for one provider. Persisted secr
 
 **Select plugin provider**
 
-Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation.
+Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation: callers need `plugin-settings.update`, and auth-governing capabilities (`auth.identity`, `auth.policy`, `auth.visibility`) additionally require the elevated `plugin-settings.auth.update` action.
 
 #### Parameters
 
@@ -1779,7 +1779,7 @@ Persists the selected provider for one capability. Existing authorization wrappe
 
 **Update plugin options**
 
-Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets.
+Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets. Callers need `plugin-settings.update`, and auth-governing capabilities (`auth.identity`, `auth.policy`, `auth.visibility`) additionally require the elevated `plugin-settings.auth.update` action.
 
 #### Parameters
 

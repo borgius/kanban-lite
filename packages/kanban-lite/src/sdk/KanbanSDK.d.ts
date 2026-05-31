@@ -409,6 +409,10 @@ export declare class KanbanSDK {
      * @param capability - The capability namespace to inspect.
      * @param providerId - Provider identifier within that capability.
      * @returns The redacted provider read model, or `null` when the provider is not discovered.
+     *
+     * Requires the `plugin-settings.read` auth action, and additionally the
+     * elevated `plugin-settings.auth.read` action when `capability` is an
+     * auth-governing namespace (`auth.identity`, `auth.policy`, `auth.visibility`).
      */
     getPluginSettings(capability: PluginCapabilityNamespace, providerId: string): Promise<PluginSettingsProviderReadModel | null>;
     /**
@@ -424,6 +428,10 @@ export declare class KanbanSDK {
      * @param providerId - Provider identifier to select.
      * @returns The redacted provider read model after persistence succeeds, or `null`
      *   when the capability was explicitly disabled.
+     *
+     * Requires the `plugin-settings.update` auth action, and additionally the
+     * elevated `plugin-settings.auth.update` action when `capability` is an
+     * auth-governing namespace (`auth.identity`, `auth.policy`, `auth.visibility`).
      */
     selectPluginSettingsProvider(capability: PluginCapabilityNamespace, providerId: string): Promise<PluginSettingsProviderReadModel | null>;
     /**
@@ -438,6 +446,10 @@ export declare class KanbanSDK {
      * @param providerId - Provider identifier whose options are being updated.
      * @param options - Provider options payload to persist.
      * @returns The redacted provider read model after persistence succeeds.
+     *
+     * Requires the `plugin-settings.update` auth action, and additionally the
+     * elevated `plugin-settings.auth.update` action when `capability` is an
+     * auth-governing namespace (`auth.identity`, `auth.policy`, `auth.visibility`).
      */
     updatePluginSettingsOptions(capability: PluginCapabilityNamespace, providerId: string, options: Record<string, unknown>): Promise<PluginSettingsProviderReadModel>;
     /**

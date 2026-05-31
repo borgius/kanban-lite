@@ -42,6 +42,11 @@ Webhook delivery uses the capability config under `plugins["webhook.delivery"]`.
             "url": "https://example.com/webhook",
             "events": ["task.created", "task.moved"],
             "secret": "my-signing-key",
+            "headers": [
+              { "name": "Authorization", "value": "Bearer ${KL_WEBHOOK_TOKEN}" },
+              { "name": "X-Source", "value": "kanban-lite" }
+            ],
+            "transform": "{ text: (.event + \" on \" + .data.title) }",
             "active": true
           }
         ]
@@ -86,6 +91,7 @@ These routes are plugin-owned when `kl-plugin-webhook` is loaded by the standalo
 | `PUT` | `/api/webhooks/:id` | Update a webhook |
 | `DELETE` | `/api/webhooks/:id` | Delete a webhook |
 | `POST` | `/api/webhooks/test` | Write a received webhook payload to the board log for local end-to-end verification |
+| `POST` | `/api/webhooks/transform/test` | Evaluate a jq `transform` against a sample (or supplied) payload before saving |
 
 ### CLI
 
@@ -98,6 +104,12 @@ kl webhooks
 # Register a webhook
 kl webhooks add --url https://example.com/hook --events task.created,task.moved
 
+# Register a webhook with custom headers and a jq payload transform
+kl webhooks add --url https://example.com/hook --events "task.*" \
+  --header "Authorization: Bearer ${KL_WEBHOOK_TOKEN}" \
+  --header "X-Source: kanban-lite" \
+  --transform '{ text: .event, title: .data.title }'
+
 # Update a webhook
 kl webhooks update <id> --active false
 kl webhooks update <id> --events task.created,task.deleted --url https://new-url.com
@@ -108,7 +120,7 @@ kl webhooks remove <id>
 
 ### MCP Server
 
-These tools are plugin-owned when `kl-plugin-webhook` is loaded by the MCP host through the narrow `mcpPlugin.registerTools(...)` seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`
+These tools are plugin-owned when `kl-plugin-webhook` is loaded by the MCP host through the narrow `mcpPlugin.registerTools(...)` seam. Public tool names, schemas, auth wrapping, and secret redaction behavior remain unchanged: `list_webhooks`, `add_webhook`, `update_webhook`, `remove_webhook`. The `add_webhook` and `update_webhook` tools accept optional `headers` (array of `{ name, value }`, supporting `${ENV_VAR}` injection) and `transform` (jq expression) parameters.
 
 ## Event filters
 
@@ -136,6 +148,40 @@ Every webhook delivery sends a JSON POST request with the following structure:
 | `X-Webhook-Event` | The event type (e.g., `task.created`) |
 | `X-Webhook-Signature` | HMAC-SHA256 signature (only if a secret is configured) |
 | `Authorization` | `Bearer <token>` when `KANBAN_LITE_TOKEN` is set in the webhook runtime |
+
+## Custom headers
+
+Each webhook may declare extra HTTP headers as an array of `{ name, value }` pairs. They are sent on every delivery in addition to the built-in headers above.
+
+Header values may embed `${ENV_VAR}` placeholders that are resolved from the delivery runtime environment at send time, so env-backed secrets are never written to `.kanban.json`. Resolution matches the rest of Kanban Lite config: the `KL_`-prefixed variant is checked first (for example `${WEBHOOK_TOKEN}` checks `KL_WEBHOOK_TOKEN` then `WEBHOOK_TOKEN`). An unset variable resolves to an empty string and is logged, rather than blocking delivery.
+
+```json
+"headers": [
+  { "name": "Authorization", "value": "Bearer ${KL_WEBHOOK_TOKEN}" },
+  { "name": "X-Source", "value": "kanban-lite" }
+]
+```
+
+Reserved headers (`Content-Type`, `Content-Length`, and the signature/event headers) are always computed by the delivery engine and cannot be overridden.
+
+## Payload transform (jq)
+
+A webhook may define an optional `transform` jq expression. When set, it is applied to the JSON delivery envelope before the request is sent, so you can reshape the payload to match a third-party API (for example Slack or Microsoft Teams) without an intermediary service.
+
+- jq runs through [`jq-web`](https://github.com/stainless-api/jq-web), a WebAssembly build of jq that works in Node.js, the browser, and Cloudflare Workers.
+- The transform input is the full envelope (`event`, `timestamp`, `actor`, `boardId`, `meta`, `data`); the result becomes the new request body.
+- The HMAC signature and `Content-Length` are computed over the **transformed** body.
+- If the expression is invalid or fails at runtime, delivery falls back to the original payload and logs the error — a bad transform never silently drops a delivery.
+
+```jq
+{ text: (.event + " on " + .data.title) }
+```
+
+### Testing a transform before saving
+
+The standalone server exposes `POST /api/webhooks/transform/test` so you can validate an expression against a representative payload before saving. The Plugin Options editor in the UI uses this endpoint to provide an inline jq tester with an editable sample payload.
+
+Request body: `{ "transform": "<jq>", "payload": <optional JSON> }`. When `payload` is omitted, a built-in sample `task.created` envelope is used. The response is `{ "ok": true, "data": { "result": <transformed> } }`, or `{ "ok": false, "error": "<message>" }` (HTTP `400` for an empty expression, `422` for an invalid expression).
 
 ## Signature verification
 

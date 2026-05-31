@@ -330,7 +330,7 @@ function createWebhookOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                     value: {
                       type: 'string',
                       title: 'Value',
-                      description: 'Header value. Use ${ENV_VAR} to inject an environment variable or secret (e.g. ******'
+                      description: 'Header value. Use ${ENV_VAR} to inject an environment variable or secret (e.g. ${WEBHOOK_TOKEN}).'
                     }
                   }
                 }
@@ -395,7 +395,7 @@ function createWebhookOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                               type: 'Control',
                               scope: '#/properties/value',
                               label: 'Value',
-                              options: { placeholder: '******' }
+                              options: { placeholder: '${WEBHOOK_TOKEN}' }
                             }
                           ]
                         }

@@ -1,7 +1,7 @@
 import type { CreateCardInput, SDKEvent, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary, ResolveMobileBootstrapInput, ResolveMobileBootstrapResult, InspectMobileSessionInput, MobileSessionStatus } from './types';
 import type { Comment, Card, KanbanColumn, BoardInfo, LabelDefinition, CardSortOption, LogEntry } from '../shared/types';
 import type { CardDisplaySettings, PluginSettingsErrorPayload, PluginSettingsInstallRequest, PluginSettingsPayload, PluginSettingsProviderRow, PluginSettingsReadPayload, PluginSettingsInstallScope, PluginSettingsRedactionPolicy, Priority } from '../shared/types';
-import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ResolvedCapabilities, Webhook } from '../shared/config';
+import type { BoardConfig, KanbanConfig, PluginCapabilityNamespace, ResolvedCapabilities, Webhook, WebhookHeader } from '../shared/config';
 import type { CreateCardInput, SDKEvent, SDKEventType, SDKOptions, SubmitFormInput, SubmitFormResult, AuthContext, AuthDecision, SDKBeforeEventType, SDKAfterEventType, CardStateStatus, CardOpenStateValue, CardUnreadSummary } from './types';
 import type { EventBusAnyListener, EventBusWaitOptions } from './eventBus';
 import { EventBus } from './eventBus';
@@ -2055,6 +2055,8 @@ export declare class KanbanSDK {
         url: string;
         events: string[];
         secret?: string;
+        headers?: WebhookHeader[];
+        transform?: string;
     }): Promise<Webhook>;
     /**
      * Deletes a webhook by its ID.
@@ -2078,6 +2080,6 @@ export declare class KanbanSDK {
      * @returns The updated {@link Webhook}, or `null` if not found.
      * @throws {Error} When `kl-plugin-webhook` is not installed.
      */
-    updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null>;
+    updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>): Promise<Webhook | null>;
 }
 export {};

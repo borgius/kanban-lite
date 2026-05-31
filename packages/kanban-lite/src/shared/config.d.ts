@@ -57,6 +57,15 @@ export interface KLPluginPackageManifest {
     readonly integrations?: readonly PluginIntegrationNamespace[];
 }
 /**
+ * A single extra HTTP header sent with webhook deliveries.
+ */
+export interface WebhookHeader {
+    /** Header name (e.g., `'Authorization'`). */
+    name: string;
+    /** Header value. Supports `${ENV_VAR}` placeholders resolved at delivery time. */
+    value: string;
+}
+/**
  * A registered webhook endpoint that receives event notifications.
  *
  * Webhooks are stored in the workspace `.kanban.json` config file and
@@ -73,6 +82,10 @@ export interface Webhook {
     secret?: string;
     /** Whether this webhook is active. Inactive webhooks are skipped during delivery. */
     active: boolean;
+    /** Optional extra HTTP headers (values support `${ENV_VAR}` placeholders). */
+    headers?: WebhookHeader[];
+    /** Optional jq expression applied to the payload before delivery. */
+    transform?: string;
 }
 /**
  * Definition for a single board-level metadata field.

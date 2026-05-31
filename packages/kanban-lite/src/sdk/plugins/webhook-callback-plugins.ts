@@ -21,11 +21,11 @@ import {
 export interface WebhookProviderPlugin {
   readonly manifest: { readonly id: string; readonly provides: readonly string[] }
   listWebhooks(workspaceRoot: string): import('../../shared/config').Webhook[]
-  createWebhook(workspaceRoot: string, input: { url: string; events: string[]; secret?: string }): import('../../shared/config').Webhook
+  createWebhook(workspaceRoot: string, input: { url: string; events: string[]; secret?: string; headers?: import('../../shared/config').WebhookHeader[]; transform?: string }): import('../../shared/config').Webhook
   updateWebhook(
     workspaceRoot: string,
     id: string,
-    updates: Partial<Pick<import('../../shared/config').Webhook, 'url' | 'events' | 'secret' | 'active'>>,
+    updates: Partial<Pick<import('../../shared/config').Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>,
   ): import('../../shared/config').Webhook | null
   deleteWebhook(workspaceRoot: string, id: string): boolean
 }

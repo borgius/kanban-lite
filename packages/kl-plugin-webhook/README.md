@@ -82,6 +82,11 @@ Webhooks are registered at runtime via the kanban-lite SDK/API/CLI/MCP and store
             "url": "https://example.com/hook",
             "events": ["task.created", "task.updated"],
             "secret": "my-signing-secret",
+            "headers": [
+              { "name": "Authorization", "value": "Bearer ${KL_WEBHOOK_TOKEN}" },
+              { "name": "X-Source", "value": "kanban-lite" }
+            ],
+            "transform": "{ text: (.event + \" on \" + .data.title) }",
             "active": true
           }
         ]
@@ -115,6 +120,41 @@ Headers sent with every request:
 
 If `KANBAN_LITE_TOKEN` is present in the runtime environment, outbound webhook
 requests also include `Authorization: Bearer <token>`.
+
+## Custom headers
+
+A webhook may declare extra HTTP headers as an array of `{ name, value }`
+pairs, sent on every delivery alongside the built-in headers above.
+
+Header values may embed `${ENV_VAR}` placeholders that are resolved from the
+delivery runtime environment at send time, so env-backed secrets are never
+written to `.kanban.json`. Resolution matches the rest of Kanban Lite config:
+the `KL_`-prefixed variant is checked first (for example `${WEBHOOK_TOKEN}`
+checks `KL_WEBHOOK_TOKEN` then `WEBHOOK_TOKEN`). An unset variable resolves to
+an empty string (and is logged) rather than blocking delivery.
+
+Reserved headers (`Content-Type`, `Content-Length`, and the signature/event
+headers) are always computed by the delivery engine and cannot be overridden.
+
+## Payload transform (jq)
+
+A webhook may define an optional `transform` jq expression. When set, it is
+applied to the JSON delivery envelope before the request is sent, so you can
+reshape the payload to match a third-party API without an intermediary service.
+
+- jq runs through [`jq-web`](https://github.com/stainless-api/jq-web), which
+  works in Node.js, the browser, and Cloudflare Workers.
+- The transform input is the full envelope (`event`, `timestamp`, `actor`,
+  `boardId`, `meta`, `data`); the result becomes the new request body.
+- The HMAC signature and `Content-Length` are computed over the transformed
+  body.
+- If the expression is invalid or fails at runtime, delivery falls back to the
+  original payload and logs the error — a bad transform never silently
+  drops a delivery.
+
+The standalone server exposes `POST /api/webhooks/transform/test` to validate an
+expression against a sample (or supplied) payload before saving; the Plugin
+Options UI uses this endpoint for an inline jq tester.
 
 ## Event filters
 

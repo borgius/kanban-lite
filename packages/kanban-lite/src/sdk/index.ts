@@ -37,6 +37,7 @@ export type {
   ResolvedCardStateCapabilities,
   ResolvedWebhookCapabilities,
   Webhook,
+  WebhookHeader,
   WebhookCapabilityNamespace,
   WebhookCapabilitySelections,
 } from '../shared/config'

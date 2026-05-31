@@ -168,12 +168,12 @@ export const miscPaths = {
       get: {
         tags: ['Plugins'],
         summary: 'Read plugin settings',
-        description: 'Returns the redacted plugin-settings read model for one provider. `config.storage` reads include configured-versus-effective resolution details so clients can distinguish explicit configured state from the current effective provider and any surfaced failure/degraded mode. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; allowed reads remain redacted.',
+        description: 'Returns the redacted plugin-settings read model for one provider. `config.storage` reads include configured-versus-effective resolution details so clients can distinguish explicit configured state from the current effective provider and any surfaced failure/degraded mode. Persisted secret fields are masked and surfaced only as write-only placeholders. When auth is active, callers must be authenticated and allowed to perform `plugin-settings.read`; reads of an auth-governing capability (`auth.identity`, `auth.policy`, `auth.visibility`) additionally require the elevated `plugin-settings.auth.read` action. Allowed reads remain redacted.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         responses: {
           200: { description: 'Redacted provider read model.' },
           401: { description: 'Authentication required.' },
-          403: { description: 'Authenticated caller is not allowed to perform `plugin-settings.read`.' },
+          403: { description: 'Authenticated caller is not allowed to perform `plugin-settings.read` (or `plugin-settings.auth.read` for auth-governing capabilities).' },
           404: { description: 'Provider not found for the requested capability.' },
           500: { description: 'Unable to read plugin settings.' },
         },
@@ -183,7 +183,7 @@ export const miscPaths = {
       put: {
         tags: ['Plugins'],
         summary: 'Select plugin provider',
-        description: 'Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation. For `config.storage`, Worker topology-changing updates are rejected as explicit runtime-mutation errors instead of silently swapping the effective provider.',
+        description: 'Persists the selected provider for one capability. Existing authorization wrappers remain in force for this privileged mutation: callers need `plugin-settings.update`, and auth-governing capabilities (`auth.identity`, `auth.policy`, `auth.visibility`) additionally require the elevated `plugin-settings.auth.update` action. For `config.storage`, Worker topology-changing updates are rejected as explicit runtime-mutation errors instead of silently swapping the effective provider.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         responses: {
           200: { description: 'Updated redacted provider read model after selection.' },
@@ -198,7 +198,7 @@ export const miscPaths = {
       put: {
         tags: ['Plugins'],
         summary: 'Update plugin options',
-        description: 'Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets. `config.storage` responses continue to surface configured-versus-effective resolution and any explicit failure/degraded state reported by the SDK.',
+        description: 'Persists provider options and returns the redacted provider read model. Secret placeholders may be submitted unchanged to preserve existing stored secrets. Callers need `plugin-settings.update`, and auth-governing capabilities (`auth.identity`, `auth.policy`, `auth.visibility`) additionally require the elevated `plugin-settings.auth.update` action. `config.storage` responses continue to surface configured-versus-effective resolution and any explicit failure/degraded state reported by the SDK.',
         parameters: [pluginCapabilityParam, pluginProviderIdParam],
         requestBody: {
           required: true,

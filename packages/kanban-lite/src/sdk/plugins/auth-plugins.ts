@@ -147,6 +147,8 @@ export const RBAC_ADMIN_ACTIONS: ReadonlySet<string> = new Set([
   'settings.update',
   'plugin-settings.read',
   'plugin-settings.update',
+  'plugin-settings.auth.read',
+  'plugin-settings.auth.update',
   'webhook.create',
   'webhook.update',
   'webhook.delete',

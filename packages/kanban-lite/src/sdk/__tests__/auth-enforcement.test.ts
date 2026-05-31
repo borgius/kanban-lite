@@ -270,7 +270,12 @@ describe('auth enforcement: plugin settings methods use direct SDK auth actions'
 })
 
 describe('auth enforcement: plugin settings fallback RBAC actions', () => {
-  for (const action of ['plugin-settings.read', 'plugin-settings.update']) {
+  for (const action of [
+    'plugin-settings.read',
+    'plugin-settings.update',
+    'plugin-settings.auth.read',
+    'plugin-settings.auth.update',
+  ]) {
     it(`admin role includes '${action}'`, () => {
       expect(RBAC_ADMIN_ACTIONS.has(action)).toBe(true)
     })
@@ -283,6 +288,111 @@ describe('auth enforcement: plugin settings fallback RBAC actions', () => {
       expect(RBAC_USER_ACTIONS.has(action)).toBe(false)
     })
   }
+})
+
+describe('auth enforcement: auth-namespace plugin settings require elevated permission', () => {
+  let workspaceDir: string
+  let kanbanDir: string
+  let sdk: KanbanSDK
+
+  /**
+   * Inject a policy that grants the generic `plugin-settings.*` actions but
+   * denies the elevated `plugin-settings.auth.*` actions, capturing each
+   * checked action.
+   */
+  function injectDenyAuthOnly(instance: KanbanSDK): string[] {
+    const captured: string[] = []
+    const bag = resolveCapabilityBag(
+      { 'card.storage': { provider: 'markdown' }, 'attachment.storage': { provider: 'localfs' } },
+      kanbanDir,
+    )
+    setCapabilities(instance, {
+      ...bag,
+      authPolicy: {
+        manifest: { id: 'deny-auth-only-test', provides: ['auth.policy' as const] },
+        async checkPolicy(
+          _identity: AuthIdentity | null,
+          action: string,
+          _ctx: AuthContext,
+        ): Promise<AuthDecision> {
+          captured.push(action)
+          if (action === 'plugin-settings.auth.read' || action === 'plugin-settings.auth.update') {
+            return { allowed: false, reason: 'auth.policy.denied' as const }
+          }
+          return { allowed: true }
+        },
+      },
+    })
+    return captured
+  }
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+    kanbanDir = path.join(workspaceDir, '.kanban')
+    fs.mkdirSync(kanbanDir, { recursive: true })
+    sdk = new KanbanSDK(kanbanDir)
+  })
+
+  afterEach(() => {
+    sdk.close()
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+  })
+
+  it('updatePluginSettingsOptions on an auth capability is denied without plugin-settings.auth.update', async () => {
+    const captured = injectDenyAuthOnly(sdk)
+    const configPath = path.join(workspaceDir, '.kanban.json')
+    const initialConfig = JSON.stringify({ version: 2 }, null, 2) + '\n'
+    fs.writeFileSync(configPath, initialConfig, 'utf-8')
+
+    await expect(
+      sdk.updatePluginSettingsOptions('auth.identity', 'local', { apiToken: 'super-secret-token' }),
+    ).rejects.toBeInstanceOf(AuthError)
+
+    expect(captured).toContain('plugin-settings.update')
+    expect(captured).toContain('plugin-settings.auth.update')
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(initialConfig)
+  })
+
+  it('selectPluginSettingsProvider on an auth capability is denied without plugin-settings.auth.update', async () => {
+    const captured = injectDenyAuthOnly(sdk)
+    const configPath = path.join(workspaceDir, '.kanban.json')
+    const initialConfig = JSON.stringify({ version: 2 }, null, 2) + '\n'
+    fs.writeFileSync(configPath, initialConfig, 'utf-8')
+
+    await expect(sdk.selectPluginSettingsProvider('auth.policy', 'rbac')).rejects.toBeInstanceOf(AuthError)
+
+    expect(captured).toContain('plugin-settings.auth.update')
+    expect(fs.readFileSync(configPath, 'utf-8')).toBe(initialConfig)
+  })
+
+  it('getPluginSettings on an auth capability is denied without plugin-settings.auth.read', async () => {
+    const captured = injectDenyAuthOnly(sdk)
+    fs.writeFileSync(
+      path.join(workspaceDir, '.kanban.json'),
+      '{"plugins":{"auth.identity":{"provider":"local","options":{"apiToken":"super-secret-token"}}}',
+      'utf-8',
+    )
+
+    await expect(sdk.getPluginSettings('auth.identity', 'local')).rejects.toBeInstanceOf(AuthError)
+    expect(captured).toContain('plugin-settings.auth.read')
+  })
+
+  it('non-auth capability mutations do NOT require the elevated auth permission', async () => {
+    const captured = injectDenyAuthOnly(sdk)
+
+    // Updating a non-auth capability must not consult the auth-specific action,
+    // so authorization is never blocked by the denied elevated permission.
+    // Any non-auth persistence outcome is acceptable here; we only assert that
+    // authorization itself does not demand `plugin-settings.auth.update`.
+    try {
+      await sdk.updatePluginSettingsOptions('card.storage', 'markdown', {})
+    } catch (err) {
+      expect(err).not.toBeInstanceOf(AuthError)
+    }
+
+    expect(captured).toContain('plugin-settings.update')
+    expect(captured).not.toContain('plugin-settings.auth.update')
+  })
 })
 
 // ---------------------------------------------------------------------------

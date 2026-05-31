@@ -185,11 +185,11 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
     throw new Error('Webhook commands require kl-plugin-webhook. Run: npm install kl-plugin-webhook')
   }
 
-  async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string }): Promise<Webhook> {
+  async createWebhook(webhookConfig: { url: string; events: string[]; secret?: string; headers?: import('../shared/config').WebhookHeader[]; transform?: string }): Promise<Webhook> {
     if (!this._capabilities?.webhookProvider) {
       throw new Error('Webhook commands require kl-plugin-webhook. Run: npm install kl-plugin-webhook')
     }
-    const mergedInput = await this._runBeforeEvent<{ url: string; events: string[]; secret?: string }>('webhook.create', { ...webhookConfig })
+    const mergedInput = await this._runBeforeEvent<{ url: string; events: string[]; secret?: string; headers?: import('../shared/config').WebhookHeader[]; transform?: string }>('webhook.create', { ...webhookConfig })
     return this._capabilities.webhookProvider.createWebhook(this.workspaceRoot, mergedInput)
   }
 
@@ -201,11 +201,11 @@ export class KanbanSDKBoards extends KanbanSDKCardState {
     return this._capabilities.webhookProvider.deleteWebhook(this.workspaceRoot, mergedInput.id)
   }
 
-  async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Promise<Webhook | null> {
+  async updateWebhook(id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>): Promise<Webhook | null> {
     if (!this._capabilities?.webhookProvider) {
       throw new Error('Webhook commands require kl-plugin-webhook. Run: npm install kl-plugin-webhook')
     }
-    const mergedInput = await this._runBeforeEvent<{ id: string; url?: string; events?: string[]; secret?: string; active?: boolean }>('webhook.update', { id, ...updates })
+    const mergedInput = await this._runBeforeEvent<{ id: string; url?: string; events?: string[]; secret?: string; active?: boolean; headers?: import('../shared/config').WebhookHeader[]; transform?: string }>('webhook.update', { id, ...updates })
     const { id: resolvedId, ...resolvedUpdates } = mergedInput
     return this._capabilities.webhookProvider.updateWebhook(this.workspaceRoot, resolvedId, resolvedUpdates)
   }

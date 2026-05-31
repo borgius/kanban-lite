@@ -107,6 +107,7 @@ export interface McpSchemaFactory {
   string(): ZodTypeAny
   array(item: ZodTypeAny): ZodTypeAny
   boolean(): ZodTypeAny
+  object(shape: ZodRawShape): ZodTypeAny
 }
 
 /** A single MCP tool definition contributed by a plugin. */

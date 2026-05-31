@@ -153,6 +153,23 @@ export interface KLPluginPackageManifest {
 }
 
 /**
+ * A single extra HTTP header sent with webhook deliveries.
+ *
+ * The `value` may embed `${ENV_VAR}` placeholders that are resolved from the
+ * delivery runtime environment (process/worker environment variables) at send
+ * time, allowing secrets to be injected without storing them in `.kanban.json`.
+ */
+export interface WebhookHeader {
+  /** Header name (e.g., `'Authorization'`). */
+  name: string
+  /**
+   * Header value. Supports `${ENV_VAR}` placeholders resolved from the runtime
+   * environment at delivery time (e.g., `'******'`).
+   */
+  value: string
+}
+
+/**
  * A registered webhook endpoint that receives event notifications.
  *
  * Webhooks are stored in the workspace `.kanban.json` config file and
@@ -169,6 +186,18 @@ export interface Webhook {
   secret?: string
   /** Whether this webhook is active. Inactive webhooks are skipped during delivery. */
   active: boolean
+  /**
+   * Optional extra HTTP headers sent with each delivery. Header values support
+   * `${ENV_VAR}` placeholders that are resolved from the delivery runtime
+   * environment, so env-backed secrets can be injected without persisting them.
+   */
+  headers?: WebhookHeader[]
+  /**
+   * Optional jq expression applied to the delivery payload before it is sent.
+   * When set, the JSON envelope is passed through jq and the result becomes the
+   * request body (and the value signed when a `secret` is configured).
+   */
+  transform?: string
 }
 
 /**

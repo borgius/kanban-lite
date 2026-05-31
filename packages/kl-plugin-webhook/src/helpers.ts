@@ -19,10 +19,13 @@ import type {
   StandaloneHttpHandler,
   StandaloneHttpPlugin,
   Webhook,
+  WebhookHeader,
   WebhookProviderPlugin,
   KanbanSDK,
   AfterEventPayload,
 } from 'kanban-lite/sdk'
+
+import { applyJqTransform, resolveWebhookHeaders } from './transform'
 
 export type {
   CliPluginContext,
@@ -144,14 +147,31 @@ function generateWebhookId(): string {
 // Semantics ported directly from src/sdk/webhooks.ts in kanban-light core.
 // ---------------------------------------------------------------------------
 
-async function deliverWebhook(webhook: Webhook, event: string, payload: string): Promise<void> {
+async function deliverWebhook(webhook: Webhook, event: string, payloadObject: unknown): Promise<void> {
   const url = new URL(webhook.url)
   const isHttps = url.protocol === 'https:'
   const transport = isHttps ? https : http
 
+  // Apply the optional jq transform to the payload envelope. On failure, fall
+  // back to the original payload so a bad expression never silently drops the
+  // delivery.
+  let bodyObject: unknown = payloadObject
+  if (typeof webhook.transform === 'string' && webhook.transform.trim().length > 0) {
+    try {
+      bodyObject = await applyJqTransform(payloadObject, webhook.transform)
+    } catch (err) {
+      console.error(
+        `[kl-plugin-webhook] jq transform failed for ${webhook.id} (${webhook.url}); sending untransformed payload:`,
+        err instanceof Error ? err.message : err
+      )
+      bodyObject = payloadObject
+    }
+  }
+
+  const payload = JSON.stringify(bodyObject ?? null)
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    'Content-Length': Buffer.byteLength(payload).toString(),
     'X-Webhook-Event': event
   }
 
@@ -165,6 +185,16 @@ async function deliverWebhook(webhook: Webhook, event: string, payload: string):
     const signature = crypto.createHmac('sha256', webhook.secret).update(payload).digest('hex')
     headers['X-Webhook-Signature'] = `sha256=${signature}`
   }
+
+  // Merge user-configured extra headers, resolving ${ENV_VAR} placeholders so
+  // env-backed secrets can be injected without persisting them.
+  const customHeaders = resolveWebhookHeaders(webhook.headers)
+  for (const [name, value] of Object.entries(customHeaders)) {
+    headers[name] = value
+  }
+
+  // Content-Length is always derived from the final body and not overridable.
+  headers['Content-Length'] = Buffer.byteLength(payload).toString()
 
   debugLog(
     `[kl-plugin-webhook] → POST ${webhook.url} | event=${event} | id=${webhook.id} | secret=${hasSecret ? 'yes' : 'no'} | payloadBytes=${Buffer.byteLength(payload)}`
@@ -236,17 +266,17 @@ export function fireWebhooks(workspaceRoot: string, event: string, data: unknown
 
   const isEnvelope = data !== null && typeof data === 'object' && 'data' in (data as object)
   const ap = isEnvelope ? (data as AfterEventPayload) : undefined
-  const payload = JSON.stringify({
+  const payloadObject = {
     event,
     timestamp: ap?.timestamp ?? new Date().toISOString(),
     actor: ap?.actor,
     boardId: ap?.boardId,
     meta: ap?.meta,
     data: isEnvelope ? ap!.data : data,
-  })
+  }
 
   for (const webhook of matching) {
-    deliverWebhook(webhook, event, payload).catch((err: unknown) => {
+    deliverWebhook(webhook, event, payloadObject).catch((err: unknown) => {
       console.error(
         `[kl-plugin-webhook] delivery failed for ${webhook.id} (${webhook.url}):`,
         err instanceof Error ? err.message : err
@@ -265,7 +295,7 @@ export function listWebhooks(workspaceRoot: string): Webhook[] {
 
 export function createWebhook(
   workspaceRoot: string,
-  input: { url: string; events: string[]; secret?: string }
+  input: { url: string; events: string[]; secret?: string; headers?: WebhookHeader[]; transform?: string }
 ): Webhook {
   const webhooks = readWebhooks(workspaceRoot)
   const webhook: Webhook = {
@@ -273,7 +303,9 @@ export function createWebhook(
     url: input.url,
     events: [...input.events],
     active: true,
-    ...(input.secret !== undefined ? { secret: input.secret } : {})
+    ...(input.secret !== undefined ? { secret: input.secret } : {}),
+    ...(input.headers !== undefined ? { headers: input.headers } : {}),
+    ...(input.transform !== undefined ? { transform: input.transform } : {})
   }
   webhooks.push(webhook)
   writeWebhooks(workspaceRoot, webhooks)
@@ -283,7 +315,7 @@ export function createWebhook(
 export function updateWebhook(
   workspaceRoot: string,
   id: string,
-  updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>
+  updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>
 ): Webhook | null {
   const webhooks = readWebhooks(workspaceRoot)
   const index = webhooks.findIndex((w) => w.id === id)

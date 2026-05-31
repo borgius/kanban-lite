@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import type { Card, PluginSettingsOptionsSchemaMetadata, PluginSettingsPayload, PluginSettingsProviderRow, PluginSettingsReadPayload, PluginSettingsRedactionPolicy } from '../../shared/types';
-import type { Webhook, CardStateCapabilityNamespace, ConfigStorageCapabilityNamespace, PluginCapabilityNamespace, ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config';
+import type { Webhook, WebhookHeader, CardStateCapabilityNamespace, ConfigStorageCapabilityNamespace, PluginCapabilityNamespace, ResolvedCapabilities, CapabilityNamespace, ProviderRef, AuthCapabilityNamespace, ResolvedAuthCapabilities, ResolvedWebhookCapabilities, ResolvedCardStateCapabilities } from '../../shared/config';
 import type { AuthContext, AuthDecision, SDKEventListenerPlugin, SDKExtensionLoaderResult, CardStateBackend } from '../types';
 import type { CloudflareWorkerProviderContext } from '../env';
 import type { KanbanSDK } from '../KanbanSDK';
@@ -116,9 +116,11 @@ export interface WebhookProviderPlugin {
         url: string;
         events: string[];
         secret?: string;
+        headers?: WebhookHeader[];
+        transform?: string;
     }): Webhook;
     /** Updates an existing webhook. Returns the updated webhook, or `null` if not found. */
-    updateWebhook(workspaceRoot: string, id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>): Webhook | null;
+    updateWebhook(workspaceRoot: string, id: string, updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>): Webhook | null;
     /** Deletes a webhook by id. Returns `true` if deleted, `false` if not found. */
     deleteWebhook(workspaceRoot: string, id: string): boolean;
 }
@@ -480,6 +482,7 @@ export interface McpSchemaFactory {
     string(): ZodTypeAny;
     array(item: ZodTypeAny): ZodTypeAny;
     boolean(): ZodTypeAny;
+    object(shape: ZodRawShape): ZodTypeAny;
 }
 /**
  * A single MCP tool definition contributed by a plugin.

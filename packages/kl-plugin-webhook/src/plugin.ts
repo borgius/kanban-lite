@@ -4,6 +4,7 @@ import type {
   PluginSettingsOptionsSchemaMetadata,
   PluginSettingsRedactionPolicy,
   Webhook,
+  WebhookHeader,
   KanbanSDK,
 } from 'kanban-lite/sdk'
 import {
@@ -26,6 +27,12 @@ export type {
   WebhookProviderPlugin
 } from 'kanban-lite/sdk'
 export type { WebhookSdkExtensions } from './plugins'
+export {
+  applyJqTransform,
+  resolveEnvPlaceholders,
+  resolveWebhookHeaders,
+  SAMPLE_WEBHOOK_PAYLOAD,
+} from './transform'
 export {
   WebhookListenerPlugin,
   webhookProviderPlugin,
@@ -88,6 +95,8 @@ export const cliPlugin: KanbanCliPlugin = {
       url: string
       events: string[]
       secret?: string
+      headers?: WebhookHeader[]
+      transform?: string
     }): Promise<Webhook> =>
       sdk
         ? runCliMutation(() => Promise.resolve(sdk.createWebhook(input)))
@@ -98,11 +107,26 @@ export const cliPlugin: KanbanCliPlugin = {
         : Promise.resolve(deleteWebhook(workspaceRoot, id))
     const _update = (
       id: string,
-      updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>
+      updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>
     ): Promise<Webhook | null> =>
       sdk
         ? runCliMutation(() => Promise.resolve(sdk.updateWebhook(id, updates)))
         : Promise.resolve(updateWebhook(workspaceRoot, id, updates))
+
+    // Parses repeatable `--header name:value` flags into webhook header entries.
+    const _parseHeaders = (raw: string | boolean | string[] | undefined): WebhookHeader[] | undefined => {
+      if (raw === undefined || typeof raw === 'boolean') return undefined
+      const values = Array.isArray(raw) ? raw : [raw]
+      const headers: WebhookHeader[] = []
+      for (const entry of values) {
+        const idx = entry.indexOf(':')
+        if (idx === -1) continue
+        const name = entry.slice(0, idx).trim()
+        const value = entry.slice(idx + 1).trim()
+        if (name) headers.push({ name, value })
+      }
+      return headers
+    }
 
     switch (subcommand) {
       case 'list': {
@@ -130,14 +154,16 @@ export const cliPlugin: KanbanCliPlugin = {
         const url = typeof flags.url === 'string' ? flags.url : ''
         if (!url) {
           console.error(
-            _red('Usage: kl webhooks add --url <url> [--events <event1,event2>] [--secret <key>]')
+            _red('Usage: kl webhooks add --url <url> [--events <event1,event2>] [--secret <key>] [--header <name:value>] [--transform <jq>]')
           )
           process.exit(1)
         }
         const events =
           typeof flags.events === 'string' ? flags.events.split(',').map((e) => e.trim()) : ['*']
         const secret = typeof flags.secret === 'string' ? flags.secret : undefined
-        const webhook = await _create({ url, events, secret })
+        const headers = _parseHeaders(flags.header)
+        const transform = typeof flags.transform === 'string' ? flags.transform : undefined
+        const webhook = await _create({ url, events, secret, headers, transform })
         if (flags.json) {
           console.log(JSON.stringify(webhook, null, 2))
         } else {
@@ -145,6 +171,8 @@ export const cliPlugin: KanbanCliPlugin = {
           console.log(`  URL:    ${webhook.url}`)
           console.log(`  Events: ${webhook.events.join(', ')}`)
           if (webhook.secret) console.log(`  Secret: ${_dim('(configured)')}`)
+          if (webhook.headers?.length) console.log(`  Headers: ${webhook.headers.map((h) => h.name).join(', ')}`)
+          if (webhook.transform) console.log(`  Transform: ${webhook.transform}`)
         }
         break
       }
@@ -174,12 +202,14 @@ export const cliPlugin: KanbanCliPlugin = {
           )
           process.exit(1)
         }
-        const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>> = {}
+        const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>> = {}
         if (typeof flags.url === 'string') updates.url = flags.url
         if (typeof flags.events === 'string')
           updates.events = flags.events.split(',').map((e) => e.trim())
         if (typeof flags.secret === 'string') updates.secret = flags.secret
         if (typeof flags.active === 'string') updates.active = flags.active === 'true'
+        if (flags.header !== undefined) updates.headers = _parseHeaders(flags.header)
+        if (typeof flags.transform === 'string') updates.transform = flags.transform
         const updated = await _update(webhookId, updates)
         if (!updated) {
           console.error(_red(`Webhook not found: ${webhookId}`))
@@ -280,11 +310,114 @@ function createWebhookOptionsSchema(): PluginSettingsOptionsSchemaMetadata {
                 title: 'Active',
                 description: 'Whether this webhook is active.',
                 default: true
+              },
+              headers: {
+                type: 'array',
+                title: 'Extra headers',
+                description: 'Additional HTTP headers sent with each delivery. Header values may embed ${ENV_VAR} placeholders that are resolved from the delivery environment at send time, so env-backed secrets are never persisted here.',
+                default: [],
+                items: {
+                  type: 'object',
+                  required: ['name', 'value'],
+                  additionalProperties: false,
+                  properties: {
+                    name: {
+                      type: 'string',
+                      title: 'Name',
+                      minLength: 1,
+                      description: 'Header name (e.g. Authorization).'
+                    },
+                    value: {
+                      type: 'string',
+                      title: 'Value',
+                      description: 'Header value. Use ${ENV_VAR} to inject an environment variable or secret (e.g. ******'
+                    }
+                  }
+                }
+              },
+              transform: {
+                type: 'string',
+                title: 'JQ transform',
+                description: 'Optional jq expression applied to the JSON payload before delivery. Leave empty to send the standard envelope. Example: { text: ("[" + .event + "] " + .data.title) }'
               }
             }
           }
         }
       }
+    },
+    uiSchema: {
+      type: 'VerticalLayout',
+      elements: [
+        {
+          type: 'Group',
+          label: 'Webhooks',
+          elements: [
+            {
+              type: 'Control',
+              scope: '#/properties/webhooks',
+              label: 'Webhooks',
+              options: {
+                elementLabelProp: 'url',
+                showSortButtons: true,
+                detail: {
+                  type: 'VerticalLayout',
+                  elements: [
+                    {
+                      type: 'Control',
+                      scope: '#/properties/url',
+                      label: 'URL',
+                      options: { placeholder: 'https://example.com/webhook' }
+                    },
+                    {
+                      type: 'HorizontalLayout',
+                      elements: [
+                        { type: 'Control', scope: '#/properties/active', label: 'Active' },
+                        { type: 'Control', scope: '#/properties/secret', label: 'Signing secret' }
+                      ]
+                    },
+                    { type: 'Control', scope: '#/properties/events', label: 'Events' },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/headers',
+                      label: 'Extra headers',
+                      options: {
+                        elementLabelProp: 'name',
+                        detail: {
+                          type: 'HorizontalLayout',
+                          elements: [
+                            {
+                              type: 'Control',
+                              scope: '#/properties/name',
+                              label: 'Name',
+                              options: { placeholder: 'Authorization' }
+                            },
+                            {
+                              type: 'Control',
+                              scope: '#/properties/value',
+                              label: 'Value',
+                              options: { placeholder: '******' }
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      type: 'Control',
+                      scope: '#/properties/transform',
+                      label: 'JQ transform',
+                      options: {
+                        editor: 'jq',
+                        height: '160px',
+                        placeholder: '{ text: ("[" + .event + "] " + .data.title) }'
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
     },
     secrets: [{ path: 'webhooks.*.secret', redaction: WEBHOOK_SECRET_REDACTION }]
   }

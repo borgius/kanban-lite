@@ -13,6 +13,7 @@ import type {
   StandaloneHttpHandler,
   StandaloneHttpPlugin,
   Webhook,
+  WebhookHeader,
   WebhookProviderPlugin,
   KanbanSDK,
 } from 'kanban-lite/sdk'
@@ -26,6 +27,7 @@ import {
   updateWebhook,
   deleteWebhook,
 } from './helpers'
+import { applyJqTransform, SAMPLE_WEBHOOK_PAYLOAD } from './transform'
 
 export class WebhookListenerPlugin implements SDKEventListenerPlugin {
   readonly manifest = {
@@ -116,12 +118,12 @@ export interface WebhookSdkExtensions extends Record<string, unknown> {
   listWebhooks(workspaceRoot: string): Webhook[]
   createWebhook(
     workspaceRoot: string,
-    input: { url: string; events: string[]; secret?: string }
+    input: { url: string; events: string[]; secret?: string; headers?: WebhookHeader[]; transform?: string }
   ): Webhook
   updateWebhook(
     workspaceRoot: string,
     id: string,
-    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>>
+    updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>>
   ): Webhook | null
   deleteWebhook(workspaceRoot: string, id: string): boolean
 }
@@ -155,6 +157,34 @@ export const sdkExtensionPlugin: SDKExtensionPlugin<WebhookSdkExtensions> = {
 // ---------------------------------------------------------------------------
 // MCP plugin – webhook tool ownership
 // ---------------------------------------------------------------------------
+
+/**
+ * Coerces an arbitrary value into an array of webhook header entries.
+ *
+ * Accepts either an array of `{ name, value }` objects or a plain
+ * `Record<string, string>` map. Returns `undefined` when the input cannot be
+ * interpreted as headers so callers can leave the field unchanged.
+ */
+function coerceWebhookHeaders(value: unknown): WebhookHeader[] | undefined {
+  if (Array.isArray(value)) {
+    const entries: WebhookHeader[] = []
+    for (const item of value) {
+      if (item && typeof item === 'object' && typeof (item as WebhookHeader).name === 'string') {
+        const name = (item as WebhookHeader).name
+        const rawValue = (item as WebhookHeader).value
+        entries.push({ name, value: typeof rawValue === 'string' ? rawValue : '' })
+      }
+    }
+    return entries
+  }
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).map(([name, raw]) => ({
+      name,
+      value: typeof raw === 'string' ? raw : String(raw ?? ''),
+    }))
+  }
+  return undefined
+}
 
 function redactWebhook<T extends { secret?: string }>(w: T): Omit<T, 'secret'> {
   const { secret: _secret, ...safe } = w
@@ -199,17 +229,37 @@ export const mcpPlugin: McpPluginRegistration = {
             .describe(
               'Events to subscribe to (e.g. ["task.created", "task.updated"]). Default: ["*"] for all.'
             ),
-          secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret')
+          secret: z.string().optional().describe('Optional HMAC-SHA256 signing secret'),
+          headers: z
+            .array(z.object({ name: z.string(), value: z.string() }))
+            .optional()
+            .describe(
+              'Extra HTTP headers ({name, value}). Values may embed ${ENV_VAR} placeholders resolved from the delivery environment.'
+            ),
+          transform: z
+            .string()
+            .optional()
+            .describe('Optional jq expression applied to the payload before delivery.')
         }),
         handler: async (args, ctx) => {
-          const { url, events, secret } = args as {
+          const { url, events, secret, headers, transform } = args as {
             url: string
             events?: string[]
             secret?: string
+            headers?: unknown
+            transform?: string
           }
           try {
             const webhook = await ctx.runWithAuth(() =>
-              Promise.resolve(ctx.sdk.createWebhook({ url, events: events || ['*'], secret }))
+              Promise.resolve(
+                ctx.sdk.createWebhook({
+                  url,
+                  events: events || ['*'],
+                  secret,
+                  headers: coerceWebhookHeaders(headers),
+                  transform,
+                })
+              )
             )
             return {
               content: [
@@ -248,27 +298,41 @@ export const mcpPlugin: McpPluginRegistration = {
       {
         name: 'update_webhook',
         description:
-          'Update an existing webhook configuration (URL, events, secret, or active status).',
+          'Update an existing webhook configuration (URL, events, secret, headers, transform, or active status).',
         inputSchema: (z) => ({
           webhookId: z.string().describe('Webhook ID (e.g. "wh_abc123")'),
           url: z.string().optional().describe('New webhook target URL'),
           events: z.array(z.string()).optional().describe('New events to subscribe to'),
           secret: z.string().optional().describe('New HMAC-SHA256 signing secret'),
-          active: z.boolean().optional().describe('Set webhook active (true) or inactive (false)')
+          active: z.boolean().optional().describe('Set webhook active (true) or inactive (false)'),
+          headers: z
+            .array(z.object({ name: z.string(), value: z.string() }))
+            .optional()
+            .describe(
+              'Extra HTTP headers ({name, value}). Values may embed ${ENV_VAR} placeholders resolved from the delivery environment.'
+            ),
+          transform: z
+            .string()
+            .optional()
+            .describe('jq expression applied to the payload before delivery.')
         }),
         handler: async (args, ctx) => {
-          const { webhookId, url, events, secret, active } = args as {
+          const { webhookId, url, events, secret, active, headers, transform } = args as {
             webhookId: string
             url?: string
             events?: string[]
             secret?: string
             active?: boolean
+            headers?: unknown
+            transform?: string
           }
-          const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>> = {}
+          const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>> = {}
           if (url !== undefined) updates.url = url
           if (events !== undefined) updates.events = events
           if (secret !== undefined) updates.secret = secret
           if (active !== undefined) updates.active = active
+          if (headers !== undefined) updates.headers = coerceWebhookHeaders(headers)
+          if (transform !== undefined) updates.transform = transform
           try {
             const updated = await ctx.runWithAuth(() =>
               Promise.resolve(ctx.sdk.updateWebhook(webhookId, updates))
@@ -389,7 +453,9 @@ const handlePostWebhook: StandaloneHttpHandler = async (ctx) => {
         ctx.sdk.createWebhook({
           url: body.url as string,
           events: body.events as string[],
-          secret: typeof body.secret === 'string' ? body.secret : undefined
+          secret: typeof body.secret === 'string' ? body.secret : undefined,
+          headers: body.headers !== undefined ? coerceWebhookHeaders(body.headers) : undefined,
+          transform: typeof body.transform === 'string' ? body.transform : undefined
         })
       )
     )
@@ -411,11 +477,13 @@ const handlePutWebhook: StandaloneHttpHandler = async (ctx) => {
   const auth = pluginExtractAuth(ctx.req)
   try {
     const body = await pluginReadBody(ctx.req as http.IncomingMessage & { _rawBody?: Buffer })
-    const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active'>> = {}
+    const updates: Partial<Pick<Webhook, 'url' | 'events' | 'secret' | 'active' | 'headers' | 'transform'>> = {}
     if (typeof body.url === 'string') updates.url = body.url
     if (Array.isArray(body.events)) updates.events = body.events as string[]
     if (typeof body.secret === 'string') updates.secret = body.secret
     if (typeof body.active === 'boolean') updates.active = body.active
+    if (body.headers !== undefined) updates.headers = coerceWebhookHeaders(body.headers)
+    if (typeof body.transform === 'string') updates.transform = body.transform
     const data = await ctx.sdk.runWithAuth(auth, () =>
       Promise.resolve(ctx.sdk.updateWebhook(id, updates))
     )
@@ -509,6 +577,49 @@ const handlePostWebhookTest: StandaloneHttpHandler = async (ctx) => {
 }
 
 /**
+ * Transform preview endpoint: `POST /api/webhooks/transform/test`.
+ *
+ * Evaluates a jq expression against a JSON payload server-side (using the same
+ * jq-web engine used for delivery) so operators can test a transform in the
+ * Plugin Options UI before saving a webhook.
+ *
+ * Request body: `{ transform: string, payload?: unknown }`. When `payload` is
+ * omitted, the built-in {@link SAMPLE_WEBHOOK_PAYLOAD} is used.
+ * Response: `{ ok: true, data: { result } }` or `{ ok: false, error }`.
+ */
+const handlePostWebhookTransformTest: StandaloneHttpHandler = async (ctx) => {
+  if (!ctx.route('POST', '/api/webhooks/transform/test')) return false
+  const auth = pluginExtractAuth(ctx.req)
+  try {
+    // Require authentication so the endpoint matches the rest of the webhook surface.
+    await ctx.sdk.runWithAuth(auth, () => Promise.resolve(ctx.sdk.listWebhooks()))
+  } catch (err) {
+    if (isAuthErrorLike(err)) {
+      pluginJsonError(ctx.res, authErrToStatus(err), authErrMessage(err))
+      return true
+    }
+  }
+  try {
+    const body = await pluginReadBody(ctx.req as http.IncomingMessage & { _rawBody?: Buffer })
+    const transform = typeof body.transform === 'string' ? body.transform : ''
+    if (!transform.trim()) {
+      pluginJsonError(ctx.res, 400, 'transform expression is required')
+      return true
+    }
+    const payload = 'payload' in body ? body.payload : SAMPLE_WEBHOOK_PAYLOAD
+    try {
+      const result = await applyJqTransform(payload, transform)
+      pluginJsonOk(ctx.res, { result })
+    } catch (jqErr) {
+      pluginJsonError(ctx.res, 422, jqErr instanceof Error ? jqErr.message : 'jq transform failed')
+    }
+  } catch {
+    pluginJsonError(ctx.res, 500, 'Internal error')
+  }
+  return true
+}
+
+/**
  * Standalone HTTP plugin that registers `/api/webhooks` route ownership for the
  * kanban-lite standalone server.
  *
@@ -531,7 +642,8 @@ export const standaloneHttpPlugin: StandaloneHttpPlugin = {
       handlePostWebhookTest,
       handlePostWebhook,
       handlePutWebhook,
-      handleDeleteWebhook
+      handleDeleteWebhook,
+      handlePostWebhookTransformTest
     ]
   }
 }

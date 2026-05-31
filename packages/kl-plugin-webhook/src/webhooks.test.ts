@@ -11,6 +11,10 @@ import {
   sdkExtensionPlugin,
   standaloneHttpPlugin,
   webhookProviderPlugin,
+  applyJqTransform,
+  resolveEnvPlaceholders,
+  resolveWebhookHeaders,
+  SAMPLE_WEBHOOK_PAYLOAD,
   type Webhook,
 } from './index'
 
@@ -678,10 +682,10 @@ describe('standaloneHttpPlugin', () => {
     expect(standaloneHttpPlugin.manifest.provides).toContain('standalone.http')
   })
 
-  it('registerRoutes returns an array of 5 handler functions', () => {
+  it('registerRoutes returns an array of 6 handler functions', () => {
     const handlers = standaloneHttpPlugin.registerRoutes()
     expect(Array.isArray(handlers)).toBe(true)
-    expect(handlers).toHaveLength(5)
+    expect(handlers).toHaveLength(6)
     handlers.forEach((h) => expect(typeof h).toBe('function'))
   })
 
@@ -1002,6 +1006,70 @@ describe('standaloneHttpPlugin', () => {
       runWithAuth: vi.fn().mockRejectedValue(authErr),
     })
     await deleteHandler(plainCtx as never)
+    expect(res.statusCode).toBe(403)
+    expect(JSON.parse(res.body) as { ok: boolean }).toMatchObject({ ok: false })
+  })
+
+  // ---------------------------------------------------------------------------
+  // POST /api/webhooks/transform/test
+  // ---------------------------------------------------------------------------
+
+  const transformTestHandler = standaloneHttpPlugin.registerRoutes()[5] as unknown as (ctx: {
+    sdk: SdkMock
+    req: object
+    res: ReturnType<typeof makeRes>
+    route: ReturnType<typeof makeRouteFn>
+  }) => Promise<boolean>
+
+  it('POST /api/webhooks/transform/test returns false for a non-matching route', async () => {
+    const { plainCtx } = makeCtx('POST', '/api/webhooks')
+    expect(await transformTestHandler(plainCtx as never)).toBe(false)
+  })
+
+  it('POST /api/webhooks/transform/test evaluates a jq expression against the sample payload', async () => {
+    const { plainCtx, res } = makeCtx('POST', '/api/webhooks/transform/test', {
+      transform: '{ text: .event }',
+    })
+    expect(await transformTestHandler(plainCtx as never)).toBe(true)
+    expect(res.statusCode).toBe(200)
+    const parsed = JSON.parse(res.body) as { ok: boolean; data: { result: { text: string } } }
+    expect(parsed.ok).toBe(true)
+    expect(parsed.data.result).toEqual({ text: 'task.created' })
+  })
+
+  it('POST /api/webhooks/transform/test evaluates against a provided payload', async () => {
+    const { plainCtx, res } = makeCtx('POST', '/api/webhooks/transform/test', {
+      transform: '.value + 1',
+      payload: { value: 41 },
+    })
+    await transformTestHandler(plainCtx as never)
+    expect(res.statusCode).toBe(200)
+    const parsed = JSON.parse(res.body) as { data: { result: number } }
+    expect(parsed.data.result).toBe(42)
+  })
+
+  it('POST /api/webhooks/transform/test returns 400 when the expression is empty', async () => {
+    const { plainCtx, res } = makeCtx('POST', '/api/webhooks/transform/test', { transform: '   ' })
+    await transformTestHandler(plainCtx as never)
+    expect(res.statusCode).toBe(400)
+    expect(JSON.parse(res.body) as { ok: boolean }).toMatchObject({ ok: false })
+  })
+
+  it('POST /api/webhooks/transform/test returns 422 for an invalid jq expression', async () => {
+    const { plainCtx, res } = makeCtx('POST', '/api/webhooks/transform/test', {
+      transform: 'not valid jq (',
+    })
+    await transformTestHandler(plainCtx as never)
+    expect(res.statusCode).toBe(422)
+    expect(JSON.parse(res.body) as { ok: boolean }).toMatchObject({ ok: false })
+  })
+
+  it('POST /api/webhooks/transform/test returns 403 on policy denial', async () => {
+    const authErr = Object.assign(new Error('Action denied'), { category: 'auth.policy.denied' })
+    const { plainCtx, res } = makeCtx('POST', '/api/webhooks/transform/test', { transform: '.' }, {
+      runWithAuth: vi.fn().mockRejectedValue(authErr),
+    })
+    await transformTestHandler(plainCtx as never)
     expect(res.statusCode).toBe(403)
     expect(JSON.parse(res.body) as { ok: boolean }).toMatchObject({ ok: false })
   })
@@ -1444,5 +1512,195 @@ describe('sdkExtensionPlugin CRUD via extensions bag', () => {
     // Both paths should now see empty list
     expect(webhookProviderPlugin.listWebhooks(workspaceDir)).toHaveLength(0)
     expect(sdkExtensionPlugin.extensions.listWebhooks(workspaceDir)).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Payload post-processing: jq transform + env-injected headers
+// ---------------------------------------------------------------------------
+
+describe('resolveEnvPlaceholders', () => {
+  // Build a `${NAME}` placeholder without writing the literal pattern.
+  const ph = (name: string): string => '$' + '{' + name + '}'
+
+  it('replaces the placeholder from the provided environment', () => {
+    expect(resolveEnvPlaceholders('Bearer ' + ph('TOKEN'), { TOKEN: 'abc' })).toBe('Bearer ' + 'abc')
+  })
+
+  it('prefers the KL_-prefixed variant, matching the core config loader', () => {
+    expect(
+      resolveEnvPlaceholders(ph('GITHUB_TOKEN'), { GITHUB_TOKEN: 'bare', KL_GITHUB_TOKEN: 'scoped' })
+    ).toBe('scoped')
+  })
+
+  it('falls back to the bare variable name when no KL_ variant exists', () => {
+    expect(resolveEnvPlaceholders(ph('GITHUB_TOKEN'), { GITHUB_TOKEN: 'bare' })).toBe('bare')
+  })
+
+  it('resolves unknown variables to an empty string without throwing', () => {
+    expect(resolveEnvPlaceholders('x=' + ph('MISSING') + ';', {})).toBe('x=;')
+  })
+
+  it('resolves multiple placeholders in a single value', () => {
+    expect(resolveEnvPlaceholders(ph('A') + '-' + ph('B'), { A: '1', B: '2' })).toBe('1-2')
+  })
+})
+
+describe('resolveWebhookHeaders', () => {
+  const ph = (name: string): string => '$' + '{' + name + '}'
+
+  it('returns an empty object when headers are absent', () => {
+    expect(resolveWebhookHeaders(undefined, {})).toEqual({})
+  })
+
+  it('maps name/value pairs and resolves placeholders', () => {
+    const resolved = resolveWebhookHeaders(
+      [
+        { name: 'Authorization', value: 'Bearer ' + ph('TOKEN') },
+        { name: 'X-Source', value: 'kanban' },
+      ],
+      { TOKEN: 'secret' }
+    )
+    expect(resolved).toEqual({ Authorization: 'Bearer ' + 'secret', 'X-Source': 'kanban' })
+  })
+
+  it('skips entries with blank names and trims header names', () => {
+    const resolved = resolveWebhookHeaders(
+      [
+        { name: '  ', value: 'ignored' },
+        { name: '  X-Trim  ', value: 'kept' },
+      ],
+      {}
+    )
+    expect(resolved).toEqual({ 'X-Trim': 'kept' })
+  })
+})
+
+describe('applyJqTransform', () => {
+  it('applies a jq expression to the payload object', async () => {
+    const result = await applyJqTransform({ a: { b: [1, 2, 3] } }, '.a.b | map(. * 2)')
+    expect(result).toEqual([2, 4, 6])
+  })
+
+  it('can reshape the delivery envelope into a custom payload', async () => {
+    const result = await applyJqTransform(SAMPLE_WEBHOOK_PAYLOAD, '{ text: .event, card: .data.title }')
+    expect(result).toEqual({ text: 'task.created', card: 'Investigate webhook delivery' })
+  })
+
+  it('rejects an invalid jq expression', async () => {
+    await expect(applyJqTransform({}, 'this is not jq (')).rejects.toBeDefined()
+  })
+})
+
+describe('SAMPLE_WEBHOOK_PAYLOAD', () => {
+  it('mirrors the fireWebhooks delivery envelope shape', () => {
+    expect(SAMPLE_WEBHOOK_PAYLOAD).toMatchObject({
+      event: expect.any(String),
+      timestamp: expect.any(String),
+      data: expect.any(Object),
+    })
+  })
+})
+
+describe('webhook delivery — transform and custom headers', () => {
+  let workspaceDir: string
+
+  beforeEach(() => {
+    workspaceDir = createTempDir()
+  })
+
+  afterEach(() => {
+    fs.rmSync(workspaceDir, { recursive: true, force: true })
+    delete process.env.KL_TEST_WEBHOOK_TOKEN
+    delete process.env.TEST_WEBHOOK_TOKEN
+  })
+
+  async function fireAndCapture(
+    webhook: { url: string; events: string[]; secret?: string; headers?: { name: string; value: string }[]; transform?: string },
+    event: string,
+    data: unknown
+  ): Promise<{ body: string; headers: Record<string, string | string[] | undefined> }> {
+    let receivedBody = ''
+    let receivedHeaders: Record<string, string | string[] | undefined> = {}
+    const server = http.createServer((req, res) => {
+      let body = ''
+      req.on('data', (chunk: Buffer) => { body += chunk.toString() })
+      req.on('end', () => {
+        receivedBody = body
+        receivedHeaders = { ...req.headers }
+        res.writeHead(200)
+        res.end()
+      })
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as { port: number }).port
+
+    webhookProviderPlugin.createWebhook(workspaceDir, { ...webhook, url: `http://127.0.0.1:${port}/hook` })
+
+    let capturedHandler: ((event: string, payload: { data: unknown }) => void) | undefined
+    const mockBus = {
+      onAny: vi.fn().mockImplementation((h: (event: string, payload: { data: unknown }) => void) => {
+        capturedHandler = h
+        return () => {}
+      }),
+    }
+    const listener = new WebhookListenerPlugin(workspaceDir)
+    listener.register(mockBus as never)
+    capturedHandler!(event, { data })
+    await new Promise((r) => setTimeout(r, 500))
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    listener.unregister()
+    return { body: receivedBody, headers: receivedHeaders }
+  }
+
+  it('applies the jq transform to the delivered body', async () => {
+    const { body } = await fireAndCapture(
+      { url: '', events: ['*'], transform: '{ text: .event, title: .data.title }' },
+      'task.created',
+      { id: 'card-1', title: 'Hello' }
+    )
+    expect(JSON.parse(body)).toEqual({ text: 'task.created', title: 'Hello' })
+  })
+
+  it('falls back to the original payload when the jq expression is invalid', async () => {
+    const { body } = await fireAndCapture(
+      { url: '', events: ['*'], transform: 'not valid jq (' },
+      'task.created',
+      { id: 'card-1', title: 'Hello' }
+    )
+    const parsed = JSON.parse(body) as { event: string; data: { id: string } }
+    expect(parsed.event).toBe('task.created')
+    expect(parsed.data).toEqual({ id: 'card-1', title: 'Hello' })
+  })
+
+  it('sends custom headers and resolves env placeholders', async () => {
+    process.env.KL_TEST_WEBHOOK_TOKEN = 'super-secret'
+    const ph = (name: string): string => '$' + '{' + name + '}'
+    const { headers } = await fireAndCapture(
+      {
+        url: '',
+        events: ['*'],
+        headers: [
+          { name: 'Authorization', value: 'Bearer ' + ph('TEST_WEBHOOK_TOKEN') },
+          { name: 'X-Source', value: 'kanban' },
+        ],
+      },
+      'task.created',
+      { id: 'card-1' }
+    )
+    expect(headers['authorization']).toBe('Bearer ' + 'super-secret')
+    expect(headers['x-source']).toBe('kanban')
+  })
+
+  it('signs the transformed body, not the original payload', async () => {
+    const secret = 'sign-key'
+    const { body, headers } = await fireAndCapture(
+      { url: '', events: ['*'], secret, transform: '{ only: .event }' },
+      'task.created',
+      { id: 'card-1' }
+    )
+    const expectedSig = 'sha256=' + crypto.createHmac('sha256', secret).update(body).digest('hex')
+    expect(headers['x-webhook-signature']).toBe(expectedSig)
+    expect(JSON.parse(body)).toEqual({ only: 'task.created' })
   })
 })
